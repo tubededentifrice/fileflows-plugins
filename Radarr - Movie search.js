@@ -2,13 +2,13 @@ import { Radarr } from "Shared/Radarr";
 
 /**
  * @description This script looks up a Movie from Radarr and retrieves its metadata
- * @author iBuSH
- * @revision 3
+ * @author Vincent Courcelle
+ * @revision 1
  * @param {string} URL Radarr root URL and port (e.g., http://radarr:1234)
  * @param {string} ApiKey API Key for Radarr
  * @param {bool} UseFolderName Whether to use the folder name instead of the file name for search
  * @output Movie found
- * @output Movie not found
+ * @output Movie NOT found or error
  */
 function Script(URL, ApiKey, UseFolderName) {
     URL = URL || Variables["Radarr.Url"] || Variables["Radarr.URI"];

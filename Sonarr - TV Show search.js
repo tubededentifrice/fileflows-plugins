@@ -2,14 +2,14 @@ import { Sonarr } from "Shared/Sonarr";
 
 /**
  * @description This script looks up a TV Show from Sonarr and retrieves its metadata
- * @author iBuSH
- * @revision 3
+ * @author Vincent Courcelle
+ * @revision 1
  * @param {string} URL Sonarr root URL and port (e.g., http://sonarr:1234)
  * @param {string} ApiKey API Key for Sonarr
  * @param {bool} UseFolderName Whether to use the folder name instead of the file name for the search pattern.<br>If the folder starts with "Season", "Staffel", "Saison", or "Specials", the parent folder will be used.
  * @param {string} IgnoredFoldersRegex Ignore folders that match the regex pattern, takes the parent folder if matched; defaults to `^(Season|Staffel|Saison|Specials|S[0-9]+)` ; case insensitive
  * @output TV Show found
- * @output TV Show NOT found
+ * @output TV Show NOT found or error
  */
 function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
     URL = URL || Variables["Sonarr.Url"] || Variables["Sonarr.URI"];
@@ -55,12 +55,12 @@ function updateSeriesMetadata(series) {
     Variables["movie.Year"] = series.year;
     Variables["movie.SonarrId"] = series.id;
     Variables.VideoMetadata = {
-        Title: movie.title,
-        Description: movie.overview,
-        Year: movie.year,
-        ReleaseDate: movie.firstAired,
+        Title: series.title,
+        Description: series.overview,
+        Year: series.year,
+        ReleaseDate: series.firstAired,
         OriginalLanguage: language,
-        Genres: movie.genres,
+        Genres: series.genres,
     };
 
     Variables.TVShowInfo = series;
@@ -82,11 +82,16 @@ function getSeriesFolderName(folderPath, ignoredFoldersRegex) {
 
     const regex = new RegExp(ignoredFoldersRegex, "i");
 
-    if (regex.test(folderPath)) {
+    let folder = System.IO.Path.GetFileName(folderPath);
+    Logger.ILog(`If folder ${folder} matches regex ${ignoredFoldersRegex}, it will be ignored`);
+    if (regex.test(folder)) {
         folderPath = System.IO.Path.GetDirectoryName(folderPath);
+        folder = System.IO.Path.GetFileName(folderPath);
+        Logger.ILog(`Using ${folder} instead, as parent matched ${ignoredFoldersRegex}`);
     }
 
-    return System.IO.Path.GetFileName(folderPath);
+    Logger.ILog(`getSeriesFolderName = ${folder}`);
+    return folder;
 }
 
 /**
@@ -113,7 +118,7 @@ function searchSeriesByPath(searchPattern, sonarr) {
  */
 function searchInQueue(searchPattern, sonarr) {
     return searchSonarrAPI("queue", searchPattern, sonarr, (item, sp) => {
-        return item.outputPath.toLowerCase().includes(sp);
+        return item.outputPath?.toLowerCase().includes(sp);
     });
 }
 
