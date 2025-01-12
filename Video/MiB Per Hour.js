@@ -27,7 +27,7 @@ function Script(MaxMiBPerHour) {
     }
 
     const gb = function(bytes) {
-        return round(bytes / 1024 / 1024 / 1024 * 100) / 100;
+        return Math.round(bytes / 1024 / 1024 / 1024 * 100) / 100;
     }
 
     const mibPerHour = fileSize / duration * 3600 / 1024 / 1024;
