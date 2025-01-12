@@ -31,10 +31,9 @@ function Script(MaxMiBPerHour) {
     }
 
     const mibPerHour = fileSize / duration * 3600 / 1024 / 1024;
-    Logger.ILog(`File size: ${fileSize} (${gb(fileSize)} GB)`);
+    Logger.ILog(`File size is ${fileSize} (${gb(fileSize)} GB) and should be below: ${gb(duration * MaxMiBPerHour * 1024 * 1024 / 3600)} GB`);
     Logger.ILog(`Duration: ${duration} seconds`);
     Logger.ILog(`Detected mibPerHour: ${mibPerHour}`);
-    Logger.ILog(`File size should be below: ${gb(duration * MaxMiBPerHour * 1024 * 1024 / 3600)} GB`);
 
     if (mibPerHour <= MaxMiBPerHour) {
         Logger.ILog(`Below threshold of ${MaxMiBPerHour}`);
