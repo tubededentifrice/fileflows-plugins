@@ -19,7 +19,7 @@ function Script(MaxMiBPerHour) {
         return OUTPUT_UNABLE;
     }
 
-    const fileSize = Variables.file.Size;
+    const fileSize = Variables.file.Orig.Size;
     const duration = Variables.video?.Duration;
     if(!duration) {
         Logger.ILog("No duration found");

@@ -31,7 +31,7 @@ function Script() {
     }
 
     if (width >= 1200 || height >= 720) {
-        Logger.ILog(`1080p video detected: ${width}x${height}`);
+        Logger.ILog(`720p video detected: ${width}x${height}`);
         return OUTPUT_720;
     }
 
