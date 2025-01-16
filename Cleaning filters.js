@@ -35,7 +35,7 @@ function Script() {
         } else if (year <= 2010 || year === null) {
             filters.push('hqdn3d=1:1:4:4');
         } else if (year <= 2016) {
-            filters.push('hqdn3d=1:1:3:3');
+            filters.push('hqdn3d=1:1:2:2');
         }
     }
 
