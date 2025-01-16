@@ -31,7 +31,7 @@ function Script() {
     // Checkout https://mattgadient.com/in-depth-look-at-de-noising-in-handbrake-with-imagevideo-examples/
     if (year <= 1990) {
         filters.push('hqdn3d=2:2:6:6');
-    } else if (genres===null || !("Animation" in genres)) {
+    } else if (genres===null || !genres.includes("Animation")) {
         if (year <= 2000) {
             filters.push('hqdn3d=2:2:6:6');
         } else if (year <= 2010 || year === null) {
@@ -42,7 +42,7 @@ function Script() {
     }
 
     if (filters.length > 0) {
-        Logger.ILog(`Apply cleaning filters: ${filters.join(', ')} and genres: ${genres.join(', ')}`);
+        Logger.ILog(`Apply cleaning filters: ${filters.join(', ')} (${year} / genres: ${genres.join(', ')})`);
         for (let filter of filters) {
             video.Filter.Add(filter);
         }
