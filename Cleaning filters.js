@@ -29,7 +29,9 @@ function Script() {
     const filters = [];
 
     // Checkout https://mattgadient.com/in-depth-look-at-de-noising-in-handbrake-with-imagevideo-examples/
-    if (genres===null || !("Animation" in genres)) {
+    if (year <= 1990) {
+        filters.push('hqdn3d=2:2:6:6');
+    } else if (genres===null || !("Animation" in genres)) {
         if (year <= 2000) {
             filters.push('hqdn3d=2:2:6:6');
         } else if (year <= 2010 || year === null) {
