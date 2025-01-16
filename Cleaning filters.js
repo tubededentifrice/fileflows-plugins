@@ -5,7 +5,10 @@
  * @output Cleaned video
  */
 function Script() {
-    let ffmpeg = Variables.FfmpegBuilderModel;
+    const year = Variables.VideoMetadata?.Year;
+    const genres = Variables.VideoMetadata?.Genres;
+
+    const ffmpeg = Variables.FfmpegBuilderModel;
     if(!ffmpeg) {
         Logger.ELog('FFMPEG Builder variable not found');
         return -1;
@@ -23,15 +26,27 @@ function Script() {
      * Duplicate frame dropping and VFR. Usually won't do anything noticeable on filmed video, but works wonders on animation. Faster encodes, smaller files!
     */
 
-    const filters = [
-        'hqdn3d=0:0:2:2',
-        'nlmeans=s=1',
-        'mpdecimate=max=6'
-    ]
+    const filters = [];
 
-    Logger.ILog(`Apply cleaning filters: ${filters.join(', ')}`);
-    for (let filter of filters) {
-        video.Filter.Add(filter);
+    // Checkout https://mattgadient.com/in-depth-look-at-de-noising-in-handbrake-with-imagevideo-examples/
+    if (genres===null || !("Animation" in genres)) {
+        if (year <= 2000) {
+            filters.push('hqdn3d=2:2:6:6');
+        } else if (year <= 2010 || year === null) {
+            filters.push('hqdn3d=1:1:4:4');
+        } else if (year <= 2016) {
+            filters.push('hqdn3d=1:1:3:3');
+        }
     }
+
+    if (filters.length > 0) {
+        Logger.ILog(`Apply cleaning filters: ${filters.join(', ')} and genres: ${genres.join(', ')}`);
+        for (let filter of filters) {
+            video.Filter.Add(filter);
+        }
+    } else {
+        Logger.ILog(`The video is from ${year} and genres: ${genres.join(', ')}, no cleaning filters needed`);
+    }
+    
     return 1;
 }
