@@ -5,8 +5,8 @@
  * @output Cleaned video
  */
 function Script() {
-    const year = Variables.VideoMetadata?.Year;
-    const genres = Variables.VideoMetadata?.Genres;
+    const year = Variables.VideoMetadata?.Year || 2012;
+    const genres = Variables.VideoMetadata?.Genres || [];
 
     const ffmpeg = Variables.FfmpegBuilderModel;
     if(!ffmpeg) {
@@ -30,8 +30,10 @@ function Script() {
 
     // Checkout https://mattgadient.com/in-depth-look-at-de-noising-in-handbrake-with-imagevideo-examples/
     if (year <= 1990) {
+        // At this age, even Animation needs denoising
         filters.push('hqdn3d=2:2:6:6');
     } else if (genres===null || !genres.includes("Animation")) {
+        // Cleanup depending on how old it is, newer movies doesn't have noise at all
         if (year <= 2000) {
             filters.push('hqdn3d=2:2:6:6');
         } else if (year <= 2010 || year === null) {
@@ -40,6 +42,14 @@ function Script() {
             filters.push('hqdn3d=1:1:2:2');
         }
     }
+
+    // if (year <= 1990 || (year < 2016 && !genres.includes("Animation"))) {
+    //     // filters.push('nlmeans=1.0:7:5:3:3'); // Very good results but super slow -- can't make the OpenCl or Vulkan versions work; probably not strong enough though
+    //     // filters.push('vaguedenoiser=method=1:threshold=4'); // Too strong and super slow
+    //     // filters.push('hqdn3d=1:1:4:4');
+    // }
+
+    Variables.filters = filters.join(',');
 
     if (filters.length > 0) {
         Logger.ILog(`Apply cleaning filters: ${filters.join(', ')} (${year} / genres: ${genres.join(', ')})`);
