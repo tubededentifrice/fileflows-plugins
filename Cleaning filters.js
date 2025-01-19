@@ -39,7 +39,10 @@ function Script() {
         } else if (year <= 2010 || year === null) {
             filters.push('hqdn3d=1:1:4:4');
         } else if (year <= 2016) {
-            filters.push('hqdn3d=1:1:2:2');
+            filters.push('hqdn3d=1:1:3:3');
+        } else {
+            // On more recent movies, just do a little bit of temporal denoising, just in case, should not be noticeable except for file size
+            filters.push('hqdn3d=0:0:3:3');
         }
     }
 
