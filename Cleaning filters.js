@@ -8,6 +8,7 @@ function Script() {
     const year = Variables.VideoMetadata?.Year || 2012;
     const genres = Variables.VideoMetadata?.Genres || [];
     const hqdn3d = Variables.hqdn3d;
+    const vpp_qsv = Variables.vpp_qsv;
 
     const ffmpeg = Variables.FfmpegBuilderModel;
     if(!ffmpeg) {
@@ -29,7 +30,10 @@ function Script() {
 
     const filters = [];
 
-    if (hqdn3d) {
+    if (vpp_qsv) {
+        Logger.ILog(`Received forced filter vpp_qsv=${vpp_qsv}`);
+        filters.push(`vpp_qsv=${vpp_qsv}`);
+    } else if (hqdn3d) {
         Logger.ILog(`Received forced filter hqdn3d=${hqdn3d}`);
         filters.push(`hqdn3d=${hqdn3d}`);
     } else {
@@ -47,11 +51,16 @@ function Script() {
                 filters.push('hqdn3d=1:1:3:3');
             } else {
                 // On more recent movies, just do a little bit of temporal denoising, just in case, should not be noticeable except for file size
-                filters.push('hqdn3d=0:0:3:3');
+                // filters.push('hqdn3d=0:0:3:3');
             }
         }
     }
     
+    if (genres!==null && genres.includes("Animation")) {
+        filters.push('bframes=8');
+        filters.push('psy-rd=1');
+        filters.push('deblock=1,1');
+    }
 
     // if (year <= 1990 || (year < 2016 && !genres.includes("Animation"))) {
     //     // filters.push('nlmeans=1.0:7:5:3:3'); // Very good results but super slow -- can't make the OpenCl or Vulkan versions work; probably not strong enough though
