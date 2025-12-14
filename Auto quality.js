@@ -2,7 +2,7 @@
  * @name Auto quality
  * @description Automatically determines optimal CRF/quality based on VMAF scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric with content-aware targeting. Requires FFmpeg with libvmaf support.
  * @author Vincent Courcelle
- * @revision 1
+ * @revision 3
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
@@ -93,7 +93,27 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
     const sourceFile = Variables.file?.FullName || Flow.WorkingFile;
     const originalFile = Variables.file?.Orig?.FullName || sourceFile;
-    const duration = videoInfo.VideoStreams?.[0]?.Duration || Variables.video?.Duration || 0;
+
+    // Get duration from multiple sources - FileFlows stores it in various places
+    let duration = 0;
+    // Try video stream duration first
+    if (videoInfo.VideoStreams?.[0]?.Duration > 0) {
+        duration = videoInfo.VideoStreams[0].Duration;
+    }
+    // Try Variables.video.Duration (set by Video File node)
+    else if (Variables.video?.Duration > 0) {
+        duration = Variables.video.Duration;
+    }
+    // Try overall VideoInfo duration
+    else if (videoInfo.Duration > 0) {
+        duration = videoInfo.Duration;
+    }
+    // Estimate from file size and bitrate as last resort
+    else if (videoInfo.Bitrate > 0 && Variables.file?.Size > 0) {
+        duration = (Variables.file.Size * 8) / videoInfo.Bitrate;
+        Logger.WLog(`Estimated duration from filesize/bitrate: ${Math.round(duration)}s`);
+    }
+
     const videoCodec = videoInfo.VideoStreams?.[0]?.Codec?.toLowerCase() || '';
     const videoBitrate = getVideoBitrate(videoInfo);
     const width = videoInfo.VideoStreams?.[0]?.Width || Variables.video?.Width || 1920;
@@ -103,12 +123,20 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const isHDR = videoInfo.VideoStreams?.[0]?.HDR || false;
     const isDolbyVision = videoInfo.VideoStreams?.[0]?.DolbyVision || false;
 
-    Logger.ILog(`Source: ${width}x${height}, ${fps}fps, ${Math.round(videoBitrate/1000)}kbps, codec=${videoCodec}, HDR=${isHDR}, 10bit=${is10Bit}`);
+    Logger.ILog(`Source: ${width}x${height}, ${fps}fps, ${Math.round(videoBitrate/1000)}kbps, codec=${videoCodec}, HDR=${isHDR}, 10bit=${is10Bit}, duration=${Math.round(duration)}s`);
+
+    // Validate duration - must be a positive number
+    if (!duration || isNaN(duration) || duration <= 0) {
+        Logger.ELog(`Auto quality: Could not determine video duration. VideoInfo.Duration=${videoInfo.Duration}, VideoStream.Duration=${videoInfo.VideoStreams?.[0]?.Duration}, Variables.video.Duration=${Variables.video?.Duration}`);
+        Logger.WLog('Leaving quality settings unchanged.');
+        Variables.AutoQuality_CRF = 'unchanged';
+        Variables.AutoQuality_Reason = 'unknown_duration';
+        return 1;
+    }
 
     if (duration < 30) {
-        Logger.WLog('Auto quality: Video too short for reliable VMAF sampling. Using default CRF 20.');
-        applyCRF(video, 20, getTargetCodec(video));
-        Variables.AutoQuality_CRF = 20;
+        Logger.WLog('Auto quality: Video too short for reliable VMAF sampling. Leaving quality settings unchanged.');
+        Variables.AutoQuality_CRF = 'unchanged';
         Variables.AutoQuality_Reason = 'short_video';
         return 1;
     }
@@ -206,7 +234,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
-    // If no CRF met the target, use the best we found or fall back
+    // If no CRF met the target, use the best we found or leave unchanged
     if (bestCRF === null) {
         // Find the CRF with highest VMAF from our results
         if (searchResults.length > 0) {
@@ -215,9 +243,12 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             bestVMAF = best.vmaf;
             Logger.WLog(`No CRF met target VMAF ${effectiveTargetVMAF}. Using best found: CRF ${bestCRF} (VMAF ${bestVMAF.toFixed(2)})`);
         } else {
-            // Complete fallback
-            bestCRF = Math.round((MinCRF + MaxCRF) / 2);
-            Logger.WLog(`VMAF search failed. Falling back to CRF ${bestCRF}`);
+            // Complete failure - leave quality unchanged
+            Logger.ELog('VMAF search failed completely. Leaving quality settings unchanged.');
+            logResultsTable(searchResults, null, effectiveTargetVMAF);
+            Variables.AutoQuality_CRF = 'unchanged';
+            Variables.AutoQuality_Reason = 'vmaf_failed';
+            return 1;
         }
     }
 
