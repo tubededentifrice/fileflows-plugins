@@ -1,0 +1,263 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This repository contains custom FileFlows scripts for media file processing automation. [FileFlows](https://fileflows.com/) is a self-hosted file processing application that uses flow-based workflows. Scripts are written in JavaScript and executed using the [Jint](https://github.com/sebastienros/jint) engine, which also allows .NET interop.
+
+**Source Code**: [github.com/revenz/FileFlows](https://github.com/revenz/FileFlows)
+
+## Script Types
+
+FileFlows has three script types ([docs](https://fileflows.com/docs/webconsole/config/extensions/scripts)):
+
+### Flow Scripts
+Scripts available as nodes in FileFlows flows. Must follow strict format with comment block and `Script()` entry point. See [Flow Scripts Documentation](https://fileflows.com/docs/scripting/javascript/flow-scripts/).
+
+### Shared Scripts (`Shared/` directory)
+Reusable libraries imported by other scripts. Use ES6 module syntax. Official examples: [community-repository/Scripts/Shared](https://github.com/fileflows/community-repository/tree/main/Scripts/Shared)
+```javascript
+// Export (in Shared/Radarr.js):
+export class Radarr { ... }
+
+// Import (in other scripts):
+import { Radarr } from "Shared/Radarr";
+```
+
+### System Scripts
+Scripts for scheduled tasks or pre-execute tasks. Return truthy/falsey values - falsey stops the action.
+
+## Script Format
+
+### Comment Block Metadata ([docs](https://fileflows.com/docs/scripting/javascript/flow-scripts/))
+```javascript
+/**
+ * @description Brief description of what the script does
+ * @author Author Name
+ * @revision 1
+ * @minimumVersion 1.0.0.0
+ * @param {string} ParamName Parameter description
+ * @param {int} MaxValue Integer parameter
+ * @param {bool} EnableFeature Boolean parameter
+ * @param {('option1'|'option2')} SelectParam Single select dropdown
+ * @param {('opt1'|'opt2')[]} MultiSelect Multi-select (array)
+ * @output Description of output 1
+ * @output Description of output 2
+ */
+function Script(ParamName, MaxValue, EnableFeature, SelectParam, MultiSelect) {
+    return 1; // Output number (1-based)
+}
+```
+
+### Return Values
+- `1+` - Follow output connection N (1 = first @output, 2 = second, etc.)
+- `0` - Complete flow successfully (stops immediately)
+- `-1` - Error, stop flow as unsuccessful
+
+## FileFlows Built-in Objects
+
+### Variables ([docs](https://fileflows.com/docs/scripting/javascript/flow/variables))
+Global map for accessing file info and passing data between nodes. Variables depend on preceding flow nodes.
+
+```javascript
+// File properties
+Variables.file.FullName              // Current working file path
+Variables.file.Name                  // Filename with extension (e.g., "MyFile.mkv")
+Variables.file.Size                  // Current file size in bytes
+Variables.file.Orig.FullName         // Original file path
+Variables.file.Orig.Size             // Original file size
+Variables.file.Orig.FileName         // Original filename
+Variables.file.Orig.FileNameNoExtension  // Filename without extension
+
+// Folder properties
+Variables.folder.FullName            // Current folder path
+Variables.folder.Orig.FullName       // Original folder path
+
+// Video properties (from Video File node, prefix: vi)
+Variables.vi?.VideoInfo              // Full VideoInfo object
+Variables.video?.Duration            // Video duration in seconds
+Variables.video?.Width               // Video width in pixels
+Variables.video?.Height              // Video height in pixels
+Variables.video?.Resolution          // Computed: 4K/1080p/720p/480p/SD
+Variables.video?.HDR                 // HDR status
+
+// Custom variables
+Variables.MyCustomVar = 'value';     // Set for downstream nodes
+Variables['Radarr.Url']              // Access by string key
+```
+
+### VideoInfo Object Structure ([docs](https://fileflows.com/docs/plugins/video-nodes/video-file))
+```javascript
+// VideoInfo class
+VideoInfo.FileName        // string
+VideoInfo.Bitrate         // number
+VideoInfo.VideoStreams    // VideoStream[]
+VideoInfo.AudioStreams    // AudioStream[]
+VideoInfo.SubtitleStreams // SubtitleStream[]
+VideoInfo.Chapters        // Chapter[]
+
+// VideoStream (extends VideoFileStream)
+VideoStream.Width, Height, FramesPerSecond, Duration  // number
+VideoStream.HDR, DolbyVision  // bool
+VideoStream.Bits              // bit depth (0 if undetected)
+
+// AudioStream (extends VideoFileStream)
+AudioStream.Language     // string
+AudioStream.Channels     // number
+AudioStream.SampleRate   // number
+AudioStream.Duration     // number
+
+// SubtitleStream (extends VideoFileStream)
+SubtitleStream.Language  // string
+SubtitleStream.Forced    // bool
+
+// VideoFileStream (base class)
+VideoFileStream.Index, TypeIndex  // number
+VideoFileStream.Title, Codec      // string
+VideoFileStream.Bitrate           // number
+VideoFileStream.IsImage           // bool
+```
+
+### FfmpegBuilderModel ([docs](https://fileflows.com/docs/plugins/video-nodes/ffmpeg-builder/))
+For video filter manipulation. Access via `Variables.FfmpegBuilderModel`.
+```javascript
+const ffmpeg = Variables.FfmpegBuilderModel;
+const video = ffmpeg.VideoStreams[0];
+
+// Add filters (forces re-encoding)
+video.Filter.Add('hqdn3d=2:2:6:6');
+video.Filters.push('scale=1920:1080');
+
+// FfmpegBuilderModel properties
+ffmpeg.VideoStreams      // FfmpegVideoStream[]
+ffmpeg.AudioStreams      // FfmpegAudioStream[]
+ffmpeg.SubtitleStreams   // FfmpegSubtitleStream[]
+ffmpeg.Extension         // Output format
+ffmpeg.ForceEncode       // bool
+ffmpeg.VideoInfo         // Original VideoInfo
+
+// FfmpegVideoStream
+video.Filters            // string[] - forces change if set
+video.OptionalFilter     // string[] - only if change detected
+video.EncodingParameters // string[]
+```
+
+### Logger
+```javascript
+Logger.ILog('info message');     // Information
+Logger.WLog('warning message');  // Warning
+Logger.ELog('error message');    // Error
+Logger.DLog('debug message');    // Debug
+```
+
+### Flow Object ([docs](https://fileflows.com/docs/scripting/javascript/flow/))
+```javascript
+// File operations
+Flow.TempPath                       // Temp directory path
+Flow.NewGuid()                      // Generate unique ID
+Flow.SetWorkingFile(path, dontDelete)  // Set current working file
+Flow.ResetWorkingFile()             // Revert to original file
+Flow.MoveFile(destination)          // Move file
+Flow.CopyToTemp(filename)           // Copy to temp path
+Flow.GetDirectorySize(path)         // Directory size in bytes
+
+// Tool execution
+Flow.GetToolPath('ffmpeg')          // Get configured tool path
+Flow.Execute(args)                  // Execute external command
+
+// Properties
+Flow.FileName, Flow.WorkingFile, Flow.WorkingFileName
+Flow.IsDocker, Flow.IsWindows, Flow.IsLinux, Flow.IsMac
+```
+
+### Flow.Execute ([docs](https://fileflows.com/docs/scripting/javascript/flow/execute))
+```javascript
+let process = Flow.Execute({
+    command: Flow.GetToolPath('ffmpeg'),
+    argumentList: ['-i', Variables.file.FullName, '-c:v', 'libx265', output],
+    workingDirectory: '/path/to/dir',  // optional
+    timeout: 3600                       // optional, seconds
+});
+
+// Result object
+process.exitCode        // number
+process.standardOutput  // string
+process.standardError   // string
+process.completed       // bool
+```
+
+### HTTP Client (for API calls)
+Uses .NET HttpClient. See [Microsoft HttpClient docs](https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient).
+```javascript
+// GET request
+let response = http.GetAsync(url).Result;
+let body = response.Content.ReadAsStringAsync().Result;
+response.IsSuccessStatusCode  // bool
+
+// POST/PUT with headers
+http.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+let response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
+http.DefaultRequestHeaders.Remove("X-API-Key");
+```
+
+### Other Built-ins
+```javascript
+Sleep(milliseconds)                          // Pause execution
+MissingVariable('VarName')                   // Report missing required variable
+LanguageHelper.GetIso1Code('English')        // Language code lookup
+
+// .NET interop
+System.IO.Path.GetFileName(path)
+System.IO.Path.GetDirectoryName(path)
+System.IO.File.Create(path)
+System.IO.Directory.GetFiles(path)
+new System.IO.FileInfo(path).Directory
+```
+
+## Repository Structure
+
+```
+Shared/           - Reusable script libraries (Radarr.js, Sonarr.js)
+Video/            - Video analysis scripts (resolution, bitrate checks)
+*.js (root)       - Flow scripts for Radarr/Sonarr integration
+```
+
+### Key Scripts
+- `Radarr - Movie search.js` / `Sonarr - TV Show search.js` - Look up media metadata from *arr apps
+- `Radarr - Refresh.js` / `Sonarr - Refresh.js` - Notify *arr apps after processing
+- `Cleaning filters.js` - Apply hqdn3d denoising filters based on video year/genre
+- `Video/*.js` - Bitrate (MiB/hour) and resolution detection utilities
+
+## Integration Pattern
+
+Scripts follow this workflow:
+1. **Search script** (`*search.js`) looks up media in Radarr/Sonarr via API, stores in `Variables.VideoMetadata`, `Variables.MovieInfo`/`Variables.TVShowInfo`
+2. **Processing** happens (video conversion with FFmpeg Builder)
+3. **Refresh script** (`*Refresh.js`) notifies Radarr/Sonarr to rescan using stored IDs
+
+Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Variables['Sonarr.Url']`, `Variables['Sonarr.ApiKey']`
+
+## Documentation Links
+
+### Official Documentation
+- [FileFlows Main Site](https://fileflows.com/)
+- [Scripting Overview](https://fileflows.com/docs/scripting/)
+- [Flow Scripts](https://fileflows.com/docs/scripting/javascript/flow-scripts/)
+- [Variables](https://fileflows.com/docs/scripting/javascript/flow/variables)
+- [Flow Object](https://fileflows.com/docs/scripting/javascript/flow/)
+- [Flow.Execute](https://fileflows.com/docs/scripting/javascript/flow/execute)
+- [Function Examples](https://fileflows.com/docs/scripting/javascript/function-examples)
+- [Video File Node](https://fileflows.com/docs/plugins/video-nodes/video-file)
+- [FFmpeg Builder](https://fileflows.com/docs/plugins/video-nodes/ffmpeg-builder/)
+- [Function Node](https://docs.fileflows.com/plugins/basic-nodes/function)
+- [Variables Guide](https://docs.fileflows.com/guides/variables)
+
+### Repositories
+- [FileFlows Source Code](https://github.com/revenz/FileFlows)
+- [Community Script Repository](https://github.com/fileflows/community-repository)
+- [Shared Scripts Examples](https://github.com/fileflows/community-repository/tree/main/Scripts/Shared)
+
+### API References
+- [Radarr API v3](https://radarr.video/docs/api/)
+- [Sonarr API v3](https://sonarr.tv/docs/api/)
