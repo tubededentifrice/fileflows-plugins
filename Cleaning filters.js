@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
  * @author Vincent Courcelle
- * @revision 12
+ * @revision 13
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -10,7 +10,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace) {
-    Logger.ILog('Cleaning filters.js revision 12 loaded');
+    Logger.ILog('Cleaning filters.js revision 13 loaded');
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -466,6 +466,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 } else {
                     vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
                 }
+                Variables.applied_vpp_qsv_filter = vppFilter;
 
                 const addedVia = addVideoFilter(video, vppFilter);
                 if (!addedVia) {

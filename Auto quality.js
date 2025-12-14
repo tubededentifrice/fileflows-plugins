@@ -2,7 +2,7 @@
  * @name Auto quality
  * @description Automatically determines optimal CRF/quality based on VMAF scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric with content-aware targeting. Requires FFmpeg with libvmaf support.
  * @author Vincent Courcelle
- * @revision 3
+ * @revision 4
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
@@ -573,34 +573,146 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
     function applyCRF(videoStream, crf, encoder) {
         const crfArg = getCRFArgument(encoder);
+        const ep = videoStream.EncodingParameters;
+        if (!ep) return;
 
-        // Add CRF parameter
-        if (videoStream.EncodingParameters) {
-            if (typeof videoStream.EncodingParameters.Add === 'function') {
-                // For hardware encoders, the argument format may differ
-                if (crfArg === '-global_quality') {
-                    // QSV uses -global_quality VALUE
-                    videoStream.EncodingParameters.Add('-global_quality');
-                    videoStream.EncodingParameters.Add(String(crf));
-                } else if (crfArg === '-cq') {
-                    // NVENC uses -cq VALUE with -rc vbr
-                    videoStream.EncodingParameters.Add('-rc');
-                    videoStream.EncodingParameters.Add('vbr');
-                    videoStream.EncodingParameters.Add('-cq');
-                    videoStream.EncodingParameters.Add(String(crf));
-                } else if (crfArg === '-qp') {
-                    // VAAPI uses -qp VALUE
-                    videoStream.EncodingParameters.Add('-qp');
-                    videoStream.EncodingParameters.Add(String(crf));
-                } else {
-                    // Software encoders use -crf VALUE
-                    videoStream.EncodingParameters.Add('-crf');
-                    videoStream.EncodingParameters.Add(String(crf));
+        function toArray(list, maxItems) {
+            if (!list) return [];
+            if (Array.isArray(list)) return list.slice();
+            const limit = maxItems || 5000;
+            try {
+                if (typeof list.GetEnumerator === 'function') {
+                    const result = [];
+                    const e = list.GetEnumerator();
+                    let count = 0;
+                    while (e.MoveNext() && count < limit) {
+                        result.push(String(e.Current));
+                        count++;
+                    }
+                    return result;
                 }
-            }
+            } catch (err) { }
+
+            try {
+                if (typeof list.Count === 'number') {
+                    const result = [];
+                    const count = Math.min(list.Count, limit);
+                    for (let i = 0; i < count; i++) result.push(String(list[i]));
+                    return result;
+                }
+            } catch (err) { }
+
+            return [];
         }
 
-        Logger.ILog(`Applied ${crfArg} ${crf} to encoder`);
+        function removeAt(list, index) {
+            if (!list) return false;
+            if (Array.isArray(list)) {
+                list.splice(index, 1);
+                return true;
+            }
+            try {
+                if (typeof list.RemoveAt === 'function') {
+                    list.RemoveAt(index);
+                    return true;
+                }
+            } catch (err) { }
+            return false;
+        }
+
+        function addToken(list, token) {
+            if (!list) return false;
+            if (Array.isArray(list)) {
+                list.push(token);
+                return true;
+            }
+            try {
+                if (typeof list.Add === 'function') {
+                    list.Add(token);
+                    return true;
+                }
+            } catch (err) { }
+            return false;
+        }
+
+        function hasToken(list, predicate) {
+            const arr = toArray(list, 5000);
+            for (let i = 0; i < arr.length; i++) if (predicate(arr[i], i)) return true;
+            return false;
+        }
+
+        function stripArgAndValue(list, matcher) {
+            const arr = toArray(list, 5000);
+            let removed = 0;
+
+            // Remove from end so indexes remain valid
+            for (let i = arr.length - 1; i >= 0; i--) {
+                const token = arr[i];
+                if (!matcher(token)) continue;
+
+                // Remove value (if present and looks like a value rather than an option)
+                if (i + 1 < arr.length) {
+                    const next = arr[i + 1];
+                    if (next && !String(next).startsWith('-')) {
+                        if (removeAt(list, i + 1)) removed++;
+                    }
+                }
+
+                if (removeAt(list, i)) removed++;
+            }
+
+            return removed;
+        }
+
+        // Replace any existing quality args first (so this script can override upstream defaults cleanly)
+        let removed = 0;
+        if (crfArg === '-global_quality') {
+            // FileFlows often uses stream specifiers here (eg: -global_quality:v)
+            removed += stripArgAndValue(ep, t => String(t).startsWith('-global_quality'));
+        } else if (crfArg === '-cq') {
+            removed += stripArgAndValue(ep, t => String(t) === '-cq');
+        } else if (crfArg === '-qp') {
+            removed += stripArgAndValue(ep, t => String(t) === '-qp');
+        } else {
+            removed += stripArgAndValue(ep, t => String(t) === '-crf');
+        }
+
+        if (removed > 0) Logger.ILog(`Auto quality: removed ${removed} existing quality argument tokens`);
+
+        // Add (replacement) quality parameter
+        if (typeof ep.Add === 'function' || Array.isArray(ep)) {
+            if (crfArg === '-global_quality') {
+                // Prefer the same style FileFlows uses for QSV: -global_quality:v VALUE
+                addToken(ep, '-global_quality:v');
+                addToken(ep, String(crf));
+                Logger.ILog(`Applied -global_quality:v ${crf} to encoder`);
+                return;
+            }
+
+            if (crfArg === '-cq') {
+                // Only set rate control if not already present, otherwise just replace CQ value.
+                const hasRc = hasToken(ep, t => String(t) === '-rc');
+                if (!hasRc) {
+                    addToken(ep, '-rc');
+                    addToken(ep, 'vbr');
+                }
+                addToken(ep, '-cq');
+                addToken(ep, String(crf));
+                Logger.ILog(`Applied -cq ${crf} to encoder`);
+                return;
+            }
+
+            if (crfArg === '-qp') {
+                addToken(ep, '-qp');
+                addToken(ep, String(crf));
+                Logger.ILog(`Applied -qp ${crf} to encoder`);
+                return;
+            }
+
+            addToken(ep, '-crf');
+            addToken(ep, String(crf));
+            Logger.ILog(`Applied -crf ${crf} to encoder`);
+        }
     }
 
     function logResultsTable(results, winner, target) {
