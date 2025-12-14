@@ -1,13 +1,15 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Agents when working with code in this repository.
 After any change, ensure this file is kept up to date.
+
+
 
 ## Project Overview
 
 This repository contains custom FileFlows scripts for media file processing automation. [FileFlows](https://fileflows.com/) is a self-hosted file processing application that uses flow-based workflows. Scripts are written in JavaScript and executed using the [Jint](https://github.com/sebastienros/jint) engine, which also allows .NET interop.
 
-**Source Code**: [github.com/revenz/FileFlows](https://github.com/revenz/FileFlows)
+**Source Code**: [github.com/revenz/FileFlows](https://github.com/revenz/FileFlows) but now invalid since the program was made closed source.
 
 ## Script Types
 
@@ -15,6 +17,8 @@ FileFlows has three script types ([docs](https://fileflows.com/docs/webconsole/c
 
 ### Flow Scripts
 Scripts available as nodes in FileFlows flows. Must follow strict format with comment block and `Script()` entry point. See [Flow Scripts Documentation](https://fileflows.com/docs/scripting/javascript/flow-scripts/).
+
+Community scripts: [community-repository/Scripts/Flow](https://github.com/fileflows/community-repository) cloned in `/Volumes/External/git/community-repository` for easier reference.
 
 ### Shared Scripts (`Shared/` directory)
 Reusable libraries imported by other scripts. Use ES6 module syntax. Official examples: [community-repository/Scripts/Shared](https://github.com/fileflows/community-repository/tree/main/Scripts/Shared)
@@ -227,7 +231,8 @@ Video/            - Video analysis scripts (resolution, bitrate checks)
 ### Key Scripts
 - `Radarr - Movie search.js` / `Sonarr - TV Show search.js` - Look up media metadata from *arr apps
 - `Radarr - Refresh.js` / `Sonarr - Refresh.js` - Notify *arr apps after processing
-- `Cleaning filters.js` - Apply hqdn3d denoising filters based on video year/genre
+- `Cleaning filters.js` - Adaptive filters: QSV `vpp_qsv=denoise` (merged into crop/format vpp when needed) + optional `deinterlace_qsv` (auto-detect via `idet`), plus CPU deband/gradfun via safe hwdownload/hwupload when enabled
+- `Auto quality.js` - VMAF-based automatic CRF detection using Netflix's quality metric. Uses binary search to find optimal CRF meeting target VMAF (content-aware: animation/old films get lower targets). Requires FFmpeg with libvmaf.
 - `Video/*.js` - Bitrate (MiB/hour) and resolution detection utilities
 
 ## Integration Pattern
