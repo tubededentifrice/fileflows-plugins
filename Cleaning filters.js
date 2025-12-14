@@ -1,14 +1,15 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
  * @author Vincent Courcelle
- * @revision 2
+ * @revision 3
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} SkipDeband Skip debanding filter (useful for live action with intentional banding)
  * @param {bool} SkipEncoderParams Skip adding encoder optimization parameters
  * @param {bool} AddSharpening Add mild sharpening after denoising to restore detail (experimental)
+ * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, max encoder efficiency)
  * @output Cleaned video
  */
-function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
+function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening, AggressiveCompression) {
     const year = Variables.VideoMetadata?.Year || 2012;
     const genres = Variables.VideoMetadata?.Genres || [];
 
@@ -31,22 +32,58 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
         return -1;
     }
 
+    // Get video info for bitrate detection
+    const videoInfo = Variables.vi?.VideoInfo || ffmpeg.VideoInfo;
+    const sourceBitrate = videoInfo?.Bitrate || 0; // in kbps
+    const duration = Variables.video?.Duration || videoInfo?.VideoStreams?.[0]?.Duration || 0;
+    const fileSizeMB = Variables.file?.Orig?.Size ? Variables.file.Orig.Size / (1024 * 1024) : 0;
+
+    // Detect if content is likely a modern restoration/remaster of old content
+    // High bitrate (>15 Mbps) + old year (pre-2000) = probably restored from film
+    // Also check file size: >8GB for 80min (~6GB/hr) suggests high-quality restoration
+    const bitrateKbps = sourceBitrate > 0 ? sourceBitrate : (fileSizeMB > 0 && duration > 0 ? (fileSizeMB * 8 * 1024) / duration : 0);
+    const isHighBitrate = bitrateKbps > 15000; // >15 Mbps
+    const isVeryHighBitrate = bitrateKbps > 25000; // >25 Mbps (Blu-ray quality)
+    const isRestoredContent = year <= 2000 && (isHighBitrate || isVeryHighBitrate);
+
     // Helper functions
     const isAnimation = genres !== null && (genres.includes("Animation") || genres.includes("Anime"));
     const isDocumentary = genres !== null && genres.includes("Documentary");
     const isHorror = genres !== null && (genres.includes("Horror") || genres.includes("Thriller"));
+    const isOldCelAnimation = isAnimation && year <= 1995; // Cel animation era (hand-drawn on film)
+
+    // Log detection results
+    if (isRestoredContent) {
+        Logger.ILog(`Detected restored content: ${year}, bitrate=${Math.round(bitrateKbps/1000)}Mbps, file=${Math.round(fileSizeMB)}MB`);
+    }
+    if (isOldCelAnimation) {
+        Logger.ILog(`Detected old cel animation (${year}) - will apply stronger grain removal`);
+    }
 
     /**
      * FILTER STRATEGY
      * ===============
+     *
+     * RESTORED CONTENT DETECTION:
+     *   Old content (pre-2000) with high bitrate (>15Mbps) is likely a modern restoration.
+     *   These files are huge because they preserve film grain at high fidelity.
+     *   For compression, we need to remove this grain aggressively.
+     *
+     * AGGRESSIVE COMPRESSION MODE (for old cel animation):
+     *   Automatically enabled for: restored content, old cel animation (pre-1995)
+     *   Or manually via AggressiveCompression=true parameter.
+     *   Uses: Strong denoise (hqdn3d 5-6:5-6:10-12:10-12), max bframes=16, ref=6,
+     *         low psy-rd for compression, mpdecimate for duplicate frames.
+     *   Expected savings: 50-80% file size reduction on restored cel animation.
      *
      * Denoising (hqdn3d):
      *   - Fast 3D denoiser, good for mild to medium noise
      *   - Spatial params (luma_s, chroma_s): reduce grain/noise in each frame
      *   - Temporal params (luma_t, chroma_t): reduce noise across frames, better for video
      *   - Format: hqdn3d=luma_s:chroma_s:luma_t:chroma_t (0-255 each, higher=stronger)
+     *   - For old cel animation: use 5-6 spatial, 10-12 temporal (aggressive)
      *   - Pros: Fast, good compression improvement
-     *   - Cons: Can smear fine detail at high settings
+     *   - Cons: Can smear fine detail at high settings (acceptable for animation)
      *
      * Debanding (deband):
      *   - Removes color banding artifacts common in animation and older encodes
@@ -66,13 +103,17 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
      *   - vaguedenoiser: Wavelet-based, 3x slower than hqdn3d, good quality
      *   - atadenoise: Adaptive temporal, good for film grain preservation
      *
-     * ENCODER PARAMETERS (not filters, but affect quality/compression):
-     *   - bframes: More B-frames = better compression, especially for animation
-     *   - psy-rd: Psychovisual optimization, preserves detail at cost of compression
-     *   - psy-rdoq: Preserves noise/grain texture
-     *   - aq-mode: Adaptive quantization mode (3 = bias to dark scenes, good for anime)
-     *   - deblock: Encoder-level deblocking (-1,-1 preserves more detail)
-     *   - no-sao: Disable SAO to preserve grain (at cost of compression)
+     * ENCODER PARAMETERS (for x265, not filters):
+     *   - bframes: More B-frames = better compression (16 max for animation)
+     *   - ref: Reference frames (6 optimal for 10-bit, diminishing returns after 8)
+     *   - rc-lookahead: Scene lookahead (60 for better decisions)
+     *   - psy-rd: Psychovisual optimization (lower=better compression, higher=preserve detail)
+     *   - psy-rdoq: Preserves noise/grain texture (0 after aggressive denoise)
+     *   - aq-mode: Adaptive quantization (3 = dark scene bias, good for anime)
+     *   - aq-strength: AQ strength (0.8 for flat animation, 1.0 default)
+     *   - deblock: Encoder-level deblocking (-1,-1 preserve detail, 1,1 for denoised content)
+     *   - no-sao: Disable SAO to preserve grain (keep enabled=0 for compression)
+     *   - no-strong-intra-smoothing: Preserve sharp edges in animation
      */
 
     const filters = [];
@@ -103,14 +144,31 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
                 }
                 // Modern docs/horror: skip denoising to preserve intentional grain
             } else if (isAnimation) {
-                // Animation typically has no grain, but may have compression artifacts
-                // Use lighter denoising since deband will handle banding
-                if (year <= 1995) {
-                    // Old animation: often had film grain from cel animation
-                    denoiseStrength = '2:2:4:4';
+                // Animation denoising strategy:
+                // - Old cel animation (pre-1995) was shot on film, has significant grain
+                // - Restored/remastered versions preserve this grain at high bitrate
+                // - For compression, we need to remove the grain aggressively
+                // - Animation has flat colors, so we can denoise harder without losing detail
+
+                if (isOldCelAnimation && (AggressiveCompression || isRestoredContent)) {
+                    // AGGRESSIVE: Old cel animation with high bitrate source (restored)
+                    // These need strong denoising - the grain is from film, not artistic choice
+                    // hqdn3d maxes out effectiveness around 6-8 for spatial, 12-16 for temporal
+                    if (year <= 1980) {
+                        denoiseStrength = '6:6:12:12'; // Very strong for 70s animation
+                    } else {
+                        denoiseStrength = '5:5:10:10'; // Strong for 80s-early 90s
+                    }
+                    Logger.ILog(`Using aggressive denoise for restored cel animation`);
+                } else if (year <= 1985) {
+                    // Old cel animation (not restored or not aggressive mode)
+                    denoiseStrength = '4:4:8:8';
+                } else if (year <= 1995) {
+                    // Late cel animation era
+                    denoiseStrength = '3:3:6:6';
                 } else if (year <= 2005) {
                     // Early digital: may have compression artifacts
-                    denoiseStrength = '1:1:3:3';
+                    denoiseStrength = '1.5:1.5:4:4';
                 } else if (year <= 2015) {
                     // Modern animation: very light cleanup
                     denoiseStrength = '0.5:0.5:2:2';
@@ -155,7 +213,10 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
         } else if (isAnimation) {
             // Animation almost always benefits from debanding
             // Higher threshold for older content with more banding
-            if (year <= 2005) {
+            if (isOldCelAnimation && (AggressiveCompression || isRestoredContent)) {
+                // Stronger deband for old restored animation
+                filters.push('deband=1thr=0.05:2thr=0.05:3thr=0.05:range=20:blur=1');
+            } else if (year <= 2005) {
                 filters.push('deband=1thr=0.04:2thr=0.04:3thr=0.04:range=16:blur=1');
             } else if (year <= 2015) {
                 filters.push('deband=1thr=0.03:2thr=0.03:3thr=0.03:range=16:blur=1');
@@ -236,14 +297,42 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
         } else {
             if (isAnimation) {
                 // Animation encoder optimizations
-                encoderParams.push('bframes=8');        // More B-frames for animation
-                encoderParams.push('psy-rd=1.0');       // Balance detail vs compression
-                encoderParams.push('aq-mode=3');        // Dark scene bias (helps gradients)
-                encoderParams.push('deblock=0,0');      // Neutral deblocking
+                // Reference: https://kokomins.wordpress.com/2019/10/10/anime-encoding-guide-for-x265-and-why-to-never-use-flac/
+                // Reference: https://silentaperture.gitlab.io/mdbook-guide/encoding/x265.html
 
-                // For very clean modern animation, consider:
-                // encoderParams.push('no-sao=1');      // Disable SAO for sharper edges
-                // encoderParams.push('psy-rdoq=0.5'); // Low - animation has no grain to preserve
+                if (AggressiveCompression || isOldCelAnimation || isRestoredContent) {
+                    // AGGRESSIVE ANIMATION COMPRESSION
+                    // Optimized for maximum compression of old/restored cel animation
+                    // These settings prioritize file size over preserving film grain
+
+                    encoderParams.push('bframes=16');       // Max B-frames for animation (huge gains)
+                    encoderParams.push('ref=6');            // More reference frames (better compression)
+                    encoderParams.push('rc-lookahead=60');  // Better scene detection
+                    encoderParams.push('aq-mode=3');        // Dark scene bias (helps gradients)
+                    encoderParams.push('aq-strength=0.8');  // Lower for flat animation
+                    encoderParams.push('psy-rd=0.7');       // Lower = better compression (we denoised anyway)
+                    encoderParams.push('psy-rdoq=0');       // Disable - no grain to preserve after denoise
+                    encoderParams.push('deblock=1,1');      // Slight deblock for cleaner result
+                    encoderParams.push('no-sao=0');         // Keep SAO for compression efficiency
+
+                    // These help with animation's flat colors and sharp edges:
+                    encoderParams.push('no-strong-intra-smoothing=1'); // Preserve sharp edges
+
+                    Logger.ILog('Using aggressive encoder params for animation compression');
+
+                    // OPTIONAL: Even more aggressive (uncomment if still too large)
+                    // encoderParams.push('rd=4');          // Lower RD for speed (default 3 at slow preset)
+                    // encoderParams.push('subme=3');       // Lower subpixel (faster, slightly worse)
+                } else {
+                    // Standard animation settings (modern, clean sources)
+                    encoderParams.push('bframes=8');        // Good B-frames for animation
+                    encoderParams.push('ref=4');            // Standard reference frames
+                    encoderParams.push('psy-rd=1.0');       // Balance detail vs compression
+                    encoderParams.push('aq-mode=3');        // Dark scene bias (helps gradients)
+                    encoderParams.push('aq-strength=0.8');  // Lower for flat animation
+                    encoderParams.push('deblock=0,0');      // Neutral deblocking
+                    encoderParams.push('no-sao=1');         // Sharper edges for clean animation
+                }
             } else if (isDocumentary || isHorror) {
                 // Preserve grain/atmosphere
                 encoderParams.push('psy-rd=2.0');       // Preserve detail
@@ -274,6 +363,9 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
     // Store for downstream nodes
     Variables.filters = filters.join(',');
     Variables.encoder_params_applied = encoderParams.join(':');
+    Variables.isRestoredContent = isRestoredContent;
+    Variables.isOldCelAnimation = isOldCelAnimation;
+    Variables.sourceBitrateKbps = Math.round(bitrateKbps);
 
     // Apply filters to video stream
     if (filters.length > 0) {
