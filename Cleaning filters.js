@@ -405,52 +405,57 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening, Aggre
     Variables.isNVENC = isNVENC;
     Variables.isCPUEncoder = isCPUEncoder;
 
-    // Apply filters to video stream using correct FileFlows API
-    // video.Filters is an array that gets applied as -filter:v in FFmpeg
+    // Apply filters to video stream
+    // Try multiple methods since FileFlows API may vary
     if (filters.length > 0) {
         Logger.ILog(`Applying ${filters.length} cleaning filter(s): ${filters.join(', ')}`);
         Logger.ILog(`Content: ${year}, genres: ${genres.join(', ')}`);
+
         for (let filter of filters) {
-            video.Filters.push(filter);
+            // Method 1: Try video.Filter.Add() (original API)
+            if (video.Filter && typeof video.Filter.Add === 'function') {
+                video.Filter.Add(filter);
+            }
+            // Method 2: Try video.Filters array
+            else if (video.Filters && Array.isArray(video.Filters)) {
+                video.Filters.push(filter);
+            }
+            // Method 3: Initialize and push
+            else {
+                if (!video.Filters) video.Filters = [];
+                video.Filters.push(filter);
+            }
         }
+        Logger.ILog(`Filters array after adding: ${JSON.stringify(video.Filters || 'undefined')}`);
     } else {
         Logger.ILog(`No cleaning filters needed for ${year} content (genres: ${genres.join(', ')})`);
     }
 
     // Apply encoder parameters
-    // For QSV/NVENC: these are FFmpeg encoder options (like -bf, -refs)
-    // For CPU: these are x265-params (like bframes=16, psy-rd=1)
-    if (encoderParams.length > 0) {
-        Logger.ILog(`Applying encoder params: ${encoderParams.join(', ')}`);
+    // Note: Detection may not be accurate since encoder is determined later in the flow
+    // For now, skip encoder params since they may conflict with later nodes
+    if (encoderParams.length > 0 && !SkipEncoderParams) {
+        Logger.ILog(`Encoder params prepared (may be applied by later nodes): ${encoderParams.join(', ')}`);
 
+        // Store for potential use by other nodes
+        Variables.prepared_encoder_params = encoderParams.join(':');
+
+        // WARNING: Do NOT modify CustomParameters directly - it corrupts the x265-params format
+        // The encoder parameters should be handled by dedicated FFmpeg Builder nodes
+        // or through the Video Encode node's settings
+
+        // For QSV hardware encoder, parameters like -bf, -refs need to go through
+        // video.EncodingParameters, but only if the encoder is already determined
         if (isQSV || isNVENC || isVAAPI) {
-            // Hardware encoder: add as EncodingParameters (FFmpeg options)
+            Logger.ILog('Hardware encoder detected - adding encoding parameters');
             for (let param of encoderParams) {
+                if (!video.EncodingParameters) video.EncodingParameters = [];
                 video.EncodingParameters.push(param);
             }
-        } else {
-            // CPU encoder (libx265): add to x265-params
-            // These need to be formatted as a colon-separated string for -x265-params
-            const x265Params = encoderParams.join(':');
-            // Add to CustomParameters if not already present
-            if (!ffmpeg.CustomParameters) ffmpeg.CustomParameters = [];
-
-            // Check if x265-params already exists and append
-            let found = false;
-            for (let i = 0; i < ffmpeg.CustomParameters.length; i++) {
-                if (ffmpeg.CustomParameters[i].includes('-x265-params')) {
-                    // Append to existing x265-params
-                    ffmpeg.CustomParameters[i] += ':' + x265Params;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                ffmpeg.CustomParameters.push('-x265-params');
-                ffmpeg.CustomParameters.push(x265Params);
-            }
-            Logger.ILog(`Added x265-params: ${x265Params}`);
         }
+        // For CPU encoder (libx265), the x265-params are complex to handle
+        // Skip for now to avoid corrupting the command line
+        // Users can use the Custom Parameters node instead
     }
 
     return 1;
