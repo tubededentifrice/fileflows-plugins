@@ -213,12 +213,12 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
     // MPDECIMATE - Remove duplicate frames (VFR output)
     // Excellent for animation, can significantly reduce file size
     // WARNING: Can cause audio sync issues, needs careful handling
-    // if (isAnimation) {
-    //     filters.push('mpdecimate');
-    //     // Requires: -vsync vfr or proper PTS handling
-    //     // Pros: Major file size reduction for animation (10-30%)
-    //     // Cons: Audio sync issues, VFR compatibility problems
-    // }
+    if (isAnimation) {
+        filters.push('mpdecimate');
+        // Requires: -vsync vfr or proper PTS handling
+        // Pros: Major file size reduction for animation (10-30%)
+        // Cons: Audio sync issues, VFR compatibility problems
+    }
 
     // GRADFUN - Alternative to deband for gradient smoothing
     // if (isAnimation && year <= 2000) {
@@ -296,3 +296,4 @@ function Script(SkipDenoise, SkipDeband, SkipEncoderParams, AddSharpening) {
 
     return 1;
 }
+
