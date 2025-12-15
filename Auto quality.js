@@ -2,7 +2,7 @@
  * @name Auto quality
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @author Vincent Courcelle
- * @revision 8
+ * @revision 10
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
@@ -10,7 +10,7 @@ QUALITY METRICS:
 - VMAF (preferred): Netflix's perceptual quality metric. Requires FFmpeg with --enable-libvmaf
 - SSIM (fallback): Structural Similarity Index. Built into all FFmpeg versions, less perceptually accurate
 
-To check VMAF support: ffmpeg -filters | grep libvmaf
+To check VMAF support: ffmpeg -h filter=libvmaf
 If missing, SSIM will be used automatically.
 
 HOW IT WORKS:
@@ -60,6 +60,70 @@ OUTPUT VARIABLES:
  * @output Video already optimal (copy mode)
  */
 function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxSearchIterations, PreferSmaller, UseTags) {
+    function quoteProcessArg(arg) {
+        // Fallback quoting when ProcessStartInfo.ArgumentList isn't available.
+        // Keep it simple: quote args containing whitespace or quotes.
+        const s = String((arg === undefined || arg === null) ? '' : arg);
+        if (!/[\\s\"]/g.test(s)) return s;
+        return '"' + s.replace(/\"/g, '\\"') + '"';
+    }
+
+    function escapeFfmpegFilterArgValue(value) {
+        // ffmpeg filter args use ':' as a separator, so escape it for Windows drive letters.
+        // Use forward slashes to avoid backslash escaping rules.
+        return String((value === undefined || value === null) ? '' : value).replace(/\\/g, '/').replace(/:/g, '\\:');
+    }
+
+    function executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
+        // Avoid Flow.Execute for helper probes so FileFlows doesn't log the full output.
+        const psi = new System.Diagnostics.ProcessStartInfo();
+        psi.FileName = String(command);
+        psi.UseShellExecute = false;
+        psi.CreateNoWindow = true;
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
+        if (workingDirectory) psi.WorkingDirectory = String(workingDirectory);
+
+        let usedArgumentList = false;
+        try {
+            if (psi.ArgumentList) {
+                for (let i = 0; i < argumentList.length; i++) {
+                    psi.ArgumentList.Add(String(argumentList[i]));
+                }
+                usedArgumentList = true;
+            }
+        } catch (e) {
+            // Some runtimes may not expose ArgumentList; fall back to Arguments string.
+        }
+
+        if (!usedArgumentList) {
+            psi.Arguments = (argumentList || []).map(quoteProcessArg).join(' ');
+        }
+
+        const process = new System.Diagnostics.Process();
+        process.StartInfo = psi;
+
+        const started = process.Start();
+        if (!started) {
+            return { exitCode: -1, standardOutput: '', standardError: 'Failed to start process', completed: false };
+        }
+
+        const timeoutMs = (timeoutSeconds && timeoutSeconds > 0) ? (timeoutSeconds * 1000) : 0;
+        if (timeoutMs > 0) {
+            const exited = process.WaitForExit(timeoutMs);
+            if (!exited) {
+                try { process.Kill(true); } catch (e) { try { process.Kill(); } catch (e2) { } }
+                return { exitCode: -1, standardOutput: '', standardError: 'Process timed out', completed: false };
+            }
+        } else {
+            process.WaitForExit();
+        }
+
+        const stdout = process.StandardOutput.ReadToEnd() || '';
+        const stderr = process.StandardError.ReadToEnd() || '';
+        return { exitCode: process.ExitCode, standardOutput: stdout, standardError: stderr, completed: true };
+    }
+
     // ===== DEFAULTS =====
     if (!MinCRF || MinCRF <= 0) MinCRF = 18;
     if (!MaxCRF || MaxCRF <= 0) MaxCRF = 28;
@@ -111,16 +175,24 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     // Test if FFmpeg has libvmaf compiled in, fall back to SSIM if not
     let qualityMetric = 'SSIM'; // Default to SSIM (always available)
     try {
-        const vmafCheck = Flow.Execute({
-            command: ffmpegPath,
-            argumentList: ['-hide_banner', '-loglevel', 'error', '-filters'],
-            timeout: 30
-        });
-        const filtersOutput = (vmafCheck.output || '') + (vmafCheck.standardOutput || '') + (vmafCheck.standardError || '');
-        if (filtersOutput.includes('libvmaf')) {
+        // Use a targeted check to avoid printing the full `-filters` output to logs.
+        let vmafCheck = null;
+        try {
+            vmafCheck = executeSilently(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'], 30);
+        } catch (e) {
+            // If silent exec isn't available, fall back to Flow.Execute (output is small for this command).
+            vmafCheck = Flow.Execute({
+                command: ffmpegPath,
+                argumentList: ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'],
+                timeout: 30
+            });
+        }
+
+        const vmafOut = (vmafCheck.output || '') + (vmafCheck.standardOutput || '') + (vmafCheck.standardError || '');
+        if (vmafCheck.exitCode === 0 && /libvmaf/i.test(vmafOut)) {
             qualityMetric = 'VMAF';
         } else {
-            Logger.DLog(`libvmaf not found in filters output (${filtersOutput.length} chars)`);
+            Logger.DLog(`libvmaf not available (exitCode=${vmafCheck.exitCode}, output=${vmafOut.length} chars)`);
         }
     } catch (e) {
         Logger.WLog(`Could not check for libvmaf support: ${e}`);
@@ -550,20 +622,35 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             try {
                 // Use signalstats filter to get average luminance (YAVG)
                 // Only analyze 2 seconds for speed
-                const result = Flow.Execute({
-                    command: ffmpeg,
-                    argumentList: [
+                const metadataFile = System.IO.Path.Combine(Flow.TempPath, 'autoquality_signalstats_' + Flow.NewGuid() + '.txt');
+                let output = '';
+                try {
+                    const args = [
                         '-hide_banner', '-loglevel', 'error',
                         '-ss', String(Math.floor(pos)),
                         '-i', inputFile,
                         '-t', '2',
-                        '-vf', 'signalstats,metadata=print:file=-',
+                        '-vf', 'signalstats,metadata=print:file=' + escapeFfmpegFilterArgValue(metadataFile),
                         '-f', 'null', '-'
-                    ],
-                    timeout: 60
-                });
+                    ];
 
-                const output = (result.output || '') + '\n' + (result.standardOutput || '') + '\n' + (result.standardError || '');
+                    let result = null;
+                    try {
+                        result = executeSilently(ffmpeg, args, 60);
+                        if (!result || result.completed === false) throw new Error(result?.standardError || 'silent execute failed');
+                        output = (result.standardOutput || '') + '\n' + (result.standardError || '');
+                    } catch (e) {
+                        // Fallback: still keep output quiet by writing metadata to a file.
+                        result = Flow.Execute({ command: ffmpeg, argumentList: args, timeout: 60 });
+                        output = (result.output || '') + '\n' + (result.standardOutput || '') + '\n' + (result.standardError || '');
+                    }
+
+                    if (System.IO.File.Exists(metadataFile)) {
+                        output += '\n' + System.IO.File.ReadAllText(metadataFile);
+                    }
+                } finally {
+                    try { if (System.IO.File.Exists(metadataFile)) System.IO.File.Delete(metadataFile); } catch (e) { }
+                }
 
                 // Parse YAVG values from output
                 // Format: lavfi.signalstats.YAVG=123.456
@@ -694,7 +781,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const qualityResult = Flow.Execute({
                     command: ffmpeg,
                     argumentList: [
-                        '-hide_banner', '-loglevel', 'error', '-y',
+                        '-hide_banner', '-loglevel', 'info', '-y',
                         '-i', encodedSample,
                         '-i', originalSample,
                         '-filter_complex', filterComplex,
@@ -703,14 +790,22 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     timeout: 300
                 });
 
-                // Parse score from output (appears in stderr)
-                const output = (qualityResult.output || '') + '\n' + (qualityResult.standardError || '');
+                // Parse score from output (appears in stderr at info level)
+                const output = (qualityResult.output || '') + '\n' + (qualityResult.standardOutput || '') + '\n' + (qualityResult.standardError || '');
 
                 let score = null;
                 if (metric === 'VMAF') {
-                    const vmafMatch = output.match(/VMAF score:\s*([\d.]+)/i);
+                    // Try multiple VMAF output formats:
+                    // "VMAF score: 95.123" or "VMAF score = 95.123" or "[libvmaf...] VMAF score: 95.123"
+                    const vmafMatch = output.match(/VMAF\s*score\s*[:=]\s*([\d.]+)/i);
                     if (vmafMatch) {
                         score = parseFloat(vmafMatch[1]);
+                    } else {
+                        // Try JSON format if log_fmt=json was used
+                        const jsonMatch = output.match(/"vmaf":\s*([\d.]+)/i);
+                        if (jsonMatch) {
+                            score = parseFloat(jsonMatch[1]);
+                        }
                     }
                 } else {
                     // SSIM outputs like: SSIM Y:0.987654 (19.123456) U:0.991234 V:0.992345 All:0.989012 (19.567890)
@@ -727,6 +822,9 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     Logger.DLog(`Sample ${i + 1}: ${metric} ${scoreDisplay}`);
                 } else {
                     Logger.WLog(`Could not parse ${metric} score for sample ${i + 1}`);
+                    // Log a snippet of output for debugging
+                    const snippet = output.substring(0, 500).replace(/\n/g, ' ');
+                    Logger.DLog(`Output snippet: ${snippet}`);
                 }
 
                 // Cleanup
