@@ -38,6 +38,7 @@ CONTENT-AWARE TARGETING (when TargetVMAF=0):
 VARIABLE OVERRIDES:
 - Variables.TargetVMAF, Variables.MinCRF, Variables.MaxCRF
 - Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
+- Variables.ffmpeg_vmaf: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
@@ -93,10 +94,14 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     }
 
     // ===== GET TOOL PATHS =====
-    const ffmpegPath = Flow.GetToolPath('ffmpeg');
+    // Use Variables.ffmpeg_vmaf if set (for VMAF-enabled FFmpeg), otherwise use default
+    const ffmpegPath = Variables.ffmpeg_vmaf || Flow.GetToolPath('ffmpeg');
     if (!ffmpegPath) {
-        Logger.ELog('Auto quality: ffmpeg not found. Ensure ffmpeg is configured in FileFlows.');
+        Logger.ELog('Auto quality: ffmpeg not found. Ensure ffmpeg is configured in FileFlows or set Variables.ffmpeg_vmaf.');
         return -1;
+    }
+    if (Variables.ffmpeg_vmaf) {
+        Logger.ILog(`Using custom FFmpeg path: ${ffmpegPath}`);
     }
 
     // ===== CHECK FOR LIBVMAF SUPPORT =====
