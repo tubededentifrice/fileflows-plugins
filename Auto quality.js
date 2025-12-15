@@ -2,7 +2,7 @@
  * @name Auto quality
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @author Vincent Courcelle
- * @revision 6
+ * @revision 7
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
@@ -15,10 +15,19 @@ If missing, SSIM will be used automatically.
 
 HOW IT WORKS:
 1. Takes short samples from different parts of the video
-2. Encodes samples at various CRF values using binary search
-3. Calculates quality score (VMAF or SSIM) for each sample
-4. Finds the highest CRF (smallest file) that meets the target quality
-5. Applies the found CRF to the FFmpeg Builder encoder
+2. Analyzes luminance to detect dark content (boosts quality target for dark scenes)
+3. Encodes samples at various CRF values using binary search
+4. Calculates quality score (VMAF or SSIM) for each sample
+5. Finds the highest CRF (smallest file) that meets the target quality
+6. Applies the found CRF to the FFmpeg Builder encoder
+
+DARK SCENE DETECTION:
+- Analyzes average luminance (Y) of samples
+- Very dark (<40): +3 quality boost (e.g., VMAF 95 → 98)
+- Dark (40-60): +2 quality boost
+- Somewhat dark (60-80): +1 quality boost
+- Normal/bright (>80): no adjustment
+This helps prevent banding/blocking artifacts in dark scenes.
 
 CONTENT-AWARE TARGETING (when TargetVMAF=0):
 - Old animation (pre-1995): VMAF 93 / SSIM 0.970
@@ -34,6 +43,8 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
 - Variables.AutoQuality_Score: The quality score achieved
 - Variables.AutoQuality_Metric: 'VMAF' or 'SSIM'
+- Variables.AutoQuality_AvgLuminance: Average luminance of samples (0-255)
+- Variables.AutoQuality_LuminanceBoost: Quality boost applied for dark content (0-3)
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
@@ -209,12 +220,52 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
+    // ===== CALCULATE SAMPLE POSITIONS =====
+    const samplePositions = calculateSamplePositions(duration, SampleCount, SampleDurationSec);
+    Logger.ILog(`Sample positions: ${samplePositions.map(p => Math.round(p) + 's').join(', ')}`);
+
+    // ===== DARK SCENE DETECTION =====
+    // Analyze luminance of samples to detect dark content
+    const avgLuminance = analyzeLuminance(ffmpegPath, originalFile, samplePositions, SampleDurationSec);
+    let luminanceBoost = 0;
+
+    if (avgLuminance >= 0) {
+        // Luminance scale: 0 (black) to 255 (white)
+        // Typical values: very dark <40, dark 40-70, normal 70-150, bright >150
+        if (avgLuminance < 40) {
+            luminanceBoost = 3; // Very dark content - significant quality boost
+            Logger.ILog(`Dark scene detection: VERY DARK (avg luma ${avgLuminance.toFixed(1)}) - boosting quality by ${luminanceBoost}`);
+        } else if (avgLuminance < 60) {
+            luminanceBoost = 2; // Dark content - moderate quality boost
+            Logger.ILog(`Dark scene detection: DARK (avg luma ${avgLuminance.toFixed(1)}) - boosting quality by ${luminanceBoost}`);
+        } else if (avgLuminance < 80) {
+            luminanceBoost = 1; // Somewhat dark - small quality boost
+            Logger.ILog(`Dark scene detection: SOMEWHAT DARK (avg luma ${avgLuminance.toFixed(1)}) - boosting quality by ${luminanceBoost}`);
+        } else {
+            Logger.ILog(`Dark scene detection: NORMAL/BRIGHT (avg luma ${avgLuminance.toFixed(1)}) - no adjustment`);
+        }
+    } else {
+        Logger.WLog('Dark scene detection: Could not analyze luminance, skipping adjustment');
+    }
+
+    // Apply luminance boost to target
+    if (luminanceBoost > 0) {
+        if (qualityMetric === 'VMAF') {
+            effectiveTarget = Math.min(effectiveTarget + luminanceBoost, 99);
+            effectiveTargetVMAF = Math.min(effectiveTargetVMAF + luminanceBoost, 99);
+        } else {
+            // SSIM: boost by ~0.005 per level
+            effectiveTarget = Math.min(effectiveTarget + (luminanceBoost * 0.005), 0.999);
+        }
+        Logger.ILog(`Adjusted target: ${qualityMetric} ${qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget}`);
+    }
+
+    Variables.AutoQuality_AvgLuminance = avgLuminance;
+    Variables.AutoQuality_LuminanceBoost = luminanceBoost;
+
     // ===== QUALITY-BASED CRF SEARCH =====
     const targetDisplay = qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget;
     Logger.ILog(`Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`);
-
-    const samplePositions = calculateSamplePositions(duration, SampleCount, SampleDurationSec);
-    Logger.ILog(`Sample positions: ${samplePositions.map(p => Math.round(p) + 's').join(', ')}`);
 
     const searchResults = [];
     let bestCRF = null;
@@ -476,6 +527,63 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             positions.push(startOffset + (spacing * i));
         }
         return positions;
+    }
+
+    function analyzeLuminance(ffmpeg, inputFile, positions, sampleDur) {
+        // Analyze average luminance across sample positions using signalstats filter
+        // Returns average Y (luma) value 0-255, or -1 on failure
+        const luminanceValues = [];
+
+        for (let i = 0; i < Math.min(positions.length, 3); i++) { // Limit to 3 samples for speed
+            const pos = positions[i];
+
+            try {
+                // Use signalstats filter to get average luminance (YAVG)
+                // Only analyze 2 seconds for speed
+                const result = Flow.Execute({
+                    command: ffmpeg,
+                    argumentList: [
+                        '-hide_banner',
+                        '-ss', String(Math.floor(pos)),
+                        '-i', inputFile,
+                        '-t', '2',
+                        '-vf', 'signalstats,metadata=print:file=-',
+                        '-f', 'null', '-'
+                    ],
+                    timeout: 60
+                });
+
+                const output = (result.output || '') + '\n' + (result.standardOutput || '') + '\n' + (result.standardError || '');
+
+                // Parse YAVG values from output
+                // Format: lavfi.signalstats.YAVG=123.456
+                const yavgMatches = output.matchAll(/YAVG[=:](\d+\.?\d*)/gi);
+                const yavgValues = [];
+                for (const match of yavgMatches) {
+                    const val = parseFloat(match[1]);
+                    if (!isNaN(val) && val >= 0 && val <= 255) {
+                        yavgValues.push(val);
+                    }
+                }
+
+                if (yavgValues.length > 0) {
+                    // Average the YAVG values from this sample
+                    const sampleAvg = yavgValues.reduce((a, b) => a + b, 0) / yavgValues.length;
+                    luminanceValues.push(sampleAvg);
+                    Logger.DLog(`Luminance sample ${i + 1} at ${Math.round(pos)}s: avg Y = ${sampleAvg.toFixed(1)}`);
+                }
+            } catch (err) {
+                Logger.DLog(`Luminance analysis failed for sample ${i + 1}: ${err}`);
+            }
+        }
+
+        if (luminanceValues.length === 0) {
+            return -1;
+        }
+
+        // Return overall average luminance
+        const overallAvg = luminanceValues.reduce((a, b) => a + b, 0) / luminanceValues.length;
+        return overallAvg;
     }
 
     function measureQualityAtCRF(ffmpeg, inputFile, crf, encoder, positions, sampleDur, use10Bit, w, h, metric) {

@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
  * @author Vincent Courcelle
- * @revision 13
+ * @revision 14
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -10,7 +10,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace) {
-    Logger.ILog('Cleaning filters.js revision 13 loaded');
+    Logger.ILog('Cleaning filters.js revision 14 loaded');
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -252,6 +252,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     Variables.detected_hw_encoder = hwEncoder || 'none';
     const targetBitDepth = detectTargetBitDepth(video);
     Variables.target_bit_depth = targetBitDepth;
+    const sourceBits = videoInfo?.VideoStreams?.[0]?.Bits || (videoInfo?.VideoStreams?.[0]?.Is10Bit ? 10 : 0);
+    Variables.source_bit_depth = sourceBits || 'unknown';
+    const isHDR = Variables.video?.HDR || videoInfo?.VideoStreams?.[0]?.HDR || false;
+    const isDolbyVision = videoInfo?.VideoStreams?.[0]?.DolbyVision || false;
+    Variables.is_hdr = isHDR;
+    Variables.is_dolby_vision = isDolbyVision;
+
+    // Optional overrides via upstream variables
+    const skipBandingFix = Variables.SkipBandingFix === true || Variables.SkipBandingFix === 'true' || Variables.SkipBandingFix === 1 || Variables.SkipBandingFix === '1';
+    const forceDeband = Variables.ForceDeband === true || Variables.ForceDeband === 'true' || Variables.ForceDeband === 1 || Variables.ForceDeband === '1';
 
     if (!hwEncoder) {
         const sig = [
@@ -268,7 +278,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     // Log detection results
-    Logger.ILog(`Content: ${year}, genres: ${genres.join(', ')}, bitrate=${Math.round(bitrateKbps / 1000)}Mbps, encoder=${hwEncoder || 'cpu'}`);
+    Logger.ILog(`Content: ${year}, genres: ${genres.join(', ')}, bitrate=${Math.round(bitrateKbps / 1000)}Mbps, encoder=${hwEncoder || 'cpu'}, sourceBits=${sourceBits || 'unk'}, HDR=${isHDR}, DoVi=${isDolbyVision}`);
     if (isRestoredContent) {
         Logger.ILog(`Detected restored content (high bitrate old content)`);
     }
@@ -369,6 +379,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const hybridCpuFilters = [];
     const appliedFiltersSummary = [];
     const hybridCpuFormat = targetBitDepth >= 10 ? 'yuv420p10le' : 'yuv420p';
+    const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
 
     // ===== AUTO DEINTERLACE (optional) =====
     if (AutoDeinterlace) {
@@ -514,27 +525,69 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         Variables.applied_denoise = 'none';
     }
 
-    // GRADFUN - Fixes banding in gradients (lighter than deband, good for live action)
-    if (!isAnimation && year <= 2005 && !SkipDenoise) {
-        if (isHardwareEncode) {
-            if (AllowCpuFiltersWithHardwareEncode) {
-                hybridCpuFilters.push('gradfun=strength=1.2:radius=16');
-                Variables.applied_gradfun = true;
-                appliedFiltersSummary.push('gradfun=strength=1.2:radius=16');
-                Logger.ILog('Hybrid CPU gradfun enabled');
+    // ===== BANDING FIXES (heuristics) =====
+    // Banding can be introduced by the source (8-bit / heavy compression) or made more visible by HDR and some displays.
+    // We keep this conservative: apply mild gradfun for HDR/DoVi, and stronger deband mainly for animation/8-bit sources.
+    if (!skipBandingFix) {
+        const wantGradfun = (isHDR || isDolbyVision) || (!isAnimation && year <= 2005);
+        if (wantGradfun) {
+            const gradfun = (isHDR || isDolbyVision) ? 'gradfun=strength=0.9:radius=16' : 'gradfun=strength=1.2:radius=16';
+            if (isHardwareEncode) {
+                if (AllowCpuFiltersWithHardwareEncode) {
+                    hybridCpuFilters.push(gradfun);
+                    Variables.applied_gradfun = true;
+                    appliedFiltersSummary.push(gradfun);
+                    Logger.ILog(`Hybrid CPU gradfun enabled: ${gradfun}`);
+                } else {
+                    Logger.ILog('Skipping gradfun due to hardware encoder (CPU filter)');
+                }
             } else {
-                Logger.ILog('Skipping gradfun due to hardware encoder (CPU filter)');
+                addVideoFilter(video, gradfun);
+                Variables.applied_gradfun = true;
+                appliedFiltersSummary.push(gradfun);
+                Logger.ILog(`Applied gradfun: ${gradfun}`);
             }
-        } else {
-            addVideoFilter(video, 'gradfun=strength=1.2:radius=16');
-            Logger.ILog('Applied gradfun filter for gradient banding');
-            Variables.applied_gradfun = true;
-            appliedFiltersSummary.push('gradfun=strength=1.2:radius=16');
         }
+
+        // Deband is more aggressive; keep it mostly to animation and 8-bit sources where banding is common.
+        const likely8bitSource = sourceBits === 8 || (sourceBits === 0 && targetBitDepth >= 10);
+        const wantDeband = forceDeband || (isAnimation && year <= 2015) || (likely8bitSource && (isHDR || isDolbyVision));
+        if (wantDeband && !Variables.applied_deband) {
+            let debandParams;
+            if (isHDR || isDolbyVision) {
+                // Mild deband for HDR/DoVi (avoid flattening details)
+                debandParams = '1thr=0.02:2thr=0.02:3thr=0.02:range=16:blur=1';
+            } else if (isAnimation && year <= 1995 && (AggressiveCompression || isRestoredContent)) {
+                debandParams = '1thr=0.06:2thr=0.06:3thr=0.06:range=24:blur=1';
+            } else if (isAnimation && year <= 2005) {
+                debandParams = '1thr=0.04:2thr=0.04:3thr=0.04:range=16:blur=1';
+            } else {
+                debandParams = '1thr=0.03:2thr=0.03:3thr=0.03:range=16:blur=1';
+            }
+
+            const deband = `deband=${debandParams}`;
+            if (isHardwareEncode) {
+                if (AllowCpuFiltersWithHardwareEncode) {
+                    hybridCpuFilters.push(deband);
+                    Variables.applied_deband = debandParams;
+                    appliedFiltersSummary.push(deband);
+                    Logger.ILog(`Hybrid CPU deband enabled: ${debandParams}`);
+                } else {
+                    Logger.ILog('Skipping deband due to hardware encoder (CPU filter)');
+                }
+            } else {
+                addVideoFilter(video, deband);
+                Variables.applied_deband = debandParams;
+                appliedFiltersSummary.push(deband);
+                Logger.ILog(`Applied deband: ${debandParams}`);
+            }
+        }
+    } else {
+        Logger.ILog('Banding fixes skipped (Variables.SkipBandingFix=true)');
     }
 
     if (hybridCpuFilters.length > 0) {
-        const hybrid = `hwdownload,format=${hybridCpuFormat},${hybridCpuFilters.join(',')},format=${hybridCpuFormat},hwupload=extra_hw_frames=64`;
+        const hybrid = `hwdownload,format=${uploadHwFormat},format=${hybridCpuFormat},${hybridCpuFilters.join(',')},format=${uploadHwFormat},hwupload=extra_hw_frames=64`;
         const addedVia = addVideoFilter(video, hybrid);
         if (!addedVia) {
             Logger.ELog(`Unable to attach hybrid CPU filter chain; no compatible filter collection found on video stream.`);
