@@ -1,27 +1,30 @@
 /**
  * @name Auto quality
- * @description Automatically determines optimal CRF/quality based on VMAF scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric with content-aware targeting. Requires FFmpeg with libvmaf support.
+ * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @author Vincent Courcelle
- * @revision 4
+ * @revision 6
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
-REQUIREMENTS:
-- FFmpeg must be compiled with libvmaf support (most distributions include it)
-- For best results, run a Radarr/Sonarr search script first to populate metadata (year, genres)
+QUALITY METRICS:
+- VMAF (preferred): Netflix's perceptual quality metric. Requires FFmpeg with --enable-libvmaf
+- SSIM (fallback): Structural Similarity Index. Built into all FFmpeg versions, less perceptually accurate
+
+To check VMAF support: ffmpeg -filters | grep libvmaf
+If missing, SSIM will be used automatically.
 
 HOW IT WORKS:
 1. Takes short samples from different parts of the video
 2. Encodes samples at various CRF values using binary search
-3. Calculates VMAF score for each (Netflix's perceptual quality metric)
-4. Finds the highest CRF (smallest file) that meets the target VMAF
+3. Calculates quality score (VMAF or SSIM) for each sample
+4. Finds the highest CRF (smallest file) that meets the target quality
 5. Applies the found CRF to the FFmpeg Builder encoder
 
 CONTENT-AWARE TARGETING (when TargetVMAF=0):
-- Old animation (pre-1995): VMAF 93 (grain removal acceptable)
-- Old live action (pre-1990): VMAF 93
-- Standard content: VMAF 95
-- Modern/HDR/4K content: VMAF 96-97
+- Old animation (pre-1995): VMAF 93 / SSIM 0.970
+- Old live action (pre-1990): VMAF 93 / SSIM 0.970
+- Standard content: VMAF 95 / SSIM 0.980
+- Modern/HDR/4K content: VMAF 96-97 / SSIM 0.985-0.990
 
 VARIABLE OVERRIDES:
 - Variables.TargetVMAF, Variables.MinCRF, Variables.MaxCRF
@@ -29,17 +32,18 @@ VARIABLE OVERRIDES:
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
-- Variables.AutoQuality_VMAF: The VMAF score achieved
-- Variables.AutoQuality_Results: JSON array of all tested CRF/VMAF pairs
+- Variables.AutoQuality_Score: The quality score achieved
+- Variables.AutoQuality_Metric: 'VMAF' or 'SSIM'
+- Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
- * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). Default: 0 (auto)
+ * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
  * @param {int} MaxCRF Maximum CRF to search (higher = lower quality, smaller file). Default: 28
  * @param {int} SampleDurationSec Duration of each sample in seconds. Default: 8
  * @param {int} SampleCount Number of samples to take from video. Default: 3
  * @param {int} MaxSearchIterations Maximum binary search iterations. Default: 6
  * @param {bool} PreferSmaller When two CRFs meet target, prefer the smaller file (higher CRF). Default: true
- * @param {bool} UseTags Add FileFlows tags with CRF and VMAF info (premium feature). Default: false
+ * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -83,6 +87,31 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         Logger.ELog('Auto quality: ffmpeg not found. Ensure ffmpeg is configured in FileFlows.');
         return -1;
     }
+
+    // ===== CHECK FOR LIBVMAF SUPPORT =====
+    // Test if FFmpeg has libvmaf compiled in, fall back to SSIM if not
+    let qualityMetric = 'SSIM'; // Default to SSIM (always available)
+    try {
+        const vmafCheck = Flow.Execute({
+            command: ffmpegPath,
+            argumentList: ['-hide_banner', '-filters'],
+            timeout: 30
+        });
+        const filtersOutput = (vmafCheck.output || '') + (vmafCheck.standardOutput || '') + (vmafCheck.standardError || '');
+        if (filtersOutput.includes('libvmaf')) {
+            qualityMetric = 'VMAF';
+        }
+    } catch (e) {
+        Logger.WLog(`Could not check for libvmaf support: ${e}`);
+    }
+
+    if (qualityMetric === 'VMAF') {
+        Logger.ILog('Quality metric: VMAF (libvmaf available)');
+    } else {
+        Logger.WLog('Quality metric: SSIM (libvmaf not available, using fallback)');
+        Logger.ILog('For better quality detection, install FFmpeg with --enable-libvmaf');
+    }
+    Variables.AutoQuality_Metric = qualityMetric;
 
     // ===== GATHER VIDEO INFO =====
     const videoInfo = Variables.vi?.VideoInfo || ffmpegModel.VideoInfo;
@@ -146,12 +175,23 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const crfArg = getCRFArgument(targetCodec);
     Logger.ILog(`Target encoder: ${targetCodec}, CRF argument: ${crfArg}`);
 
-    // ===== CONTENT-AWARE TARGET VMAF =====
+    // ===== CONTENT-AWARE TARGET QUALITY =====
     let effectiveTargetVMAF = TargetVMAF;
     if (TargetVMAF === 0) {
         effectiveTargetVMAF = calculateAutoTargetVMAF();
     }
-    Logger.ILog(`Target VMAF: ${effectiveTargetVMAF}`);
+
+    // Convert VMAF target to SSIM if using SSIM metric
+    // Approximate mapping: VMAF 93→SSIM 0.970, VMAF 95→SSIM 0.980, VMAF 97→SSIM 0.990
+    let effectiveTarget = effectiveTargetVMAF;
+    if (qualityMetric === 'SSIM') {
+        // Linear interpolation: VMAF 90-100 → SSIM 0.96-1.0
+        effectiveTarget = 0.96 + (effectiveTargetVMAF - 90) * 0.004;
+        effectiveTarget = Math.max(0.95, Math.min(0.999, effectiveTarget));
+        Logger.ILog(`Target: VMAF ${effectiveTargetVMAF} → SSIM ${effectiveTarget.toFixed(3)}`);
+    } else {
+        Logger.ILog(`Target VMAF: ${effectiveTargetVMAF}`);
+    }
 
     // ===== CHECK IF ENCODING IS NEEDED =====
     const targetCodecBase = targetCodec.replace(/_qsv|_nvenc|_vaapi|_amf|lib/g, '').replace('x264', 'h264').replace('x265', 'hevc');
@@ -169,15 +209,16 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
-    // ===== VMAF-BASED CRF SEARCH =====
-    Logger.ILog(`Starting VMAF-based CRF search: CRF ${MinCRF}-${MaxCRF}, target VMAF ${effectiveTargetVMAF}`);
+    // ===== QUALITY-BASED CRF SEARCH =====
+    const targetDisplay = qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget;
+    Logger.ILog(`Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`);
 
     const samplePositions = calculateSamplePositions(duration, SampleCount, SampleDurationSec);
     Logger.ILog(`Sample positions: ${samplePositions.map(p => Math.round(p) + 's').join(', ')}`);
 
     const searchResults = [];
     let bestCRF = null;
-    let bestVMAF = 0;
+    let bestScore = 0;
 
     // Binary search for optimal CRF
     let lowCRF = MinCRF;
@@ -191,7 +232,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         // Check if we already tested this CRF
         const existing = searchResults.find(r => r.crf === testCRF);
         if (existing) {
-            if (existing.vmaf >= effectiveTargetVMAF) {
+            if (existing.score >= effectiveTarget) {
                 highCRF = testCRF - 1;
             } else {
                 lowCRF = testCRF + 1;
@@ -206,21 +247,22 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
         Flow.PartPercentageUpdate?.(progressPct);
 
-        const vmafScore = measureVMAFAtCRF(ffmpegPath, originalFile, testCRF, targetCodec, samplePositions, SampleDurationSec, is10Bit, width, height);
+        const qualityScore = measureQualityAtCRF(ffmpegPath, originalFile, testCRF, targetCodec, samplePositions, SampleDurationSec, is10Bit, width, height, qualityMetric);
 
-        if (vmafScore < 0) {
-            Logger.WLog(`VMAF measurement failed for CRF ${testCRF}, skipping...`);
+        if (qualityScore < 0) {
+            Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
             // Try to continue with a different CRF
             lowCRF = testCRF + 1;
             continue;
         }
 
-        searchResults.push({ crf: testCRF, vmaf: vmafScore });
-        Logger.ILog(`CRF ${testCRF}: VMAF ${vmafScore.toFixed(2)}`);
+        searchResults.push({ crf: testCRF, score: qualityScore });
+        const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
+        Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}`);
 
-        if (vmafScore >= effectiveTargetVMAF) {
+        if (qualityScore >= effectiveTarget) {
             bestCRF = testCRF;
-            bestVMAF = vmafScore;
+            bestScore = qualityScore;
             if (PreferSmaller) {
                 // Try higher CRF (smaller file)
                 lowCRF = testCRF + 1;
@@ -236,43 +278,48 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
     // If no CRF met the target, use the best we found or leave unchanged
     if (bestCRF === null) {
-        // Find the CRF with highest VMAF from our results
+        // Find the CRF with highest score from our results
         if (searchResults.length > 0) {
-            const best = searchResults.reduce((a, b) => a.vmaf > b.vmaf ? a : b);
+            const best = searchResults.reduce((a, b) => a.score > b.score ? a : b);
             bestCRF = best.crf;
-            bestVMAF = best.vmaf;
-            Logger.WLog(`No CRF met target VMAF ${effectiveTargetVMAF}. Using best found: CRF ${bestCRF} (VMAF ${bestVMAF.toFixed(2)})`);
+            bestScore = best.score;
+            const scoreDisplay = qualityMetric === 'SSIM' ? bestScore.toFixed(4) : bestScore.toFixed(2);
+            Logger.WLog(`No CRF met target ${qualityMetric} ${targetDisplay}. Using best found: CRF ${bestCRF} (${qualityMetric} ${scoreDisplay})`);
         } else {
             // Complete failure - leave quality unchanged
-            Logger.ELog('VMAF search failed completely. Leaving quality settings unchanged.');
-            logResultsTable(searchResults, null, effectiveTargetVMAF);
+            Logger.ELog(`${qualityMetric} search failed completely. Leaving quality settings unchanged.`);
+            logResultsTable(searchResults, null, effectiveTarget, qualityMetric);
             Variables.AutoQuality_CRF = 'unchanged';
-            Variables.AutoQuality_Reason = 'vmaf_failed';
+            Variables.AutoQuality_Reason = 'quality_search_failed';
             return 1;
         }
     }
 
     // Log results table
-    logResultsTable(searchResults, bestCRF, effectiveTargetVMAF);
+    logResultsTable(searchResults, bestCRF, effectiveTarget, qualityMetric);
 
     // ===== APPLY CRF TO ENCODER =====
     applyCRF(video, bestCRF, targetCodec);
 
     // Store results
     Variables.AutoQuality_CRF = bestCRF;
-    Variables.AutoQuality_VMAF = bestVMAF;
-    Variables.AutoQuality_TargetVMAF = effectiveTargetVMAF;
+    Variables.AutoQuality_Score = bestScore;
+    Variables.AutoQuality_Metric = qualityMetric;
+    Variables.AutoQuality_Target = effectiveTarget;
+    Variables.AutoQuality_TargetVMAF = effectiveTargetVMAF; // Keep for backwards compatibility
     Variables.AutoQuality_Iterations = iterations;
     Variables.AutoQuality_Results = JSON.stringify(searchResults);
 
+    const finalScoreDisplay = qualityMetric === 'SSIM' ? bestScore.toFixed(4) : bestScore.toFixed(1);
     Flow.AdditionalInfoRecorder?.('CRF', bestCRF, 1000);
-    Flow.AdditionalInfoRecorder?.('VMAF', bestVMAF.toFixed(1), 1000);
+    Flow.AdditionalInfoRecorder?.(qualityMetric, finalScoreDisplay, 1000);
 
     if (UseTags) {
-        Flow.AddTags?.([`CRF ${bestCRF}`, `VMAF ${Math.round(bestVMAF)}`]);
+        const tagScore = qualityMetric === 'SSIM' ? bestScore.toFixed(3) : Math.round(bestScore);
+        Flow.AddTags?.([`CRF ${bestCRF}`, `${qualityMetric} ${tagScore}`]);
     }
 
-    Logger.ILog(`Auto quality complete: CRF ${bestCRF} (VMAF ${bestVMAF.toFixed(2)}, target was ${effectiveTargetVMAF})`);
+    Logger.ILog(`Auto quality complete: CRF ${bestCRF} (${qualityMetric} ${finalScoreDisplay}, target was ${targetDisplay})`);
     return 1;
 
     // ===== HELPER FUNCTIONS =====
@@ -431,16 +478,16 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return positions;
     }
 
-    function measureVMAFAtCRF(ffmpeg, inputFile, crf, encoder, positions, sampleDur, use10Bit, w, h) {
+    function measureQualityAtCRF(ffmpeg, inputFile, crf, encoder, positions, sampleDur, use10Bit, w, h, metric) {
         const tempDir = Flow.TempPath;
-        const vmafScores = [];
+        const scores = [];
         const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
 
         // Determine software encoder for test encodes (hardware encoders not reliable for short samples)
         let testEncoder = encoder;
         let testCrfArg = getCRFArgument(encoder);
 
-        // Use software encoder for VMAF testing (more reliable)
+        // Use software encoder for quality testing (more reliable)
         if (encoder.includes('hevc') || encoder.includes('h265') || encoder.includes('x265')) {
             testEncoder = 'libx265';
             testCrfArg = '-crf';
@@ -459,7 +506,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const originalSample = `${tempDir}/${sampleId}_original.mkv`;
 
             try {
-                // Extract and decode original sample to lossless format (for VMAF reference)
+                // Extract and decode original sample to lossless format (for quality reference)
                 // Using FFV1 lossless codec to preserve original quality for comparison
                 const extractOriginal = Flow.Execute({
                     command: ffmpeg,
@@ -516,31 +563,52 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     continue;
                 }
 
-                // Calculate VMAF
-                // Note: libvmaf expects distorted (encoded) as first input, reference as second
-                // Using scale filter to ensure same resolution, then libvmaf
-                const vmafResult = Flow.Execute({
+                // Calculate quality score based on metric
+                let filterComplex;
+                if (metric === 'VMAF') {
+                    // libvmaf: distorted first, reference second
+                    filterComplex = `[0:v]scale=flags=bicubic[distorted];[1:v]scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4`;
+                } else {
+                    // SSIM: uses ssim filter, outputs to stderr
+                    filterComplex = `[0:v]scale=flags=bicubic[distorted];[1:v]scale=flags=bicubic[reference];[distorted][reference]ssim`;
+                }
+
+                const qualityResult = Flow.Execute({
                     command: ffmpeg,
                     argumentList: [
                         '-hide_banner', '-y',
                         '-i', encodedSample,
                         '-i', originalSample,
-                        '-filter_complex', `[0:v]scale=flags=bicubic[distorted];[1:v]scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4`,
+                        '-filter_complex', filterComplex,
                         '-f', 'null', '-'
                     ],
                     timeout: 300
                 });
 
-                // Parse VMAF score from output (appears in stderr)
-                const output = (vmafResult.output || '') + '\n' + (vmafResult.standardError || '');
-                const vmafMatch = output.match(/VMAF score:\s*([\d.]+)/i);
+                // Parse score from output (appears in stderr)
+                const output = (qualityResult.output || '') + '\n' + (qualityResult.standardError || '');
 
-                if (vmafMatch) {
-                    const score = parseFloat(vmafMatch[1]);
-                    vmafScores.push(score);
-                    Logger.DLog(`Sample ${i + 1}: VMAF ${score.toFixed(2)}`);
+                let score = null;
+                if (metric === 'VMAF') {
+                    const vmafMatch = output.match(/VMAF score:\s*([\d.]+)/i);
+                    if (vmafMatch) {
+                        score = parseFloat(vmafMatch[1]);
+                    }
                 } else {
-                    Logger.WLog(`Could not parse VMAF score for sample ${i + 1}`);
+                    // SSIM outputs like: SSIM Y:0.987654 (19.123456) U:0.991234 V:0.992345 All:0.989012 (19.567890)
+                    // We want the "All" value
+                    const ssimMatch = output.match(/All:\s*([\d.]+)/i);
+                    if (ssimMatch) {
+                        score = parseFloat(ssimMatch[1]);
+                    }
+                }
+
+                if (score !== null) {
+                    scores.push(score);
+                    const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
+                    Logger.DLog(`Sample ${i + 1}: ${metric} ${scoreDisplay}`);
+                } else {
+                    Logger.WLog(`Could not parse ${metric} score for sample ${i + 1}`);
                 }
 
                 // Cleanup
@@ -552,13 +620,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             }
         }
 
-        if (vmafScores.length === 0) {
+        if (scores.length === 0) {
             return -1;
         }
 
-        // Return average VMAF score
-        const avgVMAF = vmafScores.reduce((a, b) => a + b, 0) / vmafScores.length;
-        return avgVMAF;
+        // Return average score
+        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+        return avgScore;
     }
 
     function cleanupFiles(files) {
@@ -715,20 +783,24 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
-    function logResultsTable(results, winner, target) {
+    function logResultsTable(results, winner, target, metric) {
         if (results.length === 0) return;
 
         // Sort by CRF for display
         const sorted = [...results].sort((a, b) => a.crf - b.crf);
 
+        const isSSIM = metric === 'SSIM';
+        const header = isSSIM ? '| CRF |  SSIM  | Status |' : '| CRF | VMAF  | Status |';
+        const divider = isSSIM ? '|-----|--------|--------|' : '|-----|-------|--------|';
+
         Logger.ILog('');
-        Logger.ILog('| CRF | VMAF  | Status |');
-        Logger.ILog('|-----|-------|--------|');
+        Logger.ILog(header);
+        Logger.ILog(divider);
         for (const r of sorted) {
-            const status = r.vmaf >= target ? (r.crf === winner ? '* WIN' : 'OK') : 'LOW';
+            const status = r.score >= target ? (r.crf === winner ? '* WIN' : 'OK') : 'LOW';
             const crfStr = String(r.crf).padStart(3);
-            const vmafStr = r.vmaf.toFixed(2).padStart(5);
-            Logger.ILog(`| ${crfStr} | ${vmafStr} | ${status.padEnd(6)} |`);
+            const scoreStr = isSSIM ? r.score.toFixed(4).padStart(6) : r.score.toFixed(2).padStart(5);
+            Logger.ILog(`| ${crfStr} | ${scoreStr} | ${status.padEnd(6)} |`);
         }
         Logger.ILog('');
     }
