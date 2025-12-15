@@ -2,7 +2,7 @@
  * @name Auto quality
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @author Vincent Courcelle
- * @revision 7
+ * @revision 8
  * @minimumVersion 24.0.0.0
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
 
@@ -38,7 +38,7 @@ CONTENT-AWARE TARGETING (when TargetVMAF=0):
 VARIABLE OVERRIDES:
 - Variables.TargetVMAF, Variables.MinCRF, Variables.MaxCRF
 - Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
-- Variables.ffmpeg_vmaf: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
+- Variables['ffmpeg_vmaf']: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
@@ -94,14 +94,17 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     }
 
     // ===== GET TOOL PATHS =====
-    // Use Variables.ffmpeg_vmaf if set (for VMAF-enabled FFmpeg), otherwise use default
-    const ffmpegPath = Variables.ffmpeg_vmaf || Flow.GetToolPath('ffmpeg');
+    // Use ffmpeg_vmaf variable if set (for VMAF-enabled FFmpeg), otherwise use default
+    const customFfmpeg = Variables['ffmpeg_vmaf'] || Variables.ffmpeg_vmaf;
+    const ffmpegPath = customFfmpeg || Flow.GetToolPath('ffmpeg');
     if (!ffmpegPath) {
-        Logger.ELog('Auto quality: ffmpeg not found. Ensure ffmpeg is configured in FileFlows or set Variables.ffmpeg_vmaf.');
+        Logger.ELog('Auto quality: ffmpeg not found. Ensure ffmpeg is configured in FileFlows or set the ffmpeg_vmaf variable.');
         return -1;
     }
-    if (Variables.ffmpeg_vmaf) {
-        Logger.ILog(`Using custom FFmpeg path: ${ffmpegPath}`);
+    if (customFfmpeg) {
+        Logger.ILog('Using custom FFmpeg (ffmpeg_vmaf): ' + ffmpegPath);
+    } else {
+        Logger.ILog('Using default FFmpeg: ' + ffmpegPath);
     }
 
     // ===== CHECK FOR LIBVMAF SUPPORT =====
@@ -110,12 +113,14 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     try {
         const vmafCheck = Flow.Execute({
             command: ffmpegPath,
-            argumentList: ['-hide_banner', '-filters'],
+            argumentList: ['-hide_banner', '-loglevel', 'error', '-filters'],
             timeout: 30
         });
         const filtersOutput = (vmafCheck.output || '') + (vmafCheck.standardOutput || '') + (vmafCheck.standardError || '');
         if (filtersOutput.includes('libvmaf')) {
             qualityMetric = 'VMAF';
+        } else {
+            Logger.DLog(`libvmaf not found in filters output (${filtersOutput.length} chars)`);
         }
     } catch (e) {
         Logger.WLog(`Could not check for libvmaf support: ${e}`);
@@ -548,7 +553,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const result = Flow.Execute({
                     command: ffmpeg,
                     argumentList: [
-                        '-hide_banner',
+                        '-hide_banner', '-loglevel', 'error',
                         '-ss', String(Math.floor(pos)),
                         '-i', inputFile,
                         '-t', '2',
@@ -624,7 +629,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const extractOriginal = Flow.Execute({
                     command: ffmpeg,
                     argumentList: [
-                        '-hide_banner', '-y',
+                        '-hide_banner', '-loglevel', 'error', '-y',
                         '-ss', String(Math.floor(pos)),
                         '-i', inputFile,
                         '-t', String(sampleDur),
@@ -644,7 +649,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
                 // Encode sample at test CRF
                 const encodeArgs = [
-                    '-hide_banner', '-y',
+                    '-hide_banner', '-loglevel', 'error', '-y',
                     '-i', originalSample,
                     '-c:v', testEncoder,
                     testCrfArg, String(crf),
@@ -689,7 +694,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const qualityResult = Flow.Execute({
                     command: ffmpeg,
                     argumentList: [
-                        '-hide_banner', '-y',
+                        '-hide_banner', '-loglevel', 'error', '-y',
                         '-i', encodedSample,
                         '-i', originalSample,
                         '-filter_complex', filterComplex,
