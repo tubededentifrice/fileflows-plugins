@@ -2,7 +2,7 @@
  * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
  * @help Run after a "Video File" node so `vi.VideoInfo` is available. For MKV outputs, `mkvpropedit` is used for instant in-place tagging; otherwise an ffmpeg stream-copy remux is done.
  * @author Vincent Courcelle
- * @revision 7
+ * @revision 9
  * @minimumVersion 24.0.0.0
  * @param {bool} DryRun Log what would change, but do not modify the file. Default: false
  * @param {bool} UseHeuristics Infer language from track title / filename tags (e.g. "English", "[jpn]"). Default: true
@@ -18,7 +18,7 @@
  * @output Error
  */
 function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence, UseWhisperFallback, SampleStartSeconds, SampleDurationSeconds, PreferMkvPropEdit, ForceRetag) {
-    Logger.ILog('Audio - Auto tag missing language.js revision 7 loaded');
+    Logger.ILog('Audio - Auto tag missing language.js revision 9 loaded');
 
     function toEnumerableArray(value, maxItems) {
         if (!value) return [];
@@ -64,6 +64,65 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
     function toInt(value, fallback) {
         const n = parseInt(value, 10);
         return isNaN(n) ? fallback : n;
+    }
+
+    function parseDurationSeconds(value) {
+        if (value === null || value === undefined) return 0;
+        if (typeof value === 'number') return (isFinite(value) && value > 0) ? value : 0;
+
+        let s = '';
+        if (typeof value === 'string') {
+            s = value;
+        } else {
+            // Important: for .NET types (eg TimeSpan), prefer .ToString() over JSON.stringify,
+            // otherwise we may lose the textual time representation and end up with "{}".
+            try { s = String(value); } catch (err) { s = safeString(value); }
+        }
+        s = (s || '').trim();
+        if (!s) return 0;
+
+        // Strip accidental JSON string quotes, e.g. "\"01:23:45\"" -> "01:23:45"
+        if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) {
+            s = s.substring(1, s.length - 1).trim();
+        }
+
+        // Plain number string (seconds)
+        if (/^\d+(\.\d+)?$/.test(s)) {
+            const n = parseFloat(s);
+            return (isFinite(n) && n > 0) ? n : 0;
+        }
+
+        // .NET TimeSpan ToString can be: "d.hh:mm:ss.fffffff" or "hh:mm:ss.fffffff" or "mm:ss.fffffff"
+        let m = s.match(/^(\d+)\.(\d+):(\d{2}):(\d{2})(\.\d+)?$/);
+        if (m) {
+            const days = toInt(m[1], 0);
+            const hours = toInt(m[2], 0);
+            const minutes = toInt(m[3], 0);
+            const seconds = toInt(m[4], 0);
+            const frac = m[5] ? parseFloat(m[5]) : 0;
+            return Math.max(0, (days * 86400) + (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        }
+
+        m = s.match(/^(\d+):(\d{2}):(\d{2})(\.\d+)?$/);
+        if (m) {
+            const hours = toInt(m[1], 0);
+            const minutes = toInt(m[2], 0);
+            const seconds = toInt(m[3], 0);
+            const frac = m[4] ? parseFloat(m[4]) : 0;
+            return Math.max(0, (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        }
+
+        m = s.match(/^(\d+):(\d{2})(\.\d+)?$/);
+        if (m) {
+            const minutes = toInt(m[1], 0);
+            const seconds = toInt(m[2], 0);
+            const frac = m[3] ? parseFloat(m[3]) : 0;
+            return Math.max(0, (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        }
+
+        // Last resort: parseFloat (handles "123.4ms" poorly, but avoids returning 1 for "01:23:45").
+        const n = parseFloat(s);
+        return (isFinite(n) && n > 0) ? n : 0;
     }
 
     function parseBool(value) {
@@ -246,6 +305,24 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         return outPath;
     }
 
+    function getFileSizeBytes(path) {
+        try {
+            const fi = new System.IO.FileInfo(path);
+            return fi && fi.Length ? Number(fi.Length) : 0;
+        } catch (err) { return 0; }
+    }
+
+    function extractAudioSampleWavChecked(ffmpegPath, inputFile, typeIndex, startSeconds, durationSeconds, minBytes) {
+        const outPath = extractAudioSampleWav(ffmpegPath, inputFile, typeIndex, startSeconds, durationSeconds);
+        if (!outPath) return '';
+        const size = getFileSizeBytes(outPath);
+        if (size <= 0 || (minBytes && size < minBytes)) {
+            try { System.IO.File.Delete(outPath); } catch (err) { }
+            return '';
+        }
+        return outPath;
+    }
+
     function detectLanguageSpeechBrain(sampleWavPath) {
         const proc = runProcess('fflangid-sb', [sampleWavPath], 300);
         if (!proc || proc.exitCode !== 0) return null;
@@ -309,9 +386,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         return 2;
     }
 
-    const overallDurationSeconds = parseFloat((videoInfo && videoInfo.Duration) ? videoInfo.Duration : 0) ||
-        parseFloat((videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0] && videoInfo.VideoStreams[0].Duration) ? videoInfo.VideoStreams[0].Duration : 0) ||
-        parseFloat((videoVar && videoVar.Duration) ? videoVar.Duration : 0) ||
+    const overallDurationSeconds = parseDurationSeconds((videoInfo && videoInfo.Duration) ? videoInfo.Duration : 0) ||
+        parseDurationSeconds((videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0] && videoInfo.VideoStreams[0].Duration) ? videoInfo.VideoStreams[0].Duration : 0) ||
+        parseDurationSeconds((videoVar && videoVar.Duration) ? videoVar.Duration : 0) ||
         0;
 
     const fileName = safeString((variablesFile && variablesFile.Name) ? variablesFile.Name : (Flow.WorkingFileName || System.IO.Path.GetFileName(inputFile)));
@@ -339,7 +416,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             typeIndex: (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null) ? stream.TypeIndex : i,
             title: safeString(stream && stream.Title),
             codec: safeString(stream && stream.Codec),
-            duration: parseFloat((stream && stream.Duration) ? stream.Duration : 0) || 0,
+            duration: parseDurationSeconds((stream && stream.Duration) ? stream.Duration : 0) || 0,
             existingLang: safeString(stream && stream.Language)
         });
     }
@@ -374,19 +451,31 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         let sampleWav = '';
         if (!detectedIso && (canUseSpeechBrain || canUseWhisper)) {
             const trackDurationSeconds = (track.duration && track.duration > 0) ? track.duration : overallDurationSeconds;
-            const maxStart = (trackDurationSeconds && trackDurationSeconds > 0)
-                ? Math.max(0, Math.floor(trackDurationSeconds - sampleDurationSeconds - 1))
-                : 0;
 
-            const startSeconds = (sampleStartSecondsParam > 0)
-                ? clampInt(sampleStartSecondsParam, 0, maxStart)
-                : computeAutoStartSeconds(trackDurationSeconds, sampleDurationSeconds);
+            // If we can't determine the real duration, avoid always sampling t=0 (intros/silence).
+            // Try a few offsets; if extraction yields an empty/tiny wav, fall back to later/earlier offsets.
+            const minBytes = Math.max(80000, Math.floor(sampleDurationSeconds * 16000 * 2 * 0.10)); // ~>2.5s or 10% of expected PCM size
+            const starts = [];
+            if (sampleStartSecondsParam > 0) {
+                starts.push(sampleStartSecondsParam);
+            } else if (trackDurationSeconds && trackDurationSeconds > 0) {
+                const maxStart = Math.max(0, Math.floor(trackDurationSeconds - sampleDurationSeconds - 1));
+                starts.push(clampInt(computeAutoStartSeconds(trackDurationSeconds, sampleDurationSeconds), 0, maxStart));
+            } else {
+                starts.push(300, 180, 120, 60, 0);
+            }
 
-            Logger.DLog('Sampling ' + trackLabel + ' from t=' + startSeconds + 's for ' + sampleDurationSeconds + 's' +
-                ((sampleStartSecondsParam > 0) ? ' (manual)' : ' (auto)') +
-                ((trackDurationSeconds && trackDurationSeconds > 0) ? (' duration=' + Math.floor(trackDurationSeconds) + 's') : ''));
+            for (let si = 0; si < starts.length && !sampleWav; si++) {
+                const startSeconds = Math.max(0, Math.floor(starts[si]));
+                Logger.DLog('Sampling ' + trackLabel + ' from t=' + startSeconds + 's for ' + sampleDurationSeconds + 's' +
+                    ((sampleStartSecondsParam > 0) ? ' (manual)' : ' (auto)') +
+                    ((trackDurationSeconds && trackDurationSeconds > 0) ? (' duration=' + Math.floor(trackDurationSeconds) + 's') : ''));
+                sampleWav = extractAudioSampleWavChecked(ffmpegPath, inputFile, track.typeIndex, startSeconds, sampleDurationSeconds, minBytes);
+            }
 
-            sampleWav = extractAudioSampleWav(ffmpegPath, inputFile, track.typeIndex, startSeconds, sampleDurationSeconds);
+            if (!sampleWav) {
+                Logger.WLog('Failed to extract a usable audio sample for ' + trackLabel + ' (tried ' + starts.length + ' start positions).');
+            }
         }
 
         if (!detectedIso && canUseSpeechBrain && sampleWav) {

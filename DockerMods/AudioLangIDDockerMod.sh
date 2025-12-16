@@ -86,7 +86,7 @@ ensure_apt_prereqs() {
         ca-certificates curl git jq \
         python3 python3-venv python3-pip python3-setuptools python3-wheel \
         build-essential cmake pkg-config \
-        libsndfile1 \
+        libsndfile1 sox libsox-fmt-all \
         mkvtoolnix
 }
 
@@ -236,6 +236,16 @@ def _ensure_torchaudio_compat():
         torchaudio.list_audio_backends = lambda: []  # type: ignore[attr-defined]
     if not hasattr(torchaudio, "set_audio_backend"):
         torchaudio.set_audio_backend = lambda backend: None  # type: ignore[attr-defined]
+
+    # If torchaudio is installed but reports no backends, SpeechBrain prints a scary warning.
+    # We load audio with soundfile in this wrapper, so suppress the warning by advertising a dummy backend.
+    try:
+        backends = torchaudio.list_audio_backends()  # type: ignore[attr-defined]
+        if isinstance(backends, (list, tuple)) and len(backends) == 0:
+            torchaudio.list_audio_backends = lambda: ["soundfile"]  # type: ignore[attr-defined]
+            torchaudio.set_audio_backend = lambda backend: None  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
 def main():
     if len(sys.argv) in (2, 3) and sys.argv[1] in ("--version", "-V"):
