@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
  * @author Vincent Courcelle
- * @revision 16
+ * @revision 17
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -10,7 +10,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace) {
-    Logger.ILog('Cleaning filters.js revision 16 loaded');
+    Logger.ILog('Cleaning filters.js revision 17 loaded');
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -85,6 +85,15 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             }
         } catch (err) { }
         return false;
+    }
+
+    function listAddUnique(list, item) {
+        if (!list) return false;
+        try {
+            const existing = toEnumerableArray(list, 2000).map(safeTokenString);
+            if (existing.indexOf(item) >= 0) return true;
+        } catch (err) { }
+        return listAdd(list, item);
     }
 
     function listSetAt(list, index, value) {
@@ -258,11 +267,14 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     function addVideoFilter(videoStream, filter) {
         if (!filter) return null;
         // Prefer Filters in FFmpeg Builder "New mode" (some versions still expose Filter/OptionalFilter too).
-        if (listAdd(videoStream.Filters, filter)) return 'Filters';
-        if (listAdd(videoStream.Filter, filter)) return 'Filter';
+        // Also mirror into Filter when available for compatibility/visibility.
+        const addedFilters = listAddUnique(videoStream.Filters, filter);
+        const addedFilter = listAddUnique(videoStream.Filter, filter);
+        if (addedFilters) return 'Filters';
+        if (addedFilter) return 'Filter';
 
         // OptionalFilter is not reliably applied in all builder modes; prefer it last.
-        if (listAdd(videoStream.OptionalFilter, filter)) {
+        if (listAddUnique(videoStream.OptionalFilter, filter)) {
             return 'OptionalFilter';
         }
 
@@ -769,6 +781,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     Variables.video_filters = appliedFiltersSummary.join(',');
+    const filters = appliedFiltersForExecutor.slice();
+    Variables.filters = filters.join(',');
 
     // Some FileFlows runner/builder versions (especially FFmpeg Builder "New mode") primarily apply video filters from
     // EncodingParameters (-filter:v:0), and can ignore script-added Filter/Filters collections. Ensure our computed filters
@@ -825,6 +839,17 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     Logger.ILog(`Recommended QSV params: ${Variables.recommended_qsv_params}`);
+
+    // "Prove" the filters are present on the stream in Filter.
+    try {
+        for (let i = 0; i < filters.length; i++) {
+            listAddUnique(video.Filter, filters[i]);
+        }
+        const filterList = toEnumerableArray(video.Filter, 2000).map(safeTokenString).filter(x => x);
+        Logger.ILog(`ffmpeg.VideoStreams[0].Filter: ${filterList.length ? filterList.join(',') : '(empty)'}`);
+    } catch (err) {
+        Logger.WLog(`Unable to enumerate ffmpeg.VideoStreams[0].Filter: ${err}`);
+    }
 
     return 1;
 }
