@@ -49,7 +49,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 12
+ * @revision 16
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -67,7 +67,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         // Fallback quoting when ProcessStartInfo.ArgumentList isn't available.
         // Keep it simple: quote args containing whitespace or quotes.
         const s = String((arg === undefined || arg === null) ? '' : arg);
-        if (!/[\\s\"]/g.test(s)) return s;
+        if (
+            s.indexOf(' ') === -1 &&
+            s.indexOf('\t') === -1 &&
+            s.indexOf('\r') === -1 &&
+            s.indexOf('\n') === -1 &&
+            s.indexOf('"') === -1
+        ) return s;
         return '"' + s.replace(/\"/g, '\\"') + '"';
     }
 
@@ -848,13 +854,14 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         const upstreamFiltersStr = String(upstreamFilters || '').trim();
 
         function detectNeedsQsv(filters) {
-            const s = String(filters || '').trim();
+            const s = String(filters || '').trim().toLowerCase();
             if (!s) return false;
-            return (
-                /(^|[,\\s])(?:scale_qsv|vpp_qsv|deinterlace_qsv|tonemap_qsv)\\b/i.test(s) ||
-                /\\b(?:hwupload|hwdownload)\\b/i.test(s) ||
-                /_qsv\\b/i.test(s)
-            );
+            if (s.indexOf('vpp_qsv') >= 0) return true;
+            if (s.indexOf('scale_qsv') >= 0) return true;
+            if (s.indexOf('deinterlace_qsv') >= 0) return true;
+            if (s.indexOf('tonemap_qsv') >= 0) return true;
+            if (s.indexOf('hwupload') >= 0 || s.indexOf('hwdownload') >= 0) return true;
+            return /_qsv(?:=|,|:|$)/i.test(s);
         }
 
         const upstreamNeedsQsv = detectNeedsQsv(upstreamFiltersStr);
@@ -944,7 +951,14 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; }
             }
             if (!hasHwdownloadAfter) {
-                segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${pixFmt}`);
+                const downloadFmt = use10Bit ? 'p010le' : 'nv12';
+                // QSV downloads are typically NV12/P010; yuv420p(10le) is not a valid direct hwdownload target.
+                // Convert to the desired software pix fmt after the download format.
+                if (downloadFmt === pixFmt) {
+                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
+                } else {
+                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
+                }
             }
 
             return segments.join(',');
@@ -1072,7 +1086,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const qualityResult = Flow.Execute({
                     command: ffmpegMetric,
                     argumentList: [
-                        '-hide_banner', '-loglevel', 'info', '-y',
+                        '-hide_banner', '-loglevel', 'info', '-nostats', '-y',
                         '-i', encodedSample,
                         '-i', referenceSample,
                         '-filter_complex', filterComplex,
@@ -1085,15 +1099,17 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
                 let score = null;
                 if (metric === 'VMAF') {
-                    const vmafMatch = output.match(/VMAF\\s*score\\s*[:=]\\s*([\\d.]+)/i);
+                    // Parse the final summary line that libvmaf prints (avoid \s/\d escapes for Jint compatibility).
+                    const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                     if (vmafMatch) {
                         score = parseFloat(vmafMatch[1]);
                     } else {
-                        const jsonMatch = output.match(/\"vmaf\"\\s*:\\s*([\\d.]+)/i);
+                        // Some builds can emit JSON-ish snippets; best-effort parse.
+                        const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                         if (jsonMatch) score = parseFloat(jsonMatch[1]);
                     }
                 } else {
-                    const ssimMatch = output.match(/All:\\s*([\\d.]+)/i);
+                    const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                     if (ssimMatch) score = parseFloat(ssimMatch[1]);
                 }
 
@@ -1103,7 +1119,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     Logger.DLog(`Sample ${i + 1}: ${metric} ${scoreDisplay}`);
                 } else {
                     Logger.WLog(`Could not parse ${metric} score for sample ${i + 1}`);
-                    const snippet = output.substring(0, 500).replace(/\\n/g, ' ');
+                    const snippet = output.substring(0, 500).split('\n').join(' ');
                     Logger.DLog(`Output snippet: ${snippet}`);
                 }
             } catch (err) {
