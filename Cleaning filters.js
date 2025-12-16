@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
  * @author Vincent Courcelle
- * @revision 14
+ * @revision 16
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -10,7 +10,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace) {
-    Logger.ILog('Cleaning filters.js revision 14 loaded');
+    Logger.ILog('Cleaning filters.js revision 16 loaded');
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -87,17 +87,179 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return false;
     }
 
+    function listSetAt(list, index, value) {
+        if (!list) return false;
+        try {
+            // JS array or .NET indexer
+            list[index] = value;
+            return true;
+        } catch (err) { }
+        try {
+            if (typeof list.RemoveAt === 'function' && typeof list.Insert === 'function') {
+                list.RemoveAt(index);
+                list.Insert(index, value);
+                return true;
+            }
+        } catch (err) { }
+        return false;
+    }
+
+    function flattenFilterExpressions(filters) {
+        const parts = [];
+        for (let i = 0; i < (filters || []).length; i++) {
+            const f = String(filters[i] || '').trim();
+            if (!f) continue;
+            const split = f.split(',').map(x => x.trim()).filter(x => x);
+            for (let j = 0; j < split.length; j++) parts.push(split[j]);
+        }
+        return parts;
+    }
+
+    function mergeVppQsv(existing, desired) {
+        // existing/desired like: vpp_qsv=denoise=13:format=p010le
+        const parse = (s) => {
+            const result = { name: '', items: [], map: {} };
+            if (!s) return result;
+            const t = String(s).trim();
+            const eq = t.indexOf('=');
+            if (eq < 0) { result.name = t; return result; }
+            result.name = t.substring(0, eq);
+            const opts = t.substring(eq + 1).split(':').map(x => x.trim()).filter(x => x);
+            for (let i = 0; i < opts.length; i++) {
+                const o = opts[i];
+                const p = o.indexOf('=');
+                if (p > 0) {
+                    const k = o.substring(0, p);
+                    const v = o.substring(p + 1);
+                    result.items.push({ k, v });
+                    result.map[k] = v;
+                } else {
+                    result.items.push({ k: o, v: null });
+                    result.map[o] = null;
+                }
+            }
+            return result;
+        };
+
+        const a = parse(existing);
+        const b = parse(desired);
+        if (a.name !== 'vpp_qsv' || b.name !== 'vpp_qsv') return desired || existing;
+
+        const merged = [];
+        const seen = {};
+
+        // Keep existing order, override values when desired provides them.
+        for (let i = 0; i < a.items.length; i++) {
+            const it = a.items[i];
+            const key = it.k;
+            if (key in b.map) {
+                merged.push(key + (b.map[key] !== null ? '=' + b.map[key] : ''));
+                seen[key] = true;
+            } else {
+                merged.push(key + (it.v !== null ? '=' + it.v : ''));
+                seen[key] = true;
+            }
+        }
+
+        // Append desired-only keys in desired order.
+        for (let i = 0; i < b.items.length; i++) {
+            const it = b.items[i];
+            if (seen[it.k]) continue;
+            merged.push(it.k + (it.v !== null ? '=' + it.v : ''));
+        }
+
+        return 'vpp_qsv=' + merged.join(':');
+    }
+
+    function ensureVideoFiltersInEncodingParameters(videoStream, filtersToApply) {
+        const partsToApply = flattenFilterExpressions(filtersToApply);
+        if (partsToApply.length === 0) return { changed: false, reason: 'no-filters' };
+
+        const ep = videoStream ? videoStream.EncodingParameters : null;
+        if (!ep) return { changed: false, reason: 'no-encoding-params' };
+
+        const tokens = toEnumerableArray(ep, 5000).map(safeTokenString).filter(x => x);
+        let filterArgIndex = -1;
+        for (let i = 0; i < tokens.length - 1; i++) {
+            const t = String(tokens[i] || '').trim();
+            if (t === '-vf' || t.startsWith('-filter:v')) {
+                filterArgIndex = i;
+                break;
+            }
+        }
+
+        const buildDesiredChain = () => {
+            // De-dupe while preserving order.
+            const seen = {};
+            const ordered = [];
+            for (let i = 0; i < partsToApply.length; i++) {
+                const p = partsToApply[i];
+                if (seen[p]) continue;
+                seen[p] = true;
+                ordered.push(p);
+            }
+            return ordered.join(',');
+        };
+
+        if (filterArgIndex < 0) {
+            // No existing filter arg found in EncodingParameters; add one so the executor can pick it up.
+            // Many FileFlows runner versions will skip generating their own default video filter when one is already present.
+            const desired = buildDesiredChain();
+            listAdd(ep, '-filter:v:0');
+            listAdd(ep, desired);
+            return { changed: true, reason: 'added-filter-arg', before: '', after: desired };
+        }
+
+        const before = String(tokens[filterArgIndex + 1] || '').trim();
+        const existingParts = before ? before.split(',').map(x => x.trim()).filter(x => x) : [];
+
+        // If existing is only a format-only scale_qsv and we have a vpp_qsv, replace entirely to avoid redundant format conversion.
+        const isFormatOnlyScaleQsv = (p) => p === 'scale_qsv=format=p010le' || p === 'scale_qsv=format=nv12';
+        const desiredHasVpp = partsToApply.some(p => p.startsWith('vpp_qsv='));
+        if (desiredHasVpp && existingParts.length === 1 && isFormatOnlyScaleQsv(existingParts[0])) {
+            const after = buildDesiredChain();
+            if (after && after !== before) {
+                listSetAt(ep, filterArgIndex + 1, after);
+                return { changed: true, reason: 'replaced-format-only-scale', before, after };
+            }
+            return { changed: false, reason: 'no-change', before, after: before };
+        }
+
+        let mergedParts = existingParts.slice();
+
+        for (let i = 0; i < partsToApply.length; i++) {
+            const desired = partsToApply[i];
+            if (!desired) continue;
+
+            if (desired.startsWith('vpp_qsv=')) {
+                const vppIndex = mergedParts.findIndex(p => p.startsWith('vpp_qsv='));
+                if (vppIndex >= 0) {
+                    mergedParts[vppIndex] = mergeVppQsv(mergedParts[vppIndex], desired);
+                    continue;
+                }
+                const scaleIndex = mergedParts.findIndex(p => isFormatOnlyScaleQsv(p));
+                if (scaleIndex >= 0) {
+                    mergedParts[scaleIndex] = desired;
+                    continue;
+                }
+            }
+
+            if (mergedParts.indexOf(desired) < 0) mergedParts.push(desired);
+        }
+
+        const after = mergedParts.join(',');
+        if (after && after !== before) {
+            listSetAt(ep, filterArgIndex + 1, after);
+            return { changed: true, reason: 'merged', before, after };
+        }
+        return { changed: false, reason: 'no-change', before, after };
+    }
+
     function addVideoFilter(videoStream, filter) {
         if (!filter) return null;
-
-        if (videoStream.Filter && typeof videoStream.Filter.Add === 'function') {
-            videoStream.Filter.Add(filter);
-            return 'Filter.Add';
-        }
-
-        if (listAdd(videoStream.Filters, filter)) {
-            return 'Filters';
-        }
+        // Prefer Filters in FFmpeg Builder "New mode" (some versions still expose Filter/OptionalFilter too).
+        if (listAdd(videoStream.Filters, filter)) return 'Filters';
+        if (listAdd(videoStream.Filter, filter)) return 'Filter';
 
         // OptionalFilter is not reliably applied in all builder modes; prefer it last.
         if (listAdd(videoStream.OptionalFilter, filter)) {
@@ -378,6 +540,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // In hybrid mode (QSV encode + some CPU filters), wrap CPU filters with hwdownload/hwupload.
     const hybridCpuFilters = [];
     const appliedFiltersSummary = [];
+    const appliedFiltersForExecutor = [];
     const hybridCpuFormat = targetBitDepth >= 10 ? 'yuv420p10le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
 
@@ -404,6 +567,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                         return -1;
                     }
                     appliedFiltersSummary.push('deinterlace_qsv');
+                    appliedFiltersForExecutor.push('deinterlace_qsv');
                 }
             } else {
                 Logger.WLog('AutoDeinterlace enabled but ffmpeg path or input file missing; skipping interlace detection');
@@ -434,6 +598,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             }
             Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
             appliedFiltersSummary.push(Variables.applied_denoise);
+            appliedFiltersForExecutor.push(Variables.applied_denoise);
 
             // DEBAND - Removes color banding (essential for animation)
             if (isAnimation && year <= 2010) {
@@ -450,6 +615,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Logger.ILog(`Applied deband filter: ${debandParams}`);
                 Variables.applied_deband = debandParams;
                 appliedFiltersSummary.push(`deband=${debandParams}`);
+                appliedFiltersForExecutor.push(`deband=${debandParams}`);
             }
 
         } else {
@@ -484,6 +650,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     Logger.ELog(`Unable to attach QSV denoise filter; no compatible filter collection found on video stream.`);
                     return -1;
                 }
+                Logger.ILog(`Attached QSV filter via ${addedVia}: ${vppFilter}`);
+                appliedFiltersForExecutor.push(vppFilter);
 
                 Variables.applied_denoise = `vpp_qsv=denoise=${qsvDenoiseValue}`;
                 Variables.qsv_denoise_value = qsvDenoiseValue;
@@ -546,6 +714,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Variables.applied_gradfun = true;
                 appliedFiltersSummary.push(gradfun);
                 Logger.ILog(`Applied gradfun: ${gradfun}`);
+                appliedFiltersForExecutor.push(gradfun);
             }
         }
 
@@ -580,6 +749,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Variables.applied_deband = debandParams;
                 appliedFiltersSummary.push(deband);
                 Logger.ILog(`Applied deband: ${debandParams}`);
+                appliedFiltersForExecutor.push(deband);
             }
         }
     } else {
@@ -594,9 +764,27 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             return -1;
         }
         Variables.applied_hybrid_cpu_filters = hybridCpuFilters.join(',');
+        Logger.ILog(`Attached hybrid CPU filter chain via ${addedVia}: ${hybrid}`);
+        appliedFiltersForExecutor.push(hybrid);
     }
 
     Variables.video_filters = appliedFiltersSummary.join(',');
+
+    // Some FileFlows runner/builder versions (especially FFmpeg Builder "New mode") primarily apply video filters from
+    // EncodingParameters (-filter:v:0), and can ignore script-added Filter/Filters collections. Ensure our computed filters
+    // are present in the encoding filter argument.
+    try {
+        const ensured = ensureVideoFiltersInEncodingParameters(video, appliedFiltersForExecutor);
+        if (ensured.changed) {
+            const b = ensured.before ? ensured.before.substring(0, 220) : '';
+            const a = ensured.after ? ensured.after.substring(0, 220) : '';
+            Logger.WLog(`Injected video filters into EncodingParameters (${ensured.reason}). Before: '${b}' After: '${a}'`);
+        } else {
+            Logger.DLog(`Video filter EncodingParameters unchanged (${ensured.reason}).`);
+        }
+    } catch (err) {
+        Logger.WLog(`Failed ensuring filters in EncodingParameters: ${err}`);
+    }
 
     /**
      * FILTER SUMMARY
