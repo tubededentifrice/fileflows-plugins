@@ -20,10 +20,10 @@ Scripts available as nodes in FileFlows flows. Must follow strict format with co
 
 Community scripts: [community-repository/Scripts/Flow](https://github.com/fileflows/community-repository) cloned in `/Volumes/External/git/community-repository` for easier reference.
 
-### Shared Scripts (`Shared/` directory)
+### Shared Scripts (`Scripts/Shared/` directory)
 Reusable libraries imported by other scripts. Use ES6 module syntax. Official examples: [community-repository/Scripts/Shared](https://github.com/fileflows/community-repository/tree/main/Scripts/Shared)
 ```javascript
-// Export (in Shared/Radarr.js):
+// Export (in Scripts/Shared/Radarr.js):
 export class Radarr { ... }
 
 // Import (in other scripts):
@@ -223,20 +223,21 @@ new System.IO.FileInfo(path).Directory
 ## Repository Structure
 
 ```
-Shared/           - Reusable script libraries (Radarr.js, Sonarr.js)
-Video/            - Video analysis scripts (resolution, bitrate checks)
-*.js (root)       - Flow scripts for FileFlows nodes (Radarr/Sonarr integration, filters, tagging utilities)
+DockerMods/       - Container helper scripts (Docker Mods)
+Scripts/          - FileFlows script root (matches community-repository layout)
+Scripts/Shared/   - Reusable script libraries (Radarr.js, Sonarr.js)
+Scripts/Flow/     - Flow scripts available as nodes
 ```
 
 ### Key Scripts
-- `Radarr - Movie search.js` / `Sonarr - TV Show search.js` - Look up media metadata from *arr apps
-- `Radarr - Refresh.js` / `Sonarr - Refresh.js` - Notify *arr apps after processing
-- `Cleaning filters.js` - Adaptive filters: QSV `vpp_qsv=denoise` (merged into crop/format vpp when needed) + optional `deinterlace_qsv` (auto-detect via `idet`), plus CPU deband/gradfun via safe hwdownload/hwupload when enabled; also ensures the computed video filters are present in FFmpeg Builder "New mode" by updating `VideoStreams[0].EncodingParameters` (`-filter:v:0`) when required
-- `Auto quality.js` - VMAF-based automatic CRF detection using Netflix's quality metric. Uses binary search to find optimal CRF meeting target VMAF (content-aware: animation/old films get lower targets). Requires FFmpeg with libvmaf; includes silent FFmpeg feature probes to avoid log spam. Sampling supports QSV filters by initializing QSV + inserting hwupload/hwdownload as needed (downloads to NV12/P010 then converts to the requested software pix fmt; software-only fallback if hw filters fail). Adds `-nostats` during metric runs to reduce log spam.
-- `Audio - Auto tag missing language.js` - Detects missing/`und` (or force re-tags via `Variables['AudioLangID.ForceRetag']`) audio track languages using heuristics + offline LID (SpeechBrain; whisper.cpp fallback) and tags tracks via `mkvpropedit` (MKV) or ffmpeg remux; sample timing can be overridden via `Variables['AudioLangID.SampleStartSeconds']` / `Variables['AudioLangID.SampleDurationSeconds']`.
-- `FFmpegDockerMod.sh` - Container helper to install an FFmpeg that supports the filters/encoders required by `Cleaning filters.js` and `Auto quality.js` (QSV/VAAPI, OpenCL runtime deps best-effort, and metrics like `libvmaf`/`ssim`). Installs Jellyfin + BtbN builds and sets `/usr/local/bin/ffmpeg` to either the best single build or a small selector wrapper (`FFMPEG_FORCE=jellyfin|btbn`).
-- `AudioLangIDDockerMod.sh` - Container helper to install offline audio language detection tools used by `Audio - Auto tag missing language.js` (`mkvpropedit`, SpeechBrain LID wrapper, whisper.cpp fallback, and cached models); installs Python deps into a venv under `/opt/fileflows-langid/venv` to avoid PEP 668 pip failures (pins `huggingface_hub` for SpeechBrain compatibility and forces caches under `/opt/fileflows-langid`), symlinks wrappers into `/usr/bin` in case `/usr/local/bin` isn’t on `PATH`, and creates an uninstall shim named `"<script> --uninstall"` to work around FileFlows sudo quoting during DockerMod uninstall.
-- `Video/*.js` - Bitrate (MiB/hour) and resolution detection utilities
+- `Scripts/Flow/Applications/Radarr/Radarr - Movie Lookup.js` / `Scripts/Flow/Applications/Sonarr/Sonarr - TV Show Lookup.js` - Look up media metadata from *arr apps
+- `Scripts/Flow/Applications/Radarr/Radarr - Refresh.js` / `Scripts/Flow/Applications/Sonarr/Sonarr - Refresh.js` - Notify *arr apps after processing
+- `Scripts/Flow/Video/Video - Cleaning Filters.js` - Adaptive filters: QSV `vpp_qsv=denoise` (merged into crop/format vpp when needed) + optional `deinterlace_qsv` (auto-detect via `idet`), plus CPU deband/gradfun via safe hwdownload/hwupload when enabled; also ensures the computed video filters are present in FFmpeg Builder "New mode" by updating `VideoStreams[0].EncodingParameters` (`-filter:v:0`) when required
+- `Scripts/Flow/Video/Video - Auto Quality.js` - VMAF-based automatic CRF detection using Netflix's quality metric. Uses binary search to find optimal CRF meeting target VMAF (content-aware: animation/old films get lower targets). Requires FFmpeg with libvmaf; includes silent FFmpeg feature probes to avoid log spam. Sampling supports QSV filters by initializing QSV + inserting hwupload/hwdownload as needed (downloads to NV12/P010 then converts to the requested software pix fmt; software-only fallback if hw filters fail). Adds `-nostats` during metric runs to reduce log spam.
+- `Scripts/Flow/Video/Video - Auto Tag Missing Language.js` - Detects missing/`und` (or force re-tags via `Variables['AudioLangID.ForceRetag']`) audio track languages using heuristics + offline LID (SpeechBrain; whisper.cpp fallback) and tags tracks via `mkvpropedit` (MKV) or ffmpeg remux; sample timing can be overridden via `Variables['AudioLangID.SampleStartSeconds']` / `Variables['AudioLangID.SampleDurationSeconds']`.
+- `DockerMods/FFmpegDockerMod.sh` - Container helper to install an FFmpeg that supports the filters/encoders required by `Scripts/Flow/Video/Video - Cleaning Filters.js` and `Scripts/Flow/Video/Video - Auto Quality.js` (QSV/VAAPI, OpenCL runtime deps best-effort, and metrics like `libvmaf`/`ssim`). Installs Jellyfin + BtbN builds and sets `/usr/local/bin/ffmpeg` to either the best single build or a small selector wrapper (`FFMPEG_FORCE=jellyfin|btbn`).
+- `DockerMods/AudioLangIDDockerMod.sh` - Container helper to install offline audio language detection tools used by `Scripts/Flow/Video/Video - Auto Tag Missing Language.js` (`mkvpropedit`, SpeechBrain LID wrapper, whisper.cpp fallback, and cached models); installs Python deps into a venv under `/opt/fileflows-langid/venv` to avoid PEP 668 pip failures (pins `huggingface_hub` for SpeechBrain compatibility and forces caches under `/opt/fileflows-langid`), symlinks wrappers into `/usr/bin` in case `/usr/local/bin` isn’t on `PATH`, and creates an uninstall shim named `"<script> --uninstall"` to work around FileFlows sudo quoting during DockerMod uninstall.
+- `Scripts/Flow/Video/*.js` - Bitrate (MiB/hour) and resolution detection utilities
 
 ## Integration Pattern
 
