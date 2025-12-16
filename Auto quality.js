@@ -49,7 +49,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 11
+ * @revision 12
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -845,15 +845,133 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         if (encSig.includes('h264') || encSig.includes('x264') || encSig.includes('avc')) testEncoder = 'libx264';
         else if (encSig.includes('av1')) testEncoder = 'libsvtav1';
 
-        const needsQsv = /(^|[,\\s])(?:scale_qsv|vpp_qsv|deinterlace_qsv|tonemap_qsv)\\b/i.test(String(upstreamFilters || '')) || /_qsv\\b/i.test(String(upstreamFilters || ''));
+        const upstreamFiltersStr = String(upstreamFilters || '').trim();
 
-        function buildEncodeArgs(posSeconds, qualityValue, outputFile) {
+        function detectNeedsQsv(filters) {
+            const s = String(filters || '').trim();
+            if (!s) return false;
+            return (
+                /(^|[,\\s])(?:scale_qsv|vpp_qsv|deinterlace_qsv|tonemap_qsv)\\b/i.test(s) ||
+                /\\b(?:hwupload|hwdownload)\\b/i.test(s) ||
+                /_qsv\\b/i.test(s)
+            );
+        }
+
+        const upstreamNeedsQsv = detectNeedsQsv(upstreamFiltersStr);
+
+        function splitFilterChain(chain) {
+            // Best-effort split on unescaped commas. This matches how FileFlows typically emits filter strings.
+            const s = String(chain || '');
+            const parts = [];
+            let cur = '';
+            let escaped = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (escaped) {
+                    cur += ch;
+                    escaped = false;
+                    continue;
+                }
+                if (ch === '\\\\') {
+                    cur += ch;
+                    escaped = true;
+                    continue;
+                }
+                if (ch === ',') {
+                    const t = cur.trim();
+                    if (t) parts.push(t);
+                    cur = '';
+                    continue;
+                }
+                cur += ch;
+            }
+            const tail = cur.trim();
+            if (tail) parts.push(tail);
+            return parts;
+        }
+
+        function isHwuploadSegment(seg) {
+            return /^hwupload(=|$)/i.test(String(seg || '').trim());
+        }
+
+        function isHwdownloadSegment(seg) {
+            return /^hwdownload(=|$)/i.test(String(seg || '').trim());
+        }
+
+        function isQsvFilterSegment(seg) {
+            const s = String(seg || '').trim().toLowerCase();
+            if (!s) return false;
+            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
+            // Any other *_qsv filter (eg: overlay_qsv) should be treated as hardware-only.
+            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
+            return false;
+        }
+
+        function buildSamplingFilterGraph(filters) {
+            let vf = String(filters || '').trim();
+            if (!vf) return '';
+            const qsvRequired = detectNeedsQsv(vf);
+            if (!qsvRequired) return vf;
+
+            const segments = splitFilterChain(vf);
+            if (segments.length === 0) return '';
+
+            // Insert upload before the first QSV filter (so any leading crop/scale runs in software).
+            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
+            let firstQsv = -1;
+            for (let i = 0; i < segments.length; i++) {
+                if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; }
+            }
+            if (firstQsv < 0) firstQsv = 0;
+
+            let hasHwuploadBefore = false;
+            for (let i = 0; i < firstQsv; i++) {
+                if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; }
+            }
+            if (!hasHwuploadBefore) {
+                segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64');
+            }
+
+            // Ensure we return to system memory for software encoding (and any trailing software filters).
+            let lastQsv = -1;
+            for (let i = segments.length - 1; i >= 0; i--) {
+                if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; }
+            }
+            if (lastQsv < 0) lastQsv = segments.length - 1;
+
+            let hasHwdownloadAfter = false;
+            for (let i = lastQsv + 1; i < segments.length; i++) {
+                if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; }
+            }
+            if (!hasHwdownloadAfter) {
+                segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${pixFmt}`);
+            }
+
+            return segments.join(',');
+        }
+
+        function stripQsvOnlyFilters(filters) {
+            const vf = String(filters || '').trim();
+            if (!vf) return '';
+            const segs = splitFilterChain(vf);
+            const kept = [];
+            for (let i = 0; i < segs.length; i++) {
+                const seg = segs[i];
+                if (isQsvFilterSegment(seg)) continue;
+                if (isHwuploadSegment(seg) || isHwdownloadSegment(seg)) continue;
+                kept.push(seg);
+            }
+            return kept.join(',');
+        }
+
+        function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
             const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const qsvRequired = detectNeedsQsv(filters);
 
-            if (needsQsv) {
+            if (qsvRequired) {
                 // Best-effort QSV init so qsv filters work even when decoding happens in software.
                 // We intentionally do NOT force QSV decoding here; instead we hwupload frames for qsv filters.
-                args.push('-init_hw_device', 'qsv=gpu', '-filter_hw_device', 'gpu');
+                args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
             }
 
             args.push('-ss', String(Math.floor(posSeconds)));
@@ -861,21 +979,8 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             args.push('-t', String(sampleDur));
             args.push('-map', '0:v:0');
 
-            let vf = String(upstreamFilters || '').trim();
+            const vf = buildSamplingFilterGraph(filters);
             if (vf) {
-                if (needsQsv) {
-                    // vpp_qsv/scale_qsv require a hw context. When decoding is software (common for MOV/H.264),
-                    // prepend hwupload and append hwdownload so we can still use a software encoder for testing.
-                    if (!/\\bhwupload\\b/i.test(vf)) {
-                        vf = `hwupload=extra_hw_frames=64,${vf}`;
-                    }
-                    if (!/\\bhwdownload\\b/i.test(vf)) {
-                        vf = `${vf},hwdownload,format=${pixFmt}`;
-                    } else if (!/format=/.test(vf)) {
-                        // If upstream already hwdownloads but doesn't specify a software pixel format, keep it deterministic.
-                        vf = `${vf},format=${pixFmt}`;
-                    }
-                }
                 args.push('-vf', vf);
             }
 
@@ -903,28 +1008,57 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const referenceSample = `${tempDir}/${sampleId}_reference.mkv`;
 
             try {
-                // Extra high quality reference transcode (with the same upstream filters).
-                const refResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(pos, referenceCrf, referenceSample),
-                    timeout: 600
-                });
+	                const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
+	                let activeFilters = upstreamFiltersStr;
+	                let filterMode = 'upstream';
+
+                function runEncodeSample(qualityValue, outFile, which) {
+                    return Flow.Execute({
+                        command: ffmpegEncode,
+                        argumentList: buildEncodeArgs(pos, qualityValue, outFile, activeFilters),
+                        timeout: 600
+                    });
+                }
+
+	                // Extra high quality reference transcode (with the same upstream filters).
+	                let refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
+	                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
+	                    Logger.WLog(`Reference sample failed with QSV filters at ${pos}s; retrying with software-only filters for sampling`);
+	                    activeFilters = softwareFilters;
+	                    filterMode = 'software-fallback';
+	                    refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
+	                }
 
                 if (refResult.exitCode !== 0) {
                     Logger.WLog(`Failed to encode reference sample at ${pos}s (crf=${referenceCrf})`);
                     continue;
                 }
 
-                // Candidate transcode.
-                const encResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(pos, crf, encodedSample),
-                    timeout: 600
-                });
+	                // Candidate transcode.
+	                let encResult = runEncodeSample(crf, encodedSample, 'encoded');
+	                if (encResult.exitCode !== 0 && filterMode === 'upstream' && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
+	                    // Keep reference and encoded consistent: redo both in software-only mode.
+	                    Logger.WLog(`Encoded sample failed with QSV filters at CRF ${crf}, ${pos}s; retrying with software-only filters for sampling`);
+	                    cleanupFiles([encodedSample, referenceSample]);
+	                    activeFilters = softwareFilters;
+	                    filterMode = 'software-fallback';
+                    refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
+                    if (refResult.exitCode !== 0) {
+                        Logger.WLog(`Failed to encode reference sample (software fallback) at ${pos}s (crf=${referenceCrf})`);
+                        continue;
+                    }
+                    encResult = runEncodeSample(crf, encodedSample, 'encoded');
+                }
 
                 if (encResult.exitCode !== 0) {
                     Logger.WLog(`Failed to encode sample at CRF ${crf}, pos ${pos}s`);
                     continue;
+                }
+
+                if (filterMode === 'software-fallback') {
+                    Variables.AutoQuality_FilterMode = 'software-fallback';
+                } else if (!Variables.AutoQuality_FilterMode) {
+                    Variables.AutoQuality_FilterMode = 'upstream';
                 }
 
                 let filterComplex;
