@@ -1,22 +1,24 @@
 /**
- * @description Keeps only audio/subtitle tracks matching the original language or specified additional languages. 
- *              Tracks are reordered: original language first, then in the order specified. Non-matching tracks are marked for deletion.
+ * @description Keeps only audio tracks matching the original language or specified additional languages.
+ *              Unknown-language audio tracks are kept unless an original-language audio track exists (then unknown audio is removed).
+ *              Subtitle tracks are NEVER deleted; they are only reordered using the same language priority rules as audio.
+ *              Tracks are reordered: original language first (preserving relative order within each language), then additional languages in provided order, then unknown.
  *              Requires "Movie Lookup"/"TV Show Lookup" node to be executed first to set Variables.OriginalLanguage.
  * @author Vincent Courcelle
- * @revision 1
+ * @revision 2
  * @minimumVersion 24.0.0.0
- * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Original language is always kept first.
+ * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Also accepts an array (e.g., ["eng","fra"]). Original language is always kept first.
  * @param {bool} ProcessAudio Apply to audio streams (default: true)
- * @param {bool} ProcessSubtitles Apply to subtitle streams (default: true)
- * @param {bool} TreatUnknownAsBad Treat tracks with no language set as unwanted (delete them). If false, unknown tracks are kept.
- * @param {bool} KeepFirstIfNoneMatch If no tracks match any language, keep the first track of each type to avoid empty streams.
- * @param {bool} ReorderTracks Reorder tracks so original language comes first, then additional languages in order specified. If false, only deletion is applied.
- * @output Tracks were modified (deleted or reordered)
+ * @param {bool} ProcessSubtitles Reorder subtitle streams (default: true). Subtitles are always kept.
+ * @param {bool} TreatUnknownAsBad Deprecated/ignored (unknown-language audio is kept unless original-language audio exists)
+ * @param {bool} KeepFirstIfNoneMatch If no audio tracks match any language, keep the first audio track to avoid empty audio.
+ * @param {bool} ReorderTracks Reorder tracks so original language comes first, then additional languages in order specified.
+ * @output Tracks were modified (deleted/undeleted or reordered)
  * @output No changes were made
  * @output No original language found (lookup node not executed?)
  */
 function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknownAsBad, KeepFirstIfNoneMatch, ReorderTracks) {
-    Logger.ILog('Video - Language Based Track Selection.js revision 1 loaded');
+    Logger.ILog('Video - Language Based Track Selection.js revision 2 loaded');
 
     // =========================================================================
     // CONFIGURATION DEFAULTS
@@ -81,9 +83,13 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
      */
     function languagesMatch(lang1, lang2) {
         if (!lang1 || !lang2) return false;
-        const iso2_1 = normalizeToIso2(lang1);
-        const iso2_2 = normalizeToIso2(lang2);
-        return iso2_1 === iso2_2;
+        try {
+            return LanguageHelper.AreSame(lang1, lang2) === true;
+        } catch (err) {
+            const iso2_1 = normalizeToIso2(lang1);
+            const iso2_2 = normalizeToIso2(lang2);
+            return iso2_1 === iso2_2;
+        }
     }
 
     /**
@@ -93,21 +99,33 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
     function getLanguagePriority(streamLang, originalLang, additionalLangs) {
         if (!streamLang) return additionalLangs.length + 2; // Unknown at end
 
-        const iso2 = normalizeToIso2(streamLang);
-        const origIso2 = normalizeToIso2(originalLang);
-
-        // Original language always first
-        if (iso2 === origIso2) return 0;
+        if (languagesMatch(streamLang, originalLang)) return 0;
 
         // Additional languages in order specified
         for (let i = 0; i < additionalLangs.length; i++) {
-            if (iso2 === normalizeToIso2(additionalLangs[i])) {
+            if (languagesMatch(streamLang, additionalLangs[i])) {
                 return i + 1;
             }
         }
 
-        // Not in list
         return additionalLangs.length + 10;
+    }
+
+    function stableSortStreamsByLanguagePreference(streams, originalLang, additionalLangs) {
+        const decorated = [];
+        for (let i = 0; i < streams.length; i++) {
+            const stream = streams[i];
+            if (!stream) continue;
+            const priority = getLanguagePriority(stream.Language, originalLang, additionalLangs);
+            decorated.push({ stream, priority, index: i });
+        }
+
+        decorated.sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            return a.index - b.index;
+        });
+
+        return decorated.map(x => x.stream);
     }
 
     /**
@@ -149,15 +167,28 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
     // PARSE ADDITIONAL LANGUAGES
     // =========================================================================
     const additionalLangs = [];
-    if (AdditionalLanguages && typeof AdditionalLanguages === 'string') {
-        const parts = AdditionalLanguages.split(',').map(s => s.trim()).filter(s => s);
-        for (const lang of parts) {
-            const iso2 = normalizeToIso2(lang);
-            if (iso2 && iso2 !== originalLangIso2) {
-                additionalLangs.push(iso2);
-                Logger.ILog(`Additional language: ${lang} -> ${iso2}`);
-            }
+    let additionalTokens = [];
+
+    if (AdditionalLanguages) {
+        if (Array.isArray(AdditionalLanguages)) {
+            additionalTokens = AdditionalLanguages;
+        } else if (typeof AdditionalLanguages === 'string') {
+            additionalTokens = AdditionalLanguages.split(',');
+        } else {
+            additionalTokens = toArray(AdditionalLanguages, 200);
         }
+    }
+
+    for (let i = 0; i < additionalTokens.length; i++) {
+        const raw = String(additionalTokens[i] || '').trim();
+        if (!raw) continue;
+
+        const iso2 = normalizeToIso2(raw);
+        if (!iso2 || iso2 === originalLangIso2) continue;
+
+        if (additionalLangs.indexOf(iso2) >= 0) continue;
+        additionalLangs.push(iso2);
+        Logger.ILog(`Additional language: ${raw} -> ${iso2}`);
     }
 
     // Build allowed languages set (original + additional)
@@ -174,6 +205,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
     }
 
     let totalDeleted = 0;
+    let totalUndeleted = 0;
     let totalReordered = 0;
 
     // =========================================================================
@@ -189,19 +221,23 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
             Logger.ILog(`  Audio[${i}] Lang=${a.Language || 'und'} Codec=${a.Codec} Deleted=${a.Deleted}`);
         }
 
-        // Determine which streams to keep
         const toKeep = [];
         const toDelete = [];
+
+        const hasOriginalLanguageAudio = audioStreams.some(a => a && a.Language && languagesMatch(a.Language, originalLang));
+        if (hasOriginalLanguageAudio) {
+            Logger.ILog('Original-language audio track found; unknown-language audio will be removed');
+        } else {
+            Logger.ILog('No original-language audio track found; unknown-language audio will be kept');
+        }
 
         for (const audio of audioStreams) {
             if (!audio) continue;
 
             const lang = audio.Language;
-            const iso2 = normalizeToIso2(lang);
 
             if (!lang) {
-                // Unknown language
-                if (TreatUnknownAsBad) {
+                if (hasOriginalLanguageAudio) {
                     toDelete.push(audio);
                 } else {
                     toKeep.push(audio);
@@ -209,6 +245,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
                 continue;
             }
 
+            const iso2 = normalizeToIso2(lang);
             if (allowedLangs.has(iso2)) {
                 toKeep.push(audio);
             } else {
@@ -216,43 +253,38 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
             }
         }
 
-        // Safety: keep first if none match
-        if (toKeep.length === 0 && KeepFirstIfNoneMatch && audioStreams.length > 0) {
-            Logger.WLog('No audio tracks match allowed languages; keeping first track');
-            const first = toDelete.shift();
-            if (first) toKeep.push(first);
+        if (toKeep.length === 0 && KeepFirstIfNoneMatch) {
+            const firstAudio = audioStreams.find(a => !!a);
+            if (firstAudio) {
+                Logger.WLog('No audio tracks match allowed languages; keeping first audio track');
+                const idx = toDelete.indexOf(firstAudio);
+                if (idx >= 0) toDelete.splice(idx, 1);
+                toKeep.push(firstAudio);
+            }
         }
 
-        // Sort kept streams by language priority
-        if (ReorderTracks && toKeep.length > 1) {
-            toKeep.sort((a, b) => {
-                const pa = getLanguagePriority(a.Language, originalLang, additionalLangs);
-                const pb = getLanguagePriority(b.Language, originalLang, additionalLangs);
-                return pa - pb;
-            });
-        }
+        const sortedKeep = (ReorderTracks && toKeep.length > 1)
+            ? stableSortStreamsByLanguagePreference(toKeep, originalLang, additionalLangs)
+            : toKeep;
 
-        // Mark deleted streams
         for (const audio of toDelete) {
-            if (!audio.Deleted) {
+            if (audio.Deleted !== true) {
                 audio.Deleted = true;
                 totalDeleted++;
                 Logger.ILog(`  Deleting audio: ${audio.Language || 'unknown'}`);
             }
         }
 
-        // Ensure kept streams are not deleted
-        for (const audio of toKeep) {
+        for (const audio of sortedKeep) {
+            if (audio.Deleted === true) totalUndeleted++;
             audio.Deleted = false;
         }
 
-        // Try to reorder the list (may not work depending on FileFlows version)
-        if (ReorderTracks && toKeep.length > 1) {
-            // Build full ordered list: kept (sorted) + deleted (original order)
-            const orderedAll = [...toKeep, ...toDelete];
+        if (ReorderTracks && sortedKeep.length > 1) {
+            const orderedAll = [...sortedKeep, ...toDelete];
             if (tryReorderNetList(ffModel.AudioStreams, orderedAll)) {
-                totalReordered += toKeep.length;
-                Logger.ILog(`  Reordered ${toKeep.length} audio streams`);
+                totalReordered += sortedKeep.length;
+                Logger.ILog(`  Reordered ${sortedKeep.length} audio streams`);
             } else {
                 Logger.WLog('  Could not reorder audio streams (list manipulation not supported)');
             }
@@ -270,7 +302,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
     // =========================================================================
     // PROCESS SUBTITLE STREAMS
     // =========================================================================
-    if (ProcessSubtitles && ffModel.SubtitleStreams) {
+    if (ffModel.SubtitleStreams) {
         const subtitleStreams = toArray(ffModel.SubtitleStreams, 100);
         Logger.ILog(`Processing ${subtitleStreams.length} subtitle stream(s)`);
 
@@ -280,68 +312,21 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
             Logger.ILog(`  Sub[${i}] Lang=${s.Language || 'und'} Codec=${s.Codec} Deleted=${s.Deleted}`);
         }
 
-        // Determine which streams to keep
-        const toKeep = [];
-        const toDelete = [];
+        const subtitles = subtitleStreams.filter(s => !!s);
 
-        for (const sub of subtitleStreams) {
-            if (!sub) continue;
-
-            const lang = sub.Language;
-            const iso2 = normalizeToIso2(lang);
-
-            if (!lang) {
-                if (TreatUnknownAsBad) {
-                    toDelete.push(sub);
-                } else {
-                    toKeep.push(sub);
-                }
-                continue;
-            }
-
-            if (allowedLangs.has(iso2)) {
-                toKeep.push(sub);
-            } else {
-                toDelete.push(sub);
-            }
-        }
-
-        // Safety: keep first if none match
-        if (toKeep.length === 0 && KeepFirstIfNoneMatch && subtitleStreams.length > 0) {
-            Logger.WLog('No subtitle tracks match allowed languages; keeping first track');
-            const first = toDelete.shift();
-            if (first) toKeep.push(first);
-        }
-
-        // Sort kept streams by language priority
-        if (ReorderTracks && toKeep.length > 1) {
-            toKeep.sort((a, b) => {
-                const pa = getLanguagePriority(a.Language, originalLang, additionalLangs);
-                const pb = getLanguagePriority(b.Language, originalLang, additionalLangs);
-                return pa - pb;
-            });
-        }
-
-        // Mark deleted streams
-        for (const sub of toDelete) {
-            if (!sub.Deleted) {
-                sub.Deleted = true;
-                totalDeleted++;
-                Logger.ILog(`  Deleting subtitle: ${sub.Language || 'unknown'}`);
-            }
-        }
-
-        // Ensure kept streams are not deleted
-        for (const sub of toKeep) {
+        for (const sub of subtitles) {
+            if (sub.Deleted === true) totalUndeleted++;
             sub.Deleted = false;
         }
 
-        // Try to reorder
-        if (ReorderTracks && toKeep.length > 1) {
-            const orderedAll = [...toKeep, ...toDelete];
-            if (tryReorderNetList(ffModel.SubtitleStreams, orderedAll)) {
-                totalReordered += toKeep.length;
-                Logger.ILog(`  Reordered ${toKeep.length} subtitle streams`);
+        const sortedSubs = (ProcessSubtitles && ReorderTracks && subtitles.length > 1)
+            ? stableSortStreamsByLanguagePreference(subtitles, originalLang, additionalLangs)
+            : subtitles;
+
+        if (ProcessSubtitles && ReorderTracks && sortedSubs.length > 1) {
+            if (tryReorderNetList(ffModel.SubtitleStreams, sortedSubs)) {
+                totalReordered += sortedSubs.length;
+                Logger.ILog(`  Reordered ${sortedSubs.length} subtitle streams`);
             } else {
                 Logger.WLog('  Could not reorder subtitle streams (list manipulation not supported)');
             }
@@ -366,15 +351,16 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
     Variables['TrackSelection.AdditionalLanguages'] = additionalLangs.join(',');
     Variables['TrackSelection.AllowedLanguages'] = Array.from(allowedLangs).join(',');
     Variables['TrackSelection.DeletedCount'] = totalDeleted;
+    Variables['TrackSelection.UndeletedCount'] = totalUndeleted;
     Variables['TrackSelection.ReorderedCount'] = totalReordered;
 
     // =========================================================================
     // FORCE ENCODE IF CHANGES WERE MADE
     // =========================================================================
-    const hasChanges = totalDeleted > 0 || totalReordered > 0;
+    const hasChanges = totalDeleted > 0 || totalUndeleted > 0 || totalReordered > 0;
     if (hasChanges) {
         ffModel.ForceEncode = true;
-        Logger.ILog(`Track selection complete: ${totalDeleted} deleted, ${totalReordered} reordered`);
+        Logger.ILog(`Track selection complete: ${totalDeleted} deleted, ${totalUndeleted} undeleted, ${totalReordered} reordered`);
         return 1;
     }
 
@@ -401,6 +387,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
  * Variables['TrackSelection.DeletedCount']
  *   - Number of streams marked for deletion
  * 
+ * Variables['TrackSelection.UndeletedCount']
+ *   - Number of streams un-deleted (Deleted=true -> Deleted=false)
+ * 
  * Variables['TrackSelection.ReorderedCount']
  *   - Number of streams reordered (0 if reordering not supported/disabled)
  * 
@@ -411,8 +400,17 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknow
  * Tracks are ordered as follows (if ReorderTracks is enabled):
  *   1. Original language tracks (in original file order if multiple)
  *   2. Additional language tracks (in order specified in AdditionalLanguages)
- *   3. Unknown language tracks (if TreatUnknownAsBad is false)
- *   4. Deleted tracks (marked with Deleted=true, won't be in output)
+ *   3. Unknown language tracks
+ *   4. Other languages (subtitles only)
+ *   5. Deleted tracks (audio only; marked with Deleted=true, won't be in output)
+ *
+ * AUDIO unknown-language rule:
+ *   - Unknown-language audio tracks are kept only when NO original-language audio track exists.
+ *   - If an original-language audio track exists, unknown-language audio tracks are marked Deleted=true.
+ *
+ * SUBTITLES:
+ *   - Subtitle tracks are never deleted by this script.
+ *   - Any existing Deleted=true flags on subtitle streams are cleared (Deleted=false).
  * 
  * Note: Reordering depends on FileFlows supporting .NET List<T>.Clear/Add operations.
  * If not supported, only deletion is applied and tracks remain in original order.
