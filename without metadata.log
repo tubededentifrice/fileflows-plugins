@@ -1,0 +1,2234 @@
+==============================================================================
+===                      PROCESSING NODE OUTPUT START                      ===
+==============================================================================
+FlowRunner Pipe: runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+Starting JSON RPC Client
+Initializing JSON RPC Client
+Json Message Sent: {"Id":1,"Method":"GetRunnerParameters","Params":[]}
+Initialized JSON RPC Client
+2025-12-16 22:18:01.364 [INFO] -> Flow Runner Version: 25.11.9.6081
+Got Run Instance
+Starting run
+2025-12-16 22:18:01.369 [INFO] -> Base URL: http://localhost:5000
+2025-12-16 22:18:01.369 [INFO] -> Temp Path: /temp
+2025-12-16 22:18:01.369 [INFO] -> Configuration Path: /app/Data/Data/Config/188072272
+2025-12-16 22:18:01.370 [INFO] -> Configuration File: /app/Data/Data/Config/188072272/config.json
+2025-12-16 22:18:01.370 [INFO] -> Loading encrypted config
+2025-12-16 22:18:01.408 [INFO] -> Docker: True
+2025-12-16 22:18:01.408 [INFO] -> Config Revision: 188072272
+Json Message Sent: {"Id":2,"Method":"GetNode","Params":[]}
+Json Message Received: {"Id":2,"Result":{"TempPath":"/temp","Address":"FileFlowsServer","Icon":null,"LastSeen":"2025-12-16T16:40:05.6728024Z","Enabled":true,"Priority":20,"OperatingSystem":4,"Architecture":2,"Version":"25.11.9.6081","PreExecuteScript":null,"FlowRunners":3,"ProcessingOrder":null,"SignalrUrl":"flow","Mappings":null,"Variables":[],"Schedule":"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000001111111111111111111111111111111111111111111111111111111111111111111111111111111111110000000000001111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","DisableSchedule":false,"DontChangeOwner":false,"DontSetPermissions":false,"Permissions":null,"HardwareInfo":null,"PermissionsFiles":null,"PermissionsFolders":null,"AllLibraries":0,"Libraries":[],"MaxFileSizeMb":0,"ProcessedFiles":0,"Status":0,"Uid":"bf47da28-051e-452e-ad21-c6a3f477fea9","Name":"FileFlowsServer","DateCreated":"2025-01-04T06:33:58Z","DateModified":"2025-12-16T16:40:07Z"}}
+2025-12-16 22:18:01.428 [INFO] -> Flow: Transcode video v2
+2025-12-16 22:18:01.428 [INFO] -> IsDirectory: False
+2025-12-16 22:18:01.431 [INFO] -> FileExists: True
+2025-12-16 22:18:01.431 [INFO] -> Initial Size:13547832935
+2025-12-16 22:18:01.431 [INFO] -> Making FlowExecutorInfo
+2025-12-16 22:18:01.432 [INFO] -> Start Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.432 [INFO] -> Initial Size: 13547832935
+2025-12-16 22:18:01.432 [INFO] -> File Service: LocalFileService
+2025-12-16 22:18:01.432 [INFO] -> Initial Total Parts: 36
+2025-12-16 22:18:01.432 [INFO] -> Creating runner
+2025-12-16 22:18:01.432 [INFO] -> Starting runner
+2025-12-16 22:18:01.437 [INFO] -> Adding Custom Variable: AudioLangID.ForceRetag = True
+2025-12-16 22:18:01.438 [INFO] -> ToolPathVariable 'rar' = 'rar'
+2025-12-16 22:18:01.438 [INFO] -> Tool 'rar' variable = 'rar'
+2025-12-16 22:18:01.438 [INFO] -> ToolPathVariable 'unrar' = 'unrar'
+2025-12-16 22:18:01.438 [INFO] -> Tool 'unrar' variable = 'unrar'
+2025-12-16 22:18:01.438 [INFO] -> ToolPathVariable '7zip' = '7z'
+2025-12-16 22:18:01.438 [INFO] -> Tool '7zip' variable = '7z'
+2025-12-16 22:18:01.468 [INFO] -> Increasing total flow parts by: 2
+2025-12-16 22:18:01.482 [INFO] -> ======================================================================
+2025-12-16 22:18:01.483 [INFO] -> Executing Flow Element 1: Startup [FileFlows.FlowRunner.RunnerFlowElements.Startup]
+2025-12-16 22:18:01.483 [INFO] -> ======================================================================
+2025-12-16 22:18:01.483 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.484 [INFO] -> Initing file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.485 [INFO] -> init not done
+2025-12-16 22:18:01.487 [INFO] -> Version: 25.11.9.6081
+2025-12-16 22:18:01.487 [INFO] -> Platform: Docker
+2025-12-16 22:18:01.487 [INFO] -> File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.487 [INFO] -> File Service: LocalFileService
+2025-12-16 22:18:01.487 [INFO] -> Processing Node: FileFlowsServer
+2025-12-16 22:18:01.487 [INFO] -> License: Free
+lspci: Unable to load libkmod resources: error -2
+/bin/bash: line 1: glxinfo: command not found
+2025-12-16 22:18:01.640 [INFO] -> Hardware Info:
+Operating System: Ubuntu
+OS Version: 24.04
+Architecture: X64
+Processor: Ryzen 9 7900X
+Core Count: 24
+GPUs:
+Vendor: AMD
+Model: Raphael rev c2
+Memory: 0 bytes
+Driver Version: 
+Vendor: Intel
+Model: Arc A380
+Memory: 6442450944 bytes
+Driver Version: 
+2025-12-16 22:18:01.640 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.640 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.652 [INFO] -> FFmpeg: 7.1.3-Jellyfin
+2025-12-16 22:18:01.652 [INFO] -> Variables['library.Name'] = Tests
+2025-12-16 22:18:01.652 [INFO] -> Variables['library.Path'] = /data/media/transcode-tests/
+2025-12-16 22:18:01.652 [INFO] -> Variables['common'] = /app/common
+2025-12-16 22:18:01.652 [INFO] -> Variables['AudioLangID.ForceRetag'] = True
+2025-12-16 22:18:01.652 [INFO] -> Variables['ffmpeg'] = /usr/local/bin/ffmpeg
+2025-12-16 22:18:01.652 [INFO] -> Variables['ffprobe'] = /usr/local/bin/ffprobe
+2025-12-16 22:18:01.652 [INFO] -> Variables['unrar'] = unrar
+2025-12-16 22:18:01.652 [INFO] -> Variables['rar'] = rar
+2025-12-16 22:18:01.652 [INFO] -> Variables['7zip'] = 7z
+2025-12-16 22:18:01.652 [INFO] -> Variables['ffmpeg_vmaf'] = /app/common/ffmpeg-static/ffmpeg
+2025-12-16 22:18:01.652 [INFO] -> Variables['temp'] = /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+2025-12-16 22:18:01.652 [INFO] -> Variables['ExecutedFlowElements'] = System.Collections.Generic.List`1[FileFlows.Shared.Models.ExecutedNode]
+2025-12-16 22:18:01.652 [INFO] -> Variables['FlowName'] = 
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.OriginalName'] = /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.652 [INFO] -> Variables['ext'] = .mkv
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.Name'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.NameNoExtension'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.FullName'] = /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.Extension'] = .mkv
+2025-12-16 22:18:01.652 [INFO] -> Variables['file.Size'] = 13547832935
+2025-12-16 22:18:01.652 [INFO] -> Variables['folder.Name'] = transcode-tests
+2025-12-16 22:18:01.652 [INFO] -> Variables['folder.FullName'] = /data/media/transcode-tests
+2025-12-16 22:18:01.653 [INFO] -> Variables['ORIGINAL_CREATE_UTC'] = 12/16/2025 17:58:38
+2025-12-16 22:18:01.653 [INFO] -> Variables['ORIGINAL_LAST_WRITE_UTC'] = 12/16/2025 17:58:38
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Create'] = 12/16/2025 21:58:38
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Create.Year'] = 2025
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Create.Month'] = 12
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Create.Day'] = 16
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Modified'] = 12/16/2025 21:58:38
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Modified.Year'] = 2025
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Modified.Month'] = 12
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Modified.Day'] = 16
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.Extension'] = .mkv
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.FileName'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.Name'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.FileNameNoExtension'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.NameNoExtension'] = Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.FullName'] = /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.Size'] = 13547832935
+2025-12-16 22:18:01.653 [INFO] -> Variables['folder.Orig.Name'] = transcode-tests
+2025-12-16 22:18:01.653 [INFO] -> Variables['folder.Orig.FullName'] = /data/media/transcode-tests
+2025-12-16 22:18:01.653 [INFO] -> Variables['folder.Orig.Size'] = 15742934803
+2025-12-16 22:18:01.653 [INFO] -> Variables['file.Orig.RelativeName'] = sterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.653 [INFO] -> Variables['folder.Size'] = 15742934803
+2025-12-16 22:18:01.675 [INFO] -> Plugin: BasicNodes.dll version 25.11.9.2254
+2025-12-16 22:18:01.702 [INFO] -> Plugin: MetaNodes.dll version 25.11.9.2254
+2025-12-16 22:18:01.734 [INFO] -> Plugin: VideoNodes.dll version 25.11.9.2254
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:01.781 [INFO] -> Flow Element execution time: 00:00:00.2949920
+2025-12-16 22:18:01.781 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:01.781 [INFO] -> ======================================================================
+2025-12-16 22:18:01.782 [INFO] -> Increasing total flow parts by: 36
+2025-12-16 22:18:01.796 [INFO] -> Not manually loading: Newtonsoft.Json
+2025-12-16 22:18:01.810 [INFO] -> Not manually loading: MetaBrainz.Common
+2025-12-16 22:18:01.830 [INFO] -> ======================================================================
+2025-12-16 22:18:01.830 [INFO] -> Executing Flow Element 2: Video File [FileFlows.VideoNodes.VideoFile]
+2025-12-16 22:18:01.830 [INFO] -> ======================================================================
+2025-12-16 22:18:01.830 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.830 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.830 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.844 [INFO] -> FFmpeg Version: 7.1.3-Jellyfin
+2025-12-16 22:18:01.846 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:01.846 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -probesize 300M -analyzeduration 240000000 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.846 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv':
+  Metadata:
+    encoder         : libebml v1.2.0 + libmatroska v1.1.0
+    creation_time   : 2011-09-13T20:10:23.000000Z
+  Duration: 01:18:39.13, start: 0.000000, bitrate: 22966 kb/s
+  Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+  Stream #0:1(eng): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p (default)
+  Stream #0:2(eng): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+  Stream #0:3(eng): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+At least one output file must be specified
+2025-12-16 22:18:01.876 [INFO] -> 8-Bit detected
+2025-12-16 22:18:01.876 [INFO] -> Frames Per Second: 23.98
+2025-12-16 22:18:01.876 [INFO] -> Video stream duration: 01:18:39.1300000
+2025-12-16 22:18:01.878 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:18:01.878 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:18:01.878 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:18:01.878 [INFO] -> Video stream 'h264' '0'
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+2025-12-16 22:18:01.879 [INFO] -> Video Resolution: 1080p
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+2025-12-16 22:18:01.879 [INFO] -> Video Container: MKV
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+2025-12-16 22:18:01.879 [INFO] -> Audio stream 'dts-hd' '1' 'Language: eng' 'Channels: 2'
+2025-12-16 22:18:01.879 [INFO] -> Audio stream 'dts-hd' '2' 'Language: eng' 'Channels: 2'
+2025-12-16 22:18:01.879 [INFO] -> Audio stream 'dts-hd' '3' 'Language: eng' 'Channels: 2'
+2025-12-16 22:18:01.881 [INFO] -> Setting traits
+2025-12-16 22:18:01.881 [INFO] -> Setting file traits: H264, DTS-HD, Stereo, 1080p
+2025-12-16 22:18:01.881 [INFO] -> Setting Video Info
+2025-12-16 22:18:01.881 [INFO] -> Setting Video stream information
+2025-12-16 22:18:01.881 [INFO] -> Setting Video audio information
+2025-12-16 22:18:01.881 [INFO] -> Setting Video resolution
+2025-12-16 22:18:01.881 [INFO] -> Setting Video variables
+2025-12-16 22:18:01.881 [INFO] -> Setting metadata
+2025-12-16 22:18:01.882 [INFO] -> Setting audio metadata
+2025-12-16 22:18:01.882 [INFO] -> Setting subtitle metadata
+2025-12-16 22:18:01.882 [INFO] -> Setting mimetype
+2025-12-16 22:18:01.882 [INFO] -> Setting metadata
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:01.883 [INFO] -> Flow Element execution time: 00:00:00.0527600
+2025-12-16 22:18:01.883 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:01.883 [INFO] -> ======================================================================
+2025-12-16 22:18:01.883 [INFO] -> ======================================================================
+2025-12-16 22:18:01.883 [INFO] -> Executing Flow Element 3: Auto tag language [FileFlows.Server.ScriptNode]
+2025-12-16 22:18:01.883 [INFO] -> ======================================================================
+2025-12-16 22:18:01.883 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:01.892 [INFO] -> Shared Directory for scripts: /app/Data/Data/Config/188072272/Scripts/Shared
+2025-12-16 22:18:01.974 [INFO] -> Audio - Auto tag missing language.js revision 9 loaded
+2025-12-16 22:18:01.994 [INFO] -> ToolPathVariable 'ffmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.994 [INFO] -> Tool 'ffmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:01.998 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:01.998 [INFO] -> Executing: mkvpropedit --version
+2025-12-16 22:18:01.998 [INFO] -> ----------------------------------------------------------------------
+mkvpropedit v82.0 ('I'm The President') 64-bit
+2025-12-16 22:18:02.042 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:02.042 [INFO] -> Executing: fflangid-sb --version
+2025-12-16 22:18:02.042 [INFO] -> ----------------------------------------------------------------------
+fflangid-sb 1
+2025-12-16 22:18:07.698 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:07.698 [INFO] -> Executing: fflangid-whisper --version
+2025-12-16 22:18:07.698 [INFO] -> ----------------------------------------------------------------------
+fflangid-whisper 1
+2025-12-16 22:18:07.702 [INFO] -> Audio tracks selected for (re)tagging: 3
+2025-12-16 22:18:07.705 [DBUG] -> Sampling a:0 (0:a:0) from t=471s for 60s (auto) duration=4719s
+2025-12-16 22:18:07.705 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:07.705 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -nostats -loglevel error -y -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -map 0:a:0 -vn -sn -dn -ac 1 -ar 16000 -t 60 -c:a pcm_s16le /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/faa16a67-400b-4d59-8f2c-f76a32e12592.wav
+2025-12-16 22:18:07.705 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:07.876 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:07.876 [INFO] -> Executing: fflangid-sb /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/faa16a67-400b-4d59-8f2c-f76a32e12592.wav
+2025-12-16 22:18:07.876 [INFO] -> ----------------------------------------------------------------------
+/opt/fileflows-langid/venv/lib/python3.12/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+CategoricalEncoder.expect_len was never called: assuming category count of 107 to be correct! Sanity check your encoder using `.expect_len`. Ensure that downstream code also uses the correct size. If you are sure this does not apply to you, use `.ignore_len`.
+{"lang": "de", "confidence": 0.9966291946792917, "source": "speechbrain/lang-id-voxlingua107-ecapa"}
+2025-12-16 22:18:14.694 [INFO] -> Detected ger for a:0 (0:a:0) via speechbrain @ 100%
+2025-12-16 22:18:14.694 [DBUG] -> Sampling a:1 (0:a:1) from t=471s for 60s (auto) duration=4719s
+2025-12-16 22:18:14.695 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:14.695 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -nostats -loglevel error -y -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -map 0:a:1 -vn -sn -dn -ac 1 -ar 16000 -t 60 -c:a pcm_s16le /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/632dee58-23fa-45af-85ef-0abb63b1e32d.wav
+2025-12-16 22:18:14.695 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:14.899 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:14.899 [INFO] -> Executing: fflangid-sb /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/632dee58-23fa-45af-85ef-0abb63b1e32d.wav
+2025-12-16 22:18:14.899 [INFO] -> ----------------------------------------------------------------------
+/opt/fileflows-langid/venv/lib/python3.12/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+CategoricalEncoder.expect_len was never called: assuming category count of 107 to be correct! Sanity check your encoder using `.expect_len`. Ensure that downstream code also uses the correct size. If you are sure this does not apply to you, use `.ignore_len`.
+{"lang": "fr", "confidence": 0.9722078571595042, "source": "speechbrain/lang-id-voxlingua107-ecapa"}
+2025-12-16 22:18:21.641 [INFO] -> Detected fre for a:1 (0:a:1) via speechbrain @ 97%
+2025-12-16 22:18:21.641 [DBUG] -> Sampling a:2 (0:a:2) from t=471s for 60s (auto) duration=4719s
+2025-12-16 22:18:21.641 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:21.641 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -nostats -loglevel error -y -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -map 0:a:2 -vn -sn -dn -ac 1 -ar 16000 -t 60 -c:a pcm_s16le /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/25099a79-5a33-4f55-aae2-18a236c74c80.wav
+2025-12-16 22:18:21.641 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:21.853 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:21.853 [INFO] -> Executing: fflangid-sb /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/25099a79-5a33-4f55-aae2-18a236c74c80.wav
+2025-12-16 22:18:21.853 [INFO] -> ----------------------------------------------------------------------
+/opt/fileflows-langid/venv/lib/python3.12/site-packages/speechbrain/utils/autocast.py:188: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  wrapped_fwd = torch.cuda.amp.custom_fwd(fwd, cast_inputs=cast_inputs)
+CategoricalEncoder.expect_len was never called: assuming category count of 107 to be correct! Sanity check your encoder using `.expect_len`. Ensure that downstream code also uses the correct size. If you are sure this does not apply to you, use `.ignore_len`.
+{"lang": "de", "confidence": 0.9027640345456429, "source": "speechbrain/lang-id-voxlingua107-ecapa"}
+2025-12-16 22:18:28.668 [INFO] -> Detected ger for a:2 (0:a:2) via speechbrain @ 90%
+2025-12-16 22:18:28.668 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:18:28.668 [INFO] -> Executing: mkvpropedit /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv --edit track:a1 --set language=ger --edit track:a2 --set language=fre --edit track:a3 --set language=ger
+2025-12-16 22:18:28.668 [INFO] -> ----------------------------------------------------------------------
+The file is being analyzed.
+The changes are written to the file.
+Done.
+2025-12-16 22:18:28.726 [INFO] -> Tagged languages in-place with mkvpropedit.
+2025-12-16 22:18:28.728 [INFO] -> Script result: 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.728 [INFO] -> Flow Element execution time: 00:00:26.8450812
+2025-12-16 22:18:28.728 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:28.728 [INFO] -> ======================================================================
+2025-12-16 22:18:28.729 [INFO] -> ======================================================================
+2025-12-16 22:18:28.729 [INFO] -> Executing Flow Element 4: Bitrate check [FileFlows.FlowRunner.RunnerFlowElements.ExecuteFlow]
+2025-12-16 22:18:28.729 [INFO] -> ======================================================================
+2025-12-16 22:18:28.729 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.729 [INFO] -> Increasing total flow parts by: 7
+2025-12-16 22:18:28.729 [INFO] -> Loading Flow Properties into variables
+2025-12-16 22:18:28.729 [INFO] -> Output = 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.735 [INFO] -> ======================================================================
+2025-12-16 22:18:28.735 [INFO] -> Executing Flow Element 5: Variable Match [FileFlows.BasicNodes.Functions.VariableMatch]
+2025-12-16 22:18:28.735 [INFO] -> ======================================================================
+2025-12-16 22:18:28.735 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.737 [INFO] -> Variable: force
+2025-12-16 22:18:28.737 [INFO] -> Test Value: 1
+2025-12-16 22:18:28.738 [INFO] -> Variables[force]: 
+2025-12-16 22:18:28.738 [INFO] -> Variable had no appropriate string value
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.738 [INFO] -> Flow Element execution time: 00:00:00.0023030
+2025-12-16 22:18:28.738 [INFO] -> Flow Element output: 2
+2025-12-16 22:18:28.738 [INFO] -> ======================================================================
+2025-12-16 22:18:28.738 [INFO] -> ======================================================================
+2025-12-16 22:18:28.738 [INFO] -> Executing Flow Element 6: MiB per hour per resolution [FileFlows.Server.ScriptNode]
+2025-12-16 22:18:28.738 [INFO] -> ======================================================================
+2025-12-16 22:18:28.738 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.738 [INFO] -> Adjust variable 'Output' to: 1
+2025-12-16 22:18:28.739 [INFO] -> Shared Directory for scripts: /app/Data/Data/Config/188072272/Scripts/Shared
+2025-12-16 22:18:28.742 [INFO] -> 1080p video detected: 1920x1080
+2025-12-16 22:18:28.744 [INFO] -> File size is 13547832935 (12.62 GB) and should be below: 6.4 GB
+2025-12-16 22:18:28.744 [INFO] -> Duration: 4719.13 seconds
+2025-12-16 22:18:28.744 [INFO] -> Detected mibPerHour: 9856.22204242306
+2025-12-16 22:18:28.744 [INFO] -> Above threshold of 5000
+2025-12-16 22:18:28.744 [INFO] -> Script result: 2
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.744 [INFO] -> Flow Element execution time: 00:00:00.0064801
+2025-12-16 22:18:28.744 [INFO] -> Flow Element output: 2
+2025-12-16 22:18:28.744 [INFO] -> ======================================================================
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.752 [INFO] -> ======================================================================
+2025-12-16 22:18:28.752 [INFO] -> Executing Flow Element 8: FFMPEG Builder: Start [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderStart]
+2025-12-16 22:18:28.752 [INFO] -> ======================================================================
+2025-12-16 22:18:28.752 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.752 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:28.752 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:28.754 [INFO] -> FFMPEG Builder File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.754 [INFO] -> Video Track 'h264' (1920x1080)
+2025-12-16 22:18:28.754 [INFO] -> Audio Track: dts-hd
+2025-12-16 22:18:28.754 [INFO] -> Audio Track: dts-hd
+2025-12-16 22:18:28.754 [INFO] -> Audio Track: dts-hd
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:28.754 [INFO] -> Flow Element execution time: 00:00:00.0016561
+2025-12-16 22:18:28.754 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:28.754 [INFO] -> ======================================================================
+2025-12-16 22:18:28.761 [INFO] -> ======================================================================
+2025-12-16 22:18:28.761 [INFO] -> Executing Flow Element 9: FFMPEG Builder: Video Encode Advanced [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderVideoEncode]
+2025-12-16 22:18:28.761 [INFO] -> ======================================================================
+2025-12-16 22:18:28.761 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:28.761 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:28.761 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:28.761 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:18:28.761 [INFO] -> | Video Stream: 0 / h264                                                                          |
+2025-12-16 22:18:28.762 [INFO] -> | Audio Stream: 0 / eng / dts-hd / 2.0 / Default                                                  |
+2025-12-16 22:18:28.762 [INFO] -> | Audio Stream: 1 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:28.762 [INFO] -> | Audio Stream: 2 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:28.762 [INFO] -> ---------------------------------------------------------------------------------------------------
+2025-12-16 22:18:28.762 [INFO] -> Quality: 18
+2025-12-16 22:18:28.762 [INFO] -> Codec: h265 10BIT
+2025-12-16 22:18:28.762 [INFO] -> 10 Bit: True
+2025-12-16 22:18:28.763 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:28.763 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.281 [INFO] -> Cant process '/usr/local/bin/ffmpeg -loglevel error -fflags +genpts -f lavfi -i color=black:s=1080x1080 -vframes 1 -an -c:v hevc_nvenc -f null -'
+2025-12-16 22:18:29.281 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.281 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.351 [INFO] -> Can process 'hevc_qsv': '/usr/local/bin/ffmpeg -loglevel error -fflags +genpts -f lavfi -i color=black:s=1080x1080 -vframes 1 -an -c:v hevc_qsv -global_quality 28 -load_plugin hevc_hw -f null -'
+2025-12-16 22:18:29.351 [INFO] -> Encoding Parameters: hevc_qsv -load_plugin hevc_hw -global_quality:v 18 -preset:v veryslow -profile:v:{index} main10 -pix_fmt p010le
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.351 [INFO] -> Flow Element execution time: 00:00:00.5902289
+2025-12-16 22:18:29.351 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:29.351 [INFO] -> ======================================================================
+2025-12-16 22:18:29.360 [INFO] -> ======================================================================
+2025-12-16 22:18:29.360 [INFO] -> Executing Flow Element 10: FFMPEG Builder: Custom Parameters [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderCustomParameters]
+2025-12-16 22:18:29.360 [INFO] -> ======================================================================
+2025-12-16 22:18:29.360 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.360 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.360 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.360 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:18:29.360 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:18:29.360 [INFO] -> | Audio Stream: 0 / eng / dts-hd / 2.0 / Default                                                  |
+2025-12-16 22:18:29.360 [INFO] -> | Audio Stream: 1 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:29.360 [INFO] -> | Audio Stream: 2 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:29.360 [INFO] -> ---------------------------------------------------------------------------------------------------
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.361 [INFO] -> Flow Element execution time: 00:00:00.0013695
+2025-12-16 22:18:29.361 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:29.361 [INFO] -> ======================================================================
+2025-12-16 22:18:29.361 [INFO] -> ======================================================================
+2025-12-16 22:18:29.361 [INFO] -> Executing Flow Element 11: Lookup video file [FileFlows.FlowRunner.RunnerFlowElements.ExecuteFlow]
+2025-12-16 22:18:29.361 [INFO] -> ======================================================================
+2025-12-16 22:18:29.361 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.361 [INFO] -> Increasing total flow parts by: 21
+2025-12-16 22:18:29.361 [INFO] -> Loading Flow Properties into variables
+2025-12-16 22:18:29.361 [INFO] -> Output = 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.362 [INFO] -> ======================================================================
+2025-12-16 22:18:29.362 [INFO] -> Executing Flow Element 12: Radarr or Sonarr [FileFlows.FlowRunner.RunnerFlowElements.ExecuteFlow]
+2025-12-16 22:18:29.362 [INFO] -> ======================================================================
+2025-12-16 22:18:29.362 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.362 [INFO] -> Increasing total flow parts by: 5
+2025-12-16 22:18:29.362 [INFO] -> Loading Flow Properties into variables
+2025-12-16 22:18:29.362 [INFO] -> Output = 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.369 [INFO] -> ======================================================================
+2025-12-16 22:18:29.369 [INFO] -> Executing Flow Element 13: Matches [FileFlows.BasicNodes.Functions.Matches]
+2025-12-16 22:18:29.369 [INFO] -> ======================================================================
+2025-12-16 22:18:29.369 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.371 [INFO] -> Match found: 'Tests' matches pattern 'Movies'
+2025-12-16 22:18:29.371 [INFO] -> Match found: 'Tests' matches pattern 'TV'
+2025-12-16 22:18:29.371 [INFO] -> No matches found
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.371 [INFO] -> Flow Element execution time: 00:00:00.0013685
+2025-12-16 22:18:29.371 [INFO] -> Flow Element output: 3
+2025-12-16 22:18:29.371 [INFO] -> ======================================================================
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.371 [INFO] -> Restoring Flow Properties into variables
+2025-12-16 22:18:29.371 [INFO] -> Output = 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.377 [INFO] -> ======================================================================
+2025-12-16 22:18:29.377 [INFO] -> Executing Flow Element 16: Log [FileFlows.BasicNodes.Functions.Log]
+2025-12-16 22:18:29.377 [INFO] -> ======================================================================
+2025-12-16 22:18:29.377 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.378 [ERRR] -> Unrecognized file
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:18:29.378 [INFO] -> Flow Element execution time: 00:00:00.0007194
+2025-12-16 22:18:29.378 [INFO] -> Flow Element output: 1
+2025-12-16 22:18:29.378 [INFO] -> ======================================================================
+2025-12-16 22:18:29.385 [INFO] -> ======================================================================
+2025-12-16 22:18:29.385 [INFO] -> Executing Flow Element 17: FFMPEG Builder: Audio Normalization [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderAudioNormalization]
+2025-12-16 22:18:29.385 [INFO] -> ======================================================================
+2025-12-16 22:18:29.385 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:18:29.385 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.385 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:18:29.385 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:18:29.385 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:18:29.385 [INFO] -> | Audio Stream: 0 / eng / dts-hd / 2.0 / Default                                                  |
+2025-12-16 22:18:29.385 [INFO] -> | Audio Stream: 1 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:29.385 [INFO] -> | Audio Stream: 2 / eng / dts-hd / 2.0                                                            |
+2025-12-16 22:18:29.385 [INFO] -> ---------------------------------------------------------------------------------------------------
+2025-12-16 22:18:29.386 [INFO] -> Normalizatio Mode:TwoPass
+2025-12-16 22:18:29.388 [INFO] -> ### Total Run-Time Of Video: 01:18:39.1300000
+2025-12-16 22:18:29.388 [INFO] -> Last argument '-' skipping adding output file
+2025-12-16 22:18:29.388 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:18:29.389 [INFO] -> FFmpeg.Arguments: 
+-hide_banner 
+-i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -strict -2 -vn -sn -dn 
+-map 0:a:0 -af loudnorm=I=-24:LRA=7:TP=-2.0:print_format=json -f null -
+2025-12-16 22:18:29.389 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:18:29.410 [INFO] -> Input #0, matroska,webm, from '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv':
+2025-12-16 22:18:29.411 [INFO] ->   Metadata:
+2025-12-16 22:18:29.411 [INFO] ->     encoder         : libebml v1.2.0 + libmatroska v1.1.0
+2025-12-16 22:18:29.411 [INFO] ->     creation_time   : 2011-09-13T20:10:23.000000Z
+2025-12-16 22:18:29.411 [INFO] ->   Duration: 01:18:39.13, start: 0.000000, bitrate: 22966 kb/s
+2025-12-16 22:18:29.411 [INFO] ->   Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+2025-12-16 22:18:29.411 [INFO] -> Got overall FPS: 23.98
+2025-12-16 22:18:29.411 [INFO] ->   Stream #0:1(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p (default)
+2025-12-16 22:18:29.411 [INFO] ->   Stream #0:2(fre): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:18:29.411 [INFO] ->   Stream #0:3(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:18:29.411 [INFO] -> Stream mapping:
+2025-12-16 22:18:29.411 [INFO] ->   Stream #0:1 -> #0:0 (dts (dca) -> pcm_s16le (native))
+2025-12-16 22:18:29.411 [INFO] -> Press [q] to stop, [?] for help
+2025-12-16 22:18:29.439 [INFO] -> Output #0, null, to 'pipe:':
+2025-12-16 22:18:29.439 [INFO] ->   Metadata:
+2025-12-16 22:18:29.439 [INFO] ->     encoder         : Lavf61.7.100
+2025-12-16 22:18:29.439 [INFO] ->   Stream #0:0(ger): Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s (default)
+2025-12-16 22:18:29.439 [INFO] ->       Metadata:
+2025-12-16 22:18:29.439 [INFO] ->         encoder         : Lavc61.19.101 pcm_s16le
+2025-12-16 22:19:55.051 [INFO] -> [Parsed_loudnorm_0 @ 0x1466fc0036c0] 
+2025-12-16 22:19:55.051 [INFO] -> {
+2025-12-16 22:19:55.051 [INFO] -> "input_i" : "-18.78",
+2025-12-16 22:19:55.051 [INFO] -> "input_tp" : "-4.66",
+2025-12-16 22:19:55.051 [INFO] -> "input_lra" : "10.10",
+2025-12-16 22:19:55.051 [INFO] -> "input_thresh" : "-29.50",
+2025-12-16 22:19:55.051 [INFO] -> "output_i" : "-24.34",
+2025-12-16 22:19:55.051 [INFO] -> "output_tp" : "-8.60",
+2025-12-16 22:19:55.051 [INFO] -> "output_lra" : "7.20",
+2025-12-16 22:19:55.051 [INFO] -> "output_thresh" : "-34.88",
+2025-12-16 22:19:55.051 [INFO] -> "normalization_type" : "dynamic",
+2025-12-16 22:19:55.051 [INFO] -> "target_offset" : "0.34"
+2025-12-16 22:19:55.051 [INFO] -> }
+2025-12-16 22:19:55.054 [INFO] -> [out#0/null @ 0x55e83d835a80] video:0KiB audio:3539032KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:19:55.060 [INFO] -> Exit Code: 0
+2025-12-16 22:19:55.060 [INFO] -> Completed: True
+2025-12-16 22:19:55.060 [INFO] -> Encoding successful: True
+2025-12-16 22:19:55.061 [INFO] -> Last argument '-' skipping adding output file
+2025-12-16 22:19:55.061 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:19:55.061 [INFO] -> FFmpeg.Arguments: 
+-hide_banner 
+-i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -strict -2 -vn -sn -dn 
+-map 0:a:1 -af loudnorm=I=-24:LRA=7:TP=-2.0:print_format=json -f null -
+2025-12-16 22:19:55.061 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:19:57.353 [INFO] -> Input #0, matroska,webm, from '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv':
+2025-12-16 22:19:57.353 [INFO] ->   Metadata:
+2025-12-16 22:19:57.353 [INFO] ->     encoder         : libebml v1.2.0 + libmatroska v1.1.0
+2025-12-16 22:19:57.353 [INFO] ->     creation_time   : 2011-09-13T20:10:23.000000Z
+2025-12-16 22:19:57.353 [INFO] ->   Duration: 01:18:39.13, start: 0.000000, bitrate: 22966 kb/s
+2025-12-16 22:19:57.353 [INFO] ->   Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+2025-12-16 22:19:57.353 [INFO] -> Got overall FPS: 23.98
+2025-12-16 22:19:57.353 [INFO] ->   Stream #0:1(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p (default)
+2025-12-16 22:19:57.353 [INFO] ->   Stream #0:2(fre): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:19:57.353 [INFO] ->   Stream #0:3(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:19:57.353 [INFO] -> Stream mapping:
+2025-12-16 22:19:57.353 [INFO] ->   Stream #0:2 -> #0:0 (dts (dca) -> pcm_s16le (native))
+2025-12-16 22:19:57.353 [INFO] -> Press [q] to stop, [?] for help
+2025-12-16 22:19:57.381 [INFO] -> Output #0, null, to 'pipe:':
+2025-12-16 22:19:57.381 [INFO] ->   Metadata:
+2025-12-16 22:19:57.381 [INFO] ->     encoder         : Lavf61.7.100
+2025-12-16 22:19:57.381 [INFO] ->   Stream #0:0(fre): Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s
+2025-12-16 22:19:57.381 [INFO] ->       Metadata:
+2025-12-16 22:19:57.381 [INFO] ->         encoder         : Lavc61.19.101 pcm_s16le
+2025-12-16 22:21:21.428 [INFO] -> [Parsed_loudnorm_0 @ 0x15103c0036c0] 
+2025-12-16 22:21:21.428 [INFO] -> {
+2025-12-16 22:21:21.428 [INFO] -> "input_i" : "-20.68",
+2025-12-16 22:21:21.428 [INFO] -> "input_tp" : "-0.68",
+2025-12-16 22:21:21.428 [INFO] -> "input_lra" : "12.30",
+2025-12-16 22:21:21.428 [INFO] -> "input_thresh" : "-31.99",
+2025-12-16 22:21:21.428 [INFO] -> "output_i" : "-23.97",
+2025-12-16 22:21:21.428 [INFO] -> "output_tp" : "-3.17",
+2025-12-16 22:21:21.428 [INFO] -> "output_lra" : "8.20",
+2025-12-16 22:21:21.428 [INFO] -> "output_thresh" : "-34.97",
+2025-12-16 22:21:21.428 [INFO] -> "normalization_type" : "dynamic",
+2025-12-16 22:21:21.428 [INFO] -> "target_offset" : "-0.03"
+2025-12-16 22:21:21.428 [INFO] -> }
+2025-12-16 22:21:21.430 [INFO] -> [out#0/null @ 0x563bc3f2fa80] video:0KiB audio:3539032KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:21:21.435 [INFO] -> Exit Code: 0
+2025-12-16 22:21:21.435 [INFO] -> Completed: True
+2025-12-16 22:21:21.435 [INFO] -> Encoding successful: True
+2025-12-16 22:21:21.435 [INFO] -> Last argument '-' skipping adding output file
+2025-12-16 22:21:21.435 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:21:21.435 [INFO] -> FFmpeg.Arguments: 
+-hide_banner 
+-i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -strict -2 -vn -sn -dn 
+-map 0:a:2 -af loudnorm=I=-24:LRA=7:TP=-2.0:print_format=json -f null -
+2025-12-16 22:21:21.435 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:21:23.687 [INFO] -> Input #0, matroska,webm, from '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv':
+2025-12-16 22:21:23.687 [INFO] ->   Metadata:
+2025-12-16 22:21:23.687 [INFO] ->     encoder         : libebml v1.2.0 + libmatroska v1.1.0
+2025-12-16 22:21:23.687 [INFO] ->     creation_time   : 2011-09-13T20:10:23.000000Z
+2025-12-16 22:21:23.687 [INFO] ->   Duration: 01:18:39.13, start: 0.000000, bitrate: 22966 kb/s
+2025-12-16 22:21:23.687 [INFO] ->   Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+2025-12-16 22:21:23.687 [INFO] -> Got overall FPS: 23.98
+2025-12-16 22:21:23.687 [INFO] ->   Stream #0:1(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p (default)
+2025-12-16 22:21:23.687 [INFO] ->   Stream #0:2(fre): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:21:23.687 [INFO] ->   Stream #0:3(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:21:23.687 [INFO] -> Stream mapping:
+2025-12-16 22:21:23.687 [INFO] ->   Stream #0:3 -> #0:0 (dts (dca) -> pcm_s16le (native))
+2025-12-16 22:21:23.687 [INFO] -> Press [q] to stop, [?] for help
+2025-12-16 22:21:23.716 [INFO] -> Output #0, null, to 'pipe:':
+2025-12-16 22:21:23.716 [INFO] ->   Metadata:
+2025-12-16 22:21:23.716 [INFO] ->     encoder         : Lavf61.7.100
+2025-12-16 22:21:23.716 [INFO] ->   Stream #0:0(ger): Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s
+2025-12-16 22:21:23.716 [INFO] ->       Metadata:
+2025-12-16 22:21:23.716 [INFO] ->         encoder         : Lavc61.19.101 pcm_s16le
+2025-12-16 22:22:49.492 [INFO] -> [Parsed_loudnorm_0 @ 0x145e280036c0] 
+2025-12-16 22:22:49.492 [INFO] -> {
+2025-12-16 22:22:49.492 [INFO] -> "input_i" : "-18.66",
+2025-12-16 22:22:49.492 [INFO] -> "input_tp" : "-2.25",
+2025-12-16 22:22:49.492 [INFO] -> "input_lra" : "9.80",
+2025-12-16 22:22:49.492 [INFO] -> "input_thresh" : "-29.48",
+2025-12-16 22:22:49.492 [INFO] -> "output_i" : "-24.29",
+2025-12-16 22:22:49.492 [INFO] -> "output_tp" : "-5.54",
+2025-12-16 22:22:49.492 [INFO] -> "output_lra" : "6.80",
+2025-12-16 22:22:49.492 [INFO] -> "output_thresh" : "-34.91",
+2025-12-16 22:22:49.492 [INFO] -> "normalization_type" : "dynamic",
+2025-12-16 22:22:49.492 [INFO] -> "target_offset" : "0.29"
+2025-12-16 22:22:49.492 [INFO] -> }
+2025-12-16 22:22:49.494 [INFO] -> [out#0/null @ 0x55bcdab53a80] video:0KiB audio:3539032KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:22:49.499 [INFO] -> Exit Code: 0
+2025-12-16 22:22:49.499 [INFO] -> Completed: True
+2025-12-16 22:22:49.499 [INFO] -> Encoding successful: True
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:22:49.499 [INFO] -> Flow Element execution time: 00:04:20.1142792
+2025-12-16 22:22:49.499 [INFO] -> Flow Element output: 1
+2025-12-16 22:22:49.499 [INFO] -> ======================================================================
+2025-12-16 22:22:49.514 [INFO] -> ======================================================================
+2025-12-16 22:22:49.514 [INFO] -> Executing Flow Element 18: FFMPEG Builder: Audio Convert [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderAudioConvert]
+2025-12-16 22:22:49.514 [INFO] -> ======================================================================
+2025-12-16 22:22:49.514 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:22:49.514 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.514 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.514 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:22:49.514 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:22:49.514 [INFO] -> | Audio Stream: 0 / eng / dts-hd / 2.0 / Default / Changed                                        |
+2025-12-16 22:22:49.514 [INFO] -> | Audio Stream: 1 / eng / dts-hd / 2.0 / Changed                                                  |
+2025-12-16 22:22:49.514 [INFO] -> | Audio Stream: 2 / eng / dts-hd / 2.0 / Changed                                                  |
+2025-12-16 22:22:49.514 [INFO] -> ---------------------------------------------------------------------------------------------------
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 2
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 0
+2025-12-16 22:22:49.515 [INFO] -> New Audio Arguments: -map 0:a:{sourceTypeIndex} -c:a:{index} aac
+2025-12-16 22:22:49.515 [INFO] -> Stream 0 / eng / aac / Default / Changed matches and will be converted
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 2
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 0
+2025-12-16 22:22:49.515 [INFO] -> New Audio Arguments: -map 0:a:{sourceTypeIndex} -c:a:{index} aac
+2025-12-16 22:22:49.515 [INFO] -> Stream 1 / eng / aac / Changed matches and will be converted
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 2
+2025-12-16 22:22:49.515 [INFO] -> Total Channels: 0
+2025-12-16 22:22:49.515 [INFO] -> New Audio Arguments: -map 0:a:{sourceTypeIndex} -c:a:{index} aac
+2025-12-16 22:22:49.515 [INFO] -> Stream 2 / eng / aac / Changed matches and will be converted
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:22:49.515 [INFO] -> Flow Element execution time: 00:00:00.0011131
+2025-12-16 22:22:49.515 [INFO] -> Flow Element output: 1
+2025-12-16 22:22:49.515 [INFO] -> ======================================================================
+2025-12-16 22:22:49.522 [INFO] -> ======================================================================
+2025-12-16 22:22:49.522 [INFO] -> Executing Flow Element 19: FFMPEG Builder: Remux to MKV [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderRemuxToMkv]
+2025-12-16 22:22:49.522 [INFO] -> ======================================================================
+2025-12-16 22:22:49.522 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:22:49.522 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.522 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.522 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:22:49.522 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:22:49.522 [INFO] -> | Audio Stream: 0 / eng / aac / Default / Changed                                                 |
+2025-12-16 22:22:49.522 [INFO] -> | Audio Stream: 1 / eng / aac / Changed                                                           |
+2025-12-16 22:22:49.522 [INFO] -> | Audio Stream: 2 / eng / aac / Changed                                                           |
+2025-12-16 22:22:49.522 [INFO] -> ---------------------------------------------------------------------------------------------------
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:22:49.523 [INFO] -> Flow Element execution time: 00:00:00.0001896
+2025-12-16 22:22:49.523 [INFO] -> Flow Element output: 1
+2025-12-16 22:22:49.523 [INFO] -> ======================================================================
+2025-12-16 22:22:49.530 [INFO] -> ======================================================================
+2025-12-16 22:22:49.530 [INFO] -> Executing Flow Element 20: FFMPEG Builder: Crop Black Bars [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderCropBlackBars]
+2025-12-16 22:22:49.530 [INFO] -> ======================================================================
+2025-12-16 22:22:49.530 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:22:49.530 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.530 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:49.530 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:22:49.530 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:22:49.530 [INFO] -> | Audio Stream: 0 / eng / aac / Default / Changed                                                 |
+2025-12-16 22:22:49.530 [INFO] -> | Audio Stream: 1 / eng / aac / Changed                                                           |
+2025-12-16 22:22:49.530 [INFO] -> | Audio Stream: 2 / eng / aac / Changed                                                           |
+2025-12-16 22:22:49.530 [INFO] -> ---------------------------------------------------------------------------------------------------
+2025-12-16 22:22:49.530 [INFO] -> Cropping with OLD method
+2025-12-16 22:22:49.535 [DBUG] -> Executing ffmpeg -ss 60 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:52.505 [DBUG] -> Executing ffmpeg -ss 240 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:52.980 [DBUG] -> Executing ffmpeg -ss 360 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:53.477 [DBUG] -> Executing ffmpeg -ss 500 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:53.797 [DBUG] -> Executing ffmpeg -ss 800 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:54.133 [DBUG] -> Executing ffmpeg -ss 1200 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -hide_banner -vframes 25 -vf cropdetect -f null -
+2025-12-16 22:22:54.436 [DBUG] -> Video dimensions: 1920x1080
+2025-12-16 22:22:54.436 [INFO] -> Crop detection, x:64, y:4, width: 1792, height: 1072, total:136, threshold:10, above threshold: (True, 136)
+2025-12-16 22:22:54.436 [INFO] -> Black bars detected, crop: 1792:1072:64:4
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:22:54.436 [INFO] -> Flow Element execution time: 00:00:04.9064509
+2025-12-16 22:22:54.436 [INFO] -> Flow Element output: 1
+2025-12-16 22:22:54.436 [INFO] -> ======================================================================
+2025-12-16 22:22:54.436 [INFO] -> ======================================================================
+2025-12-16 22:22:54.442 [INFO] -> Executing Flow Element 21: Cleaning filters [FileFlows.Server.ScriptNode]
+2025-12-16 22:22:54.442 [INFO] -> ======================================================================
+2025-12-16 22:22:54.442 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:22:54.442 [INFO] -> Adjust variable 'Output' to: 1
+2025-12-16 22:22:54.443 [INFO] -> Shared Directory for scripts: /app/Data/Data/Config/188072272/Scripts/Shared
+2025-12-16 22:22:54.447 [INFO] -> Cleaning filters.js revision 17 loaded
+2025-12-16 22:22:54.456 [INFO] -> Content: 2012, genres: , bitrate=23Mbps, encoder=qsv, sourceBits=8, HDR=false, DoVi=false
+2025-12-16 22:22:54.456 [INFO] -> Auto QSV denoise for 2012: vpp_qsv=denoise=13 (level 20%)
+2025-12-16 22:22:54.458 [INFO] -> Attached QSV filter via Filter: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+2025-12-16 22:22:54.460 [WARN] -> Injected video filters into EncodingParameters (added-filter-arg). Before: '' After: 'vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le'
+2025-12-16 22:22:54.460 [INFO] -> Recommended QSV params: -bf 7 -refs 4 -g 250 -extbrc 1 -look_ahead_depth 20
+2025-12-16 22:22:54.460 [INFO] -> ffmpeg.VideoStreams[0].Filter: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+2025-12-16 22:22:54.460 [INFO] -> Script result: 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:22:54.460 [INFO] -> Flow Element execution time: 00:00:00.0178031
+2025-12-16 22:22:54.460 [INFO] -> Flow Element output: 1
+2025-12-16 22:22:54.460 [INFO] -> ======================================================================
+2025-12-16 22:22:54.460 [INFO] -> ======================================================================
+2025-12-16 22:22:54.460 [INFO] -> Executing Flow Element 22: Auto quality [FileFlows.Server.ScriptNode]
+2025-12-16 22:22:54.460 [INFO] -> ======================================================================
+2025-12-16 22:22:54.460 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:22:54.462 [INFO] -> Shared Directory for scripts: /app/Data/Data/Config/188072272/Scripts/Shared
+2025-12-16 22:22:54.470 [INFO] -> ToolPathVariable 'ffmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:54.470 [INFO] -> Tool 'ffmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:22:54.470 [INFO] -> Using custom FFmpeg (ffmpeg_vmaf): /app/common/ffmpeg-static/ffmpeg
+2025-12-16 22:22:54.473 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:54.473 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel error -h filter=libvmaf
+2025-12-16 22:22:54.473 [INFO] -> ----------------------------------------------------------------------
+Filter libvmaf
+  Calculate the VMAF between two video streams.
+    Inputs:
+       #0: main (video)
+       #1: reference (video)
+    Outputs:
+       #0: default (video)
+libvmaf AVOptions:
+   log_path          <string>     ..FV....... Set the file path to be used to write log.
+   log_fmt           <string>     ..FV....... Set the format of the log (csv, json, xml, or sub). (default "xml")
+   pool              <string>     ..FV....... Set the pool method to be used for computing vmaf.
+   n_threads         <int>        ..FV....... Set number of threads to be used when computing vmaf. (from 0 to UINT32_MAX) (default 0)
+   n_subsample       <int>        ..FV....... Set interval for frame subsampling used when computing vmaf. (from 1 to UINT32_MAX) (default 1)
+   model             <string>     ..FV....... Set the model to be used for computing vmaf. (default "version=vmaf_v0.6.1")
+   feature           <string>     ..FV....... Set the feature to be used for computing vmaf.
+
+framesync AVOptions:
+   eof_action        <int>        ..FV....... Action to take when encountering EOF from secondary input  (from 0 to 2) (default repeat)
+     repeat          0            ..FV....... Repeat the previous frame.
+     endall          1            ..FV....... End both streams.
+     pass            2            ..FV....... Pass through the main input.
+   shortest          <boolean>    ..FV....... force termination when the shortest input terminates (default false)
+   repeatlast        <boolean>    ..FV....... extend last frame of secondary streams beyond EOF (default true)
+   ts_sync_mode      <int>        ..FV....... How strictly to sync streams based on secondary input timestamps (from 0 to 1) (default default)
+     default         0            ..FV....... Frame from secondary input with the nearest lower or equal timestamp to the primary input frame
+     nearest         1            ..FV....... Frame from secondary input with the absolute nearest timestamp to the primary input frame
+
+Exiting with exit code 0
+2025-12-16 22:22:54.631 [INFO] -> Quality metric: VMAF (libvmaf available)
+2025-12-16 22:22:54.635 [INFO] -> Source: 1920x1080, 23.979999542236328fps, 19521kbps, codec=h264, HDR=false, 10bit=true, duration=4719s
+2025-12-16 22:22:54.635 [INFO] -> Target encoder: hevc_qsv, CRF argument: -global_quality
+2025-12-16 22:22:54.635 [INFO] -> Auto quality: using upstream video filters for sampling: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+2025-12-16 22:22:54.636 [INFO] -> Auto VMAF target: 95 (year=2015, animation=false, HDR=false, metadata=default)
+2025-12-16 22:22:54.636 [INFO] -> Target VMAF: 95
+2025-12-16 22:22:54.636 [INFO] -> Sample positions: 472s, 2356s, 4239s
+2025-12-16 22:22:54.637 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:54.637 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel error -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 2 -vf signalstats,metadata=print:file=/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/autoquality_signalstats_4c33ef61-57d1-440f-ace7-84eb22f8f2b4.txt -f null -
+2025-12-16 22:22:54.637 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:54.996 [DBUG] -> Luminance sample 1 at 472s: avg Y = 125.4
+2025-12-16 22:22:54.996 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:54.996 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel error -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 2 -vf signalstats,metadata=print:file=/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/autoquality_signalstats_e687ae57-4361-4e5f-a59f-a40e95ad0e64.txt -f null -
+2025-12-16 22:22:54.996 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:55.313 [DBUG] -> Luminance sample 2 at 2356s: avg Y = 70.2
+2025-12-16 22:22:55.313 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:55.313 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel error -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 2 -vf signalstats,metadata=print:file=/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/autoquality_signalstats_0c709bc3-e1ce-48de-8e19-1fcb96c5f9f7.txt -f null -
+2025-12-16 22:22:55.313 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:55.647 [DBUG] -> Luminance sample 3 at 4239s: avg Y = 118.5
+2025-12-16 22:22:55.647 [INFO] -> Dark scene detection: NORMAL/BRIGHT (avg luma 104.7) - no adjustment
+2025-12-16 22:22:55.647 [INFO] -> Starting VMAF-based CRF search: CRF 16-24, target VMAF 95
+2025-12-16 22:22:55.647 [INFO] -> [1/6] Testing CRF 20...
+2025-12-16 22:22:55.649 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:22:55.649 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_reference.mkv
+2025-12-16 22:22:55.649 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:8.71  kb/s: 148895.90
+x265 [info]: frame P:     40, Avg QP:9.71  kb/s: 119450.22
+x265 [info]: frame B:    148, Avg QP:13.10  kb/s: 69677.17
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 7.96s (24.13 fps), 81696.95 kb/s, Avg QP:12.30
+2025-12-16 22:23:04.009 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:04.009 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 20 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_encoded.mkv
+2025-12-16 22:23:04.009 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-20.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:20.71  kb/s: 45396.06
+x265 [info]: frame P:     40, Avg QP:21.69  kb/s: 22823.83
+x265 [info]: frame B:    148, Avg QP:25.10  kb/s: 7052.94 
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 4.76s (40.33 fps), 11137.36 kb/s, Avg QP:24.29
+2025-12-16 22:23:09.065 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:09.065 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:23:09.065 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 11142 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/261e5a16-f681-4e3c-9101-d0734d546725_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 81702 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14dbc401e7c0] VMAF score: 94.072456
+[out#0/null @ 0x557275d2b480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:23:12.421 [DBUG] -> Sample 1: VMAF 94.07
+2025-12-16 22:23:12.455 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:12.455 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_reference.mkv
+2025-12-16 22:23:12.455 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:7.98  kb/s: 134704.34
+x265 [info]: frame P:     39, Avg QP:9.04  kb/s: 96484.63
+x265 [info]: frame B:    150, Avg QP:12.81  kb/s: 49495.11
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 7.26s (26.45 fps), 60371.25 kb/s, Avg QP:11.97
+2025-12-16 22:23:19.990 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:19.990 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 20 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_encoded.mkv
+2025-12-16 22:23:19.990 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-20.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:19.98  kb/s: 37163.99
+x265 [info]: frame P:     39, Avg QP:21.02  kb/s: 13800.65
+x265 [info]: frame B:    150, Avg QP:24.81  kb/s: 2897.56 
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 4.00s (47.97 fps), 5647.66 kb/s, Avg QP:23.97
+2025-12-16 22:23:24.263 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:24.263 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:23:24.263 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 5652 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/24a272c2-30b6-4815-b7f7-21e18259860e_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 60376 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14f99801e7c0] VMAF score: 92.898919
+[out#0/null @ 0x55df48b4b480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:23:27.583 [DBUG] -> Sample 2: VMAF 92.90
+2025-12-16 22:23:27.607 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:27.607 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_reference.mkv
+2025-12-16 22:23:27.607 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:9.02  kb/s: 161728.64
+x265 [info]: frame P:     39, Avg QP:9.30  kb/s: 125927.43
+x265 [info]: frame B:    150, Avg QP:13.35  kb/s: 66163.22
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 7.93s (24.07 fps), 79367.06 kb/s, Avg QP:12.48
+2025-12-16 22:23:35.819 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:35.819 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 20 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_encoded.mkv
+2025-12-16 22:23:35.819 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-20.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:21.02  kb/s: 51835.11
+x265 [info]: frame P:     39, Avg QP:21.28  kb/s: 26302.43
+x265 [info]: frame B:    150, Avg QP:25.34  kb/s: 7104.49 
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 4.84s (39.49 fps), 11492.87 kb/s, Avg QP:24.46
+2025-12-16 22:23:40.937 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:40.937 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:23:40.937 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 11438 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/4f0da5cc-9697-4143-be71-ae6603609ac6_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 78959 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x1514e401e7c0] VMAF score: 93.978633
+[out#0/null @ 0x5600adc47480] video:79KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:23:44.309 [DBUG] -> Sample 3: VMAF 93.98
+2025-12-16 22:23:44.344 [INFO] -> CRF 20: VMAF 93.65
+2025-12-16 22:23:44.344 [INFO] -> [2/6] Testing CRF 18...
+2025-12-16 22:23:44.345 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:44.345 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_reference.mkv
+2025-12-16 22:23:44.345 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:8.71  kb/s: 148895.90
+x265 [info]: frame P:     40, Avg QP:9.71  kb/s: 119450.22
+x265 [info]: frame B:    148, Avg QP:13.10  kb/s: 69677.17
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 8.17s (23.51 fps), 81696.95 kb/s, Avg QP:12.30
+2025-12-16 22:23:52.799 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:52.799 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 18 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_encoded.mkv
+2025-12-16 22:23:52.799 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-18.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:18.71  kb/s: 59208.46
+x265 [info]: frame P:     40, Avg QP:19.69  kb/s: 32937.61
+x265 [info]: frame B:    148, Avg QP:23.09  kb/s: 11808.39
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 5.57s (34.49 fps), 17197.82 kb/s, Avg QP:22.29
+2025-12-16 22:23:58.658 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:23:58.658 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:23:58.658 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 17203 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/edada9ab-ecbe-487c-9ee4-82661ab6f028_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 81702 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x15258801e7c0] VMAF score: 95.406845
+[out#0/null @ 0x55e8cc2e4480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:24:02.047 [DBUG] -> Sample 1: VMAF 95.41
+2025-12-16 22:24:02.084 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:02.084 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_reference.mkv
+2025-12-16 22:24:02.084 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:7.98  kb/s: 134704.34
+x265 [info]: frame P:     39, Avg QP:9.04  kb/s: 96484.63
+x265 [info]: frame B:    150, Avg QP:12.81  kb/s: 49495.11
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 7.53s (25.51 fps), 60371.25 kb/s, Avg QP:11.97
+2025-12-16 22:24:09.889 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:09.889 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 18 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_encoded.mkv
+2025-12-16 22:24:09.889 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-18.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:17.98  kb/s: 49874.41
+x265 [info]: frame P:     39, Avg QP:19.02  kb/s: 21547.06
+x265 [info]: frame B:    150, Avg QP:22.79  kb/s: 5642.42 
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 4.54s (42.32 fps), 9564.18 kb/s, Avg QP:21.95
+2025-12-16 22:24:14.708 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:14.708 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:24:14.708 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 9569 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/b04c93ee-29a0-4eec-931a-946169534613_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 60376 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14fc7801e7c0] VMAF score: 94.131679
+[out#0/null @ 0x5637f6cf4480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:24:18.090 [DBUG] -> Sample 2: VMAF 94.13
+2025-12-16 22:24:18.116 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:18.116 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_reference.mkv
+2025-12-16 22:24:18.116 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:9.02  kb/s: 161728.64
+x265 [info]: frame P:     39, Avg QP:9.30  kb/s: 125927.43
+x265 [info]: frame B:    150, Avg QP:13.35  kb/s: 66163.22
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 7.98s (23.95 fps), 79367.06 kb/s, Avg QP:12.48
+2025-12-16 22:24:26.376 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:26.376 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 18 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_encoded.mkv
+2025-12-16 22:24:26.376 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-18.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:19.02  kb/s: 66249.30
+x265 [info]: frame P:     39, Avg QP:19.29  kb/s: 37075.91
+x265 [info]: frame B:    150, Avg QP:23.34  kb/s: 11760.42
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 5.42s (35.24 fps), 17500.12 kb/s, Avg QP:22.47
+2025-12-16 22:24:32.080 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:32.080 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:24:32.080 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 17414 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/2f47d7fe-6697-474a-aebc-eafc336bf781_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 78959 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x148c6001e7c0] VMAF score: 95.414931
+[out#0/null @ 0x559f48ee9480] video:79KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:24:35.494 [DBUG] -> Sample 3: VMAF 95.41
+2025-12-16 22:24:35.530 [INFO] -> CRF 18: VMAF 94.98
+2025-12-16 22:24:35.530 [INFO] -> [3/6] Testing CRF 17...
+2025-12-16 22:24:35.530 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:35.530 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_reference.mkv
+2025-12-16 22:24:35.530 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:8.71  kb/s: 148895.90
+x265 [info]: frame P:     40, Avg QP:9.71  kb/s: 119450.22
+x265 [info]: frame B:    148, Avg QP:13.10  kb/s: 69677.17
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 8.25s (23.28 fps), 81696.95 kb/s, Avg QP:12.30
+2025-12-16 22:24:44.068 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:44.068 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 17 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_encoded.mkv
+2025-12-16 22:24:44.068 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-17.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      4, Avg QP:17.71  kb/s: 66492.13
+x265 [info]: frame P:     40, Avg QP:18.69  kb/s: 38866.28
+x265 [info]: frame B:    148, Avg QP:22.10  kb/s: 14985.26
+x265 [info]: Weighted P-Frames: Y:32.5% UV:27.5%
+x265 [info]: consecutive B-frames: 11.4% 4.5% 2.3% 0.0% 81.8% 
+
+encoded 192 frames in 5.79s (33.18 fps), 21033.53 kb/s, Avg QP:21.30
+2025-12-16 22:24:50.141 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:50.141 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:24:50.141 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 21038 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/c1fcad2a-1b18-40ca-853c-bcb8e2f94af5_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 81702 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14d6a801e7c0] VMAF score: 95.937077
+[out#0/null @ 0x559d64d9d480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:24:53.536 [DBUG] -> Sample 1: VMAF 95.94
+2025-12-16 22:24:53.577 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:24:53.577 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_reference.mkv
+2025-12-16 22:24:53.577 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:7.98  kb/s: 134704.34
+x265 [info]: frame P:     39, Avg QP:9.04  kb/s: 96484.63
+x265 [info]: frame B:    150, Avg QP:12.81  kb/s: 49495.11
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 7.50s (25.59 fps), 60371.25 kb/s, Avg QP:11.97
+2025-12-16 22:25:01.368 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:25:01.368 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 2355 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 17 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_encoded.mkv
+2025-12-16 22:25:01.368 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-17.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      3, Avg QP:16.98  kb/s: 56617.05
+x265 [info]: frame P:     39, Avg QP:18.03  kb/s: 26247.03
+x265 [info]: frame B:    150, Avg QP:21.80  kb/s: 7695.09 
+x265 [info]: Weighted P-Frames: Y:12.8% UV:10.3%
+x265 [info]: consecutive B-frames: 9.5% 0.0% 0.0% 4.8% 85.7% 
+
+encoded 192 frames in 4.98s (38.58 fps), 12227.86 kb/s, Avg QP:20.96
+2025-12-16 22:25:06.624 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:25:06.624 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:25:06.624 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 12233 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/92a999fe-6f45-4d31-badb-43111e9186b0_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.000000, bitrate: 60376 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14563c01e7c0] VMAF score: 94.675487
+[out#0/null @ 0x562fabfdc480] video:80KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:25:10.044 [DBUG] -> Sample 2: VMAF 94.68
+2025-12-16 22:25:10.071 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:25:10.071 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 8 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_reference.mkv
+2025-12-16 22:25:10.071 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-8.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:9.02  kb/s: 161728.64
+x265 [info]: frame P:     39, Avg QP:9.30  kb/s: 125927.43
+x265 [info]: frame B:    150, Avg QP:13.35  kb/s: 66163.22
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 8.00s (23.86 fps), 79367.06 kb/s, Avg QP:12.48
+2025-12-16 22:25:18.358 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:25:18.358 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 4239 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 17 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_encoded.mkv
+2025-12-16 22:25:18.358 [INFO] -> ----------------------------------------------------------------------
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+x265 [info]: HEVC encoder version 3.5+1-f0c1022b6
+x265 [info]: build info [Linux][GCC 13.2.0][64 bit] 10bit
+x265 [info]: using cpu capabilities: MMX2 SSE2Fast LZCNT SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+x265 [info]: Main 10 profile, Level-4 (Main tier)
+x265 [info]: Thread pool created using 24 threads
+x265 [info]: Slices                              : 1
+x265 [info]: frame threads / pool features       : 4 / wpp(17 rows)
+set_mempolicy: Operation not permitted
+x265 [info]: Coding QT: max CU size, min CU size : 64 / 8
+x265 [info]: Residual QT: max TU size, max depth : 32 / 1 inter / 1 intra
+x265 [info]: ME / range / subpel / merge         : hex / 57 / 2 / 2
+x265 [info]: Keyframe min / max / scenecut / bias  : 23 / 250 / 40 / 5.00 
+x265 [info]: Lookahead / bframes / badapt        : 15 / 4 / 0
+x265 [info]: b-pyramid / weightp / weightb       : 1 / 1 / 0
+x265 [info]: References / ref-limit  cu / depth  : 3 / on / on
+x265 [info]: AQ: mode / str / qg-size / cu-tree  : 2 / 1.0 / 32 / 1
+x265 [info]: Rate Control / qCompress            : CRF-17.0 / 0.60
+x265 [info]: tools: rd=2 psy-rd=2.00 rskip mode=1 signhide tmvp fast-intra
+x265 [info]: tools: strong-intra-smoothing lslices=6 deblock sao
+x265 [info]: frame I:      2, Avg QP:18.02  kb/s: 74061.27
+x265 [info]: frame P:     39, Avg QP:18.29  kb/s: 43445.18
+x265 [info]: frame B:    150, Avg QP:22.34  kb/s: 14797.81
+x265 [info]: Weighted P-Frames: Y:46.2% UV:35.9%
+x265 [info]: consecutive B-frames: 4.9% 4.9% 0.0% 0.0% 90.2% 
+
+encoded 191 frames in 5.64s (33.87 fps), 21267.83 kb/s, Avg QP:21.47
+2025-12-16 22:25:24.270 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:25:24.270 [INFO] -> Executing: /app/common/ffmpeg-static/ffmpeg -hide_banner -loglevel info -nostats -y -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_encoded.mkv -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_reference.mkv -filter_complex [0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall -f null -
+2025-12-16 22:25:24.270 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_encoded.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 21162 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Input #1, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/e43d4101-ba63-418c-bee2-1fd82159196d_reference.mkv':
+  Metadata:
+    ENCODER         : Lavf61.7.100
+  Duration: 00:00:08.01, start: 0.042000, bitrate: 78959 kb/s
+  Stream #1:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], 23.98 fps, 23.98 tbr, 1k tbn, start 0.042000 (default)
+    Metadata:
+      ENCODER         : Lavc61.19.101 libx265
+      DURATION        : 00:00:08.008000000
+Stream mapping:
+  Stream #0:0 (hevc) -> setpts:default
+  Stream #1:0 (hevc) -> setpts:default
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+Press [q] to stop, [?] for help
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf62.8.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, bt709, progressive), 1792x1072 [SAR 1:1 DAR 112:67], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.23.101 wrapped_avframe
+[Parsed_libvmaf_4 @ 0x14d3e001e7c0] VMAF score: 96.018846
+[out#0/null @ 0x55be80f03480] video:79KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+2025-12-16 22:25:27.689 [DBUG] -> Sample 3: VMAF 96.02
+2025-12-16 22:25:27.729 [INFO] -> CRF 17: VMAF 95.54
+2025-12-16 22:25:27.730 [INFO] -> 
+2025-12-16 22:25:27.730 [INFO] -> | CRF | VMAF  | Status |
+2025-12-16 22:25:27.730 [INFO] -> |-----|-------|--------|
+2025-12-16 22:25:27.730 [INFO] -> |  17 | 95.54 | * WIN  |
+2025-12-16 22:25:27.730 [INFO] -> |  18 | 94.98 | LOW    |
+2025-12-16 22:25:27.730 [INFO] -> |  20 | 93.65 | LOW    |
+2025-12-16 22:25:27.730 [INFO] -> 
+2025-12-16 22:25:27.731 [INFO] -> Auto quality: removed 2 existing quality argument tokens
+2025-12-16 22:25:27.731 [INFO] -> Applied -global_quality:v 17 to encoder
+2025-12-16 22:25:27.736 [INFO] -> Auto quality complete: CRF 17 (VMAF 95.5, target was 95)
+2025-12-16 22:25:27.736 [INFO] -> Script result: 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:25:27.736 [INFO] -> Flow Element execution time: 00:02:33.2760417
+2025-12-16 22:25:27.736 [INFO] -> Flow Element output: 1
+2025-12-16 22:25:27.736 [INFO] -> ======================================================================
+2025-12-16 22:25:27.744 [INFO] -> ======================================================================
+2025-12-16 22:25:27.744 [INFO] -> Executing Flow Element 23: FFMPEG Builder: Executor [FileFlows.VideoNodes.FfmpegBuilderNodes.FfmpegBuilderExecutor]
+2025-12-16 22:25:27.744 [INFO] -> ======================================================================
+2025-12-16 22:25:27.744 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+2025-12-16 22:25:27.744 [INFO] -> ToolPathVariable 'FFmpeg' = '/usr/local/bin/ffmpeg'
+2025-12-16 22:25:27.744 [INFO] -> Tool 'FFmpeg' variable = '/usr/local/bin/ffmpeg'
+2025-12-16 22:25:27.744 [INFO] -> ---------------------------------- Starting FFmpeg Builder Model ----------------------------------
+2025-12-16 22:25:27.744 [INFO] -> | Video Stream: 0 / hevc / Changed                                                                |
+2025-12-16 22:25:27.744 [INFO] -> | Audio Stream: 0 / eng / aac / Default / Changed                                                 |
+2025-12-16 22:25:27.744 [INFO] -> | Audio Stream: 1 / eng / aac / Changed                                                           |
+2025-12-16 22:25:27.744 [INFO] -> | Audio Stream: 2 / eng / aac / Changed                                                           |
+2025-12-16 22:25:27.744 [INFO] -> ---------------------------------------------------------------------------------------------------
+2025-12-16 22:25:27.745 [INFO] -> Executing using New mode
+2025-12-16 22:25:27.746 [INFO] -> Auto-detecting hardware decoder to use
+2025-12-16 22:25:27.761 [INFO] -> Available FFmpeg Filters:
+libplacebo:             True
+zscale:                 True
+crop_cuda:              False
+vpp_cuda:               False
+scale_cuda:             True
+scale_npp:              False
+libplacebo_cuda:        False
+scale_vaapi:            True
+deinterlace_vaapi:      True
+tonemap_vaapi:          True
+scale_qsv:              True
+deinterlace_qsv:        True
+vpp_qsv:                True
+tonemap_qsv:            False
+scale_amf:              False
+deinterlace_amf:        False
+tonemap_opencl:         True
+nvdenoise:              False
+denoise_qsv:            False
+denoise_vaapi:          True
+nlmeans_opencl:         True
+hqdn3d (CPU):           True
+
+2025-12-16 22:25:27.761 [INFO] -> Pixel Format: nv12
+2025-12-16 22:25:27.761 [INFO] -> Decoder: qsv
+2025-12-16 22:25:27.766 [INFO] -> Stream Changed: 0 / hevc / Changed
+2025-12-16 22:25:27.766 [INFO] -> Stream Force Change: 0 / hevc / Changed
+2025-12-16 22:25:27.766 [INFO] -> Stream Changed: 0 / eng / aac / Default / Changed
+2025-12-16 22:25:27.766 [INFO] -> Stream Changed: 1 / eng / aac / Changed
+2025-12-16 22:25:27.766 [INFO] -> Stream Changed: 2 / eng / aac / Changed
+2025-12-16 22:25:27.766 [INFO] -> ForceEncode: True
+2025-12-16 22:25:27.766 [INFO] -> HasChange: True
+2025-12-16 22:25:27.766 [INFO] -> ExtensionChanged: False
+2025-12-16 22:25:27.767 [INFO] -> ### Total Run-Time Of Video: 01:18:39.1300000
+2025-12-16 22:25:27.767 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:25:27.767 [INFO] -> FFmpeg.Arguments: 
+-fflags +genpts -probesize 300M -analyzeduration 240000000 -y -stats_period 5 -init_hw_device qsv=gpu -hwaccel qsv -hwaccel_output_format qsv 
+-i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -x265-params preset=veryslow:aq-mode=3:hdr10=1:hdr10_opt=1:colorprim=9:transfer=16:colormatrix=9 
+-map 0:v:0 -c:v:0 hevc_qsv -load_plugin hevc_hw -preset:v veryslow -filter:v:0 vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le -global_quality:v 17 -filter:v:0 scale_qsv=format=p010le 
+-map 0:a:0 -c:a:0 aac -filter:a:0 loudnorm=print_format=summary:linear=true:I=-24:LRA=7:TP=-2.0:measured_I=-18.78:measured_LRA=10.10:measured_tp=-4.66:measured_thresh=-29.50:offset=0.34 -metadata:s:a:0 language=eng -disposition:a:0 default 
+-map 0:a:1 -c:a:1 aac -filter:a:1 loudnorm=print_format=summary:linear=true:I=-24:LRA=7:TP=-2.0:measured_I=-20.68:measured_LRA=12.30:measured_tp=-0.68:measured_thresh=-31.99:offset=-0.03 -metadata:s:a:1 language=eng -disposition:a:1 0 
+-map 0:a:2 -c:a:2 aac -filter:a:2 loudnorm=print_format=summary:linear=true:I=-24:LRA=7:TP=-2.0:measured_I=-18.66:measured_LRA=9.80:measured_tp=-2.25:measured_thresh=-29.48:offset=0.29 -metadata:s:a:2 language=eng -disposition:a:2 0 
+-map 0:t? -c:t copy 
+-metadata "comment=Created by FileFlows
+https://fileflows.com" -strict experimental /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:25:27.767 [INFO] -> ------------------------------------------------------------------------------------------------------------------------------------------------------
+2025-12-16 22:25:27.767 [INFO] -> Decoder: QSV
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+2025-12-16 22:25:27.767 [INFO] -> Encoder: QSV
+Json Message Sent: { Method = RecordRunningTotal, Params = System.Object[] }
+2025-12-16 22:25:27.778 [INFO] -> ffmpeg version 7.1.3-Jellyfin Copyright (c) 2000-2025 the FFmpeg developers
+2025-12-16 22:25:27.778 [INFO] ->   built with gcc 13 (Ubuntu 13.3.0-6ubuntu2~24.04)
+2025-12-16 22:25:27.778 [INFO] ->   configuration: --prefix=/usr/lib/jellyfin-ffmpeg --target-os=linux --extra-version=Jellyfin --disable-doc --disable-ffplay --disable-static --disable-libxcb --disable-sdl2 --disable-xlib --enable-lto=auto --enable-gpl --enable-version3 --enable-shared --enable-gmp --enable-gnutls --enable-chromaprint --enable-opencl --enable-libdrm --enable-libxml2 --enable-libass --enable-libfreetype --enable-libfribidi --enable-libfontconfig --enable-libharfbuzz --enable-libbluray --enable-libmp3lame --enable-libopus --enable-libtheora --enable-libvorbis --enable-libopenmpt --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-libvpx --enable-libx264 --enable-libx265 --enable-libzvbi --enable-libzimg --enable-libfdk-aac --arch=amd64 --enable-libshaderc --enable-libplacebo --enable-vulkan --enable-vaapi --enable-amf --enable-libvpl --enable-ffnvcodec --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvdec --enable-nvenc
+2025-12-16 22:25:27.778 [INFO] ->   libavutil      59. 39.100 / 59. 39.100
+2025-12-16 22:25:27.778 [INFO] ->   libavcodec     61. 19.101 / 61. 19.101
+2025-12-16 22:25:27.778 [INFO] ->   libavformat    61.  7.100 / 61.  7.100
+2025-12-16 22:25:27.778 [INFO] ->   libavdevice    61.  3.100 / 61.  3.100
+2025-12-16 22:25:27.778 [INFO] ->   libavfilter    10.  4.100 / 10.  4.100
+2025-12-16 22:25:27.778 [INFO] ->   libswscale      8.  3.100 /  8.  3.100
+2025-12-16 22:25:27.778 [INFO] ->   libswresample   5.  3.100 /  5.  3.100
+2025-12-16 22:25:27.778 [INFO] ->   libpostproc    58.  3.100 / 58.  3.100
+2025-12-16 22:25:27.778 [INFO] -> ffmpeg stats and -progress period set to 5.
+2025-12-16 22:25:27.786 [INFO] -> libva info: VA-API version 1.22.0
+2025-12-16 22:25:27.786 [INFO] -> libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+2025-12-16 22:25:27.786 [INFO] -> libva info: Found init function __vaDriverInit_1_22
+2025-12-16 22:25:27.789 [INFO] -> libva info: va_openDriver() returns 0
+2025-12-16 22:25:27.797 [INFO] -> libva info: VA-API version 1.22.0
+2025-12-16 22:25:27.797 [INFO] -> libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so
+2025-12-16 22:25:27.797 [INFO] -> libva info: Found init function __vaDriverInit_1_22
+2025-12-16 22:25:27.800 [INFO] -> libva info: va_openDriver() returns 0
+2025-12-16 22:25:27.817 [INFO] -> Input #0, matroska,webm, from '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv':
+2025-12-16 22:25:27.817 [INFO] ->   Metadata:
+2025-12-16 22:25:27.817 [INFO] ->     encoder         : libebml v1.2.0 + libmatroska v1.1.0
+2025-12-16 22:25:27.817 [INFO] ->     creation_time   : 2011-09-13T20:10:23.000000Z
+2025-12-16 22:25:27.817 [INFO] ->   Duration: 01:18:39.13, start: 0.000000, bitrate: 22966 kb/s
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+2025-12-16 22:25:27.817 [INFO] -> Got overall FPS: 23.98
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:1(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p (default)
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:2(fre): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:3(ger): Audio: dts (dca) (DTS-HD MA), 48000 Hz, stereo, s16p
+2025-12-16 22:25:27.817 [INFO] -> [vost#0:0/hevc_qsv @ 0x5626a9eaba40] Multiple -filter/-af/-vf options specified for stream 0, only the last option '-filter:v:0 scale_qsv=format=p010le' will be used.
+2025-12-16 22:25:27.817 [INFO] -> [out#0/matroska @ 0x5626a9f74b80] Codec AVOption x265-params (set the x265 configuration using a :-separated list of key=value parameters) has not been used for any stream. The most likely reason is either wrong type (e.g. a video option with no video streams) or that it is a private option of some decoder which was not actually used for any stream.
+2025-12-16 22:25:27.817 [INFO] -> Stream mapping:
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:0 -> #0:0 (h264 (h264_qsv) -> hevc (hevc_qsv))
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:1 -> #0:1 (dts (dca) -> aac (native))
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:2 -> #0:2 (dts (dca) -> aac (native))
+2025-12-16 22:25:27.817 [INFO] ->   Stream #0:3 -> #0:3 (dts (dca) -> aac (native))
+2025-12-16 22:25:27.818 [INFO] -> Press [q] to stop, [?] for help
+2025-12-16 22:25:28.053 [INFO] -> Output #0, matroska, to '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv':
+2025-12-16 22:25:28.053 [INFO] ->   Metadata:
+2025-12-16 22:25:28.053 [INFO] ->     comment         : Created by FileFlows
+2025-12-16 22:25:28.053 [INFO] ->                     : https://fileflows.com
+2025-12-16 22:25:28.053 [INFO] ->     encoder         : Lavf61.7.100
+2025-12-16 22:25:28.053 [INFO] ->   Stream #0:0: Video: hevc, qsv(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], q=2-31, 23.98 fps, 1k tbn (default)
+2025-12-16 22:25:28.053 [INFO] ->       Metadata:
+2025-12-16 22:25:28.053 [INFO] ->         encoder         : Lavc61.19.101 hevc_qsv
+2025-12-16 22:25:28.053 [INFO] ->       Side data:
+2025-12-16 22:25:28.053 [INFO] ->         cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+2025-12-16 22:25:28.053 [INFO] ->   Stream #0:1(eng): Audio: aac (LC) ([255][0][0][0] / 0x00FF), 96000 Hz, stereo, fltp, 128 kb/s (default)
+2025-12-16 22:25:28.054 [INFO] ->       Metadata:
+2025-12-16 22:25:28.054 [INFO] ->         encoder         : Lavc61.19.101 aac
+2025-12-16 22:25:28.054 [INFO] ->   Stream #0:2(eng): Audio: aac (LC) ([255][0][0][0] / 0x00FF), 96000 Hz, stereo, fltp, 128 kb/s
+2025-12-16 22:25:28.054 [INFO] ->       Metadata:
+2025-12-16 22:25:28.054 [INFO] ->         encoder         : Lavc61.19.101 aac
+2025-12-16 22:25:28.054 [INFO] ->   Stream #0:3(eng): Audio: aac (LC) ([255][0][0][0] / 0x00FF), 96000 Hz, stereo, fltp, 128 kb/s
+2025-12-16 22:25:28.054 [INFO] ->       Metadata:
+2025-12-16 22:25:28.054 [INFO] ->         encoder         : Lavc61.19.101 aac
+2025-12-16 22:25:32.818 [INFO] -> frame= 1272 fps=254 q=-0.0 size=  109568KiB time=00:00:51.37 bitrate=17472.8kbits/s speed=10.3x    
+2025-12-16 22:25:37.818 [INFO] -> frame= 2566 fps=257 q=-0.0 size=  269568KiB time=00:01:45.37 bitrate=20956.4kbits/s speed=10.5x    
+2025-12-16 22:25:42.818 [INFO] -> frame= 3888 fps=259 q=-0.0 size=  396032KiB time=00:02:40.57 bitrate=20204.2kbits/s speed=10.7x    
+2025-12-16 22:25:47.818 [INFO] -> frame= 5196 fps=260 q=-0.0 size=  509696KiB time=00:03:34.90 bitrate=19429.6kbits/s speed=10.7x    
+2025-12-16 22:25:52.818 [INFO] -> frame= 6529 fps=261 q=-0.0 size=  625920KiB time=00:04:30.56 bitrate=18950.9kbits/s speed=10.8x    
+2025-12-16 22:25:57.818 [INFO] -> frame= 7866 fps=262 q=-0.0 size=  743680KiB time=00:05:26.45 bitrate=18661.9kbits/s speed=10.9x    
+2025-12-16 22:26:02.819 [INFO] -> frame= 9177 fps=262 q=-0.0 size=  893184KiB time=00:06:21.17 bitrate=19195.9kbits/s speed=10.9x    
+2025-12-16 22:26:07.819 [INFO] -> frame=10510 fps=263 q=-0.0 size= 1018368KiB time=00:07:16.76 bitrate=19100.5kbits/s speed=10.9x    
+2025-12-16 22:26:12.819 [INFO] -> frame=11800 fps=262 q=-0.0 size= 1203200KiB time=00:08:10.45 bitrate=20096.9kbits/s speed=10.9x    
+2025-12-16 22:26:17.819 [INFO] -> frame=13117 fps=262 q=-0.0 size= 1337600KiB time=00:09:05.37 bitrate=20091.9kbits/s speed=10.9x    
+2025-12-16 22:26:22.819 [INFO] -> frame=14435 fps=262 q=-0.0 size= 1448960KiB time=00:10:00.34 bitrate=19771.9kbits/s speed=10.9x    
+2025-12-16 22:26:27.819 [INFO] -> frame=15781 fps=263 q=-0.0 size= 1541376KiB time=00:10:56.57 bitrate=19231.5kbits/s speed=10.9x    
+2025-12-16 22:26:32.819 [INFO] -> frame=17114 fps=263 q=-0.0 size= 1652736KiB time=00:11:52.07 bitrate=19013.8kbits/s speed=  11x    
+2025-12-16 22:26:37.819 [INFO] -> frame=18453 fps=264 q=-0.0 size= 1767168KiB time=00:12:47.93 bitrate=18851.4kbits/s speed=  11x    
+2025-12-16 22:26:42.819 [INFO] -> frame=19795 fps=264 q=-0.0 size= 1916416KiB time=00:13:43.96 bitrate=19053.3kbits/s speed=  11x    
+2025-12-16 22:26:47.819 [INFO] -> frame=21111 fps=264 q=-0.0 size= 2103808KiB time=00:14:38.86 bitrate=19609.7kbits/s speed=  11x    
+2025-12-16 22:26:52.819 [INFO] -> frame=22446 fps=264 q=-0.0 size= 2227712KiB time=00:15:34.47 bitrate=19529.1kbits/s speed=  11x    
+2025-12-16 22:26:57.819 [INFO] -> frame=23779 fps=264 q=-0.0 size= 2369792KiB time=00:16:30.06 bitrate=19608.1kbits/s speed=  11x    
+2025-12-16 22:27:02.819 [INFO] -> frame=25124 fps=264 q=-0.0 size= 2466304KiB time=00:17:26.17 bitrate=19312.2kbits/s speed=  11x    
+2025-12-16 22:27:07.820 [INFO] -> frame=26459 fps=265 q=-0.0 size= 2580480KiB time=00:18:21.87 bitrate=19184.8kbits/s speed=  11x    
+2025-12-16 22:27:12.820 [INFO] -> frame=27796 fps=265 q=-0.0 size= 2687488KiB time=00:19:17.67 bitrate=19017.4kbits/s speed=  11x    
+2025-12-16 22:27:17.820 [INFO] -> frame=29099 fps=265 q=-0.0 size= 2793216KiB time=00:20:11.96 bitrate=18880.1kbits/s speed=  11x    
+2025-12-16 22:27:22.820 [INFO] -> frame=30395 fps=264 q=-0.0 size= 2915840KiB time=00:21:06.04 bitrate=18867.0kbits/s speed=  11x    
+2025-12-16 22:27:27.820 [INFO] -> frame=31697 fps=264 q=-0.0 size= 3065600KiB time=00:22:00.34 bitrate=19020.4kbits/s speed=  11x    
+2025-12-16 22:27:32.820 [INFO] -> frame=33012 fps=264 q=-0.0 size= 3172096KiB time=00:22:55.16 bitrate=18896.5kbits/s speed=  11x    
+2025-12-16 22:27:37.820 [INFO] -> frame=34315 fps=264 q=-0.0 size= 3308032KiB time=00:23:49.50 bitrate=18957.2kbits/s speed=  11x    
+2025-12-16 22:27:42.820 [INFO] -> frame=35653 fps=264 q=-0.0 size= 3423488KiB time=00:24:45.37 bitrate=18880.9kbits/s speed=  11x    
+2025-12-16 22:27:47.820 [INFO] -> frame=37020 fps=264 q=-0.0 size= 3467776KiB time=00:25:42.36 bitrate=18418.5kbits/s speed=  11x    
+2025-12-16 22:27:52.820 [INFO] -> frame=38339 fps=264 q=-0.0 size= 3685888KiB time=00:26:37.37 bitrate=18902.7kbits/s speed=  11x    
+2025-12-16 22:27:57.820 [INFO] -> frame=39664 fps=264 q=-0.0 size= 3870208KiB time=00:27:32.57 bitrate=19185.0kbits/s speed=  11x    
+2025-12-16 22:28:02.820 [INFO] -> frame=41003 fps=265 q=-0.0 size= 4003072KiB time=00:28:28.46 bitrate=19194.5kbits/s speed=  11x    
+2025-12-16 22:28:07.820 [INFO] -> frame=42338 fps=265 q=-0.0 size= 4156160KiB time=00:29:24.16 bitrate=19299.3kbits/s speed=  11x    
+2025-12-16 22:28:12.821 [INFO] -> frame=43661 fps=265 q=-0.0 size= 4332032KiB time=00:30:19.37 bitrate=19505.7kbits/s speed=  11x    
+2025-12-16 22:28:17.821 [INFO] -> frame=44982 fps=265 q=-0.0 size= 4474112KiB time=00:31:14.47 bitrate=19553.2kbits/s speed=  11x    
+2025-12-16 22:28:22.821 [INFO] -> frame=46330 fps=265 q=-0.0 size= 4582912KiB time=00:32:10.57 bitrate=19446.7kbits/s speed=  11x    
+2025-12-16 22:28:27.821 [INFO] -> frame=47657 fps=265 q=-0.0 size= 4733952KiB time=00:33:06.02 bitrate=19526.7kbits/s speed=  11x    
+2025-12-16 22:28:32.821 [INFO] -> frame=48968 fps=265 q=-0.0 size= 4895232KiB time=00:34:00.76 bitrate=19650.3kbits/s speed=  11x    
+2025-12-16 22:28:37.822 [INFO] -> frame=50285 fps=265 q=-0.0 size= 5030912KiB time=00:34:55.57 bitrate=19666.8kbits/s speed=  11x    
+2025-12-16 22:28:42.821 [INFO] -> frame=51621 fps=265 q=-0.0 size= 5122560KiB time=00:35:51.37 bitrate=19505.7kbits/s speed=  11x    
+2025-12-16 22:28:47.821 [INFO] -> frame=52969 fps=265 q=-0.0 size= 5207040KiB time=00:36:47.57 bitrate=19322.6kbits/s speed=  11x    
+2025-12-16 22:28:52.821 [INFO] -> frame=54310 fps=265 q=-0.0 size= 5295616KiB time=00:37:43.47 bitrate=19165.9kbits/s speed=  11x    
+2025-12-16 22:28:57.821 [INFO] -> frame=55655 fps=265 q=-0.0 size= 5384704KiB time=00:38:39.66 bitrate=19016.3kbits/s speed=  11x    
+2025-12-16 22:29:02.821 [INFO] -> frame=56995 fps=265 q=-0.0 size= 5490432KiB time=00:39:35.47 bitrate=18934.1kbits/s speed=  11x    
+2025-12-16 22:29:07.821 [INFO] -> frame=58328 fps=265 q=-0.0 size= 5598720KiB time=00:40:31.07 bitrate=18866.0kbits/s speed=11.1x    
+2025-12-16 22:29:12.822 [INFO] -> frame=59634 fps=265 q=-0.0 size= 5742848KiB time=00:41:25.56 bitrate=18927.4kbits/s speed=  11x    
+2025-12-16 22:29:17.822 [INFO] -> frame=60965 fps=265 q=-0.0 size= 5877248KiB time=00:42:21.13 bitrate=18946.8kbits/s speed=  11x    
+2025-12-16 22:29:22.822 [INFO] -> frame=62293 fps=265 q=-0.0 size= 6023936KiB time=00:43:16.46 bitrate=19005.8kbits/s speed=  11x    
+2025-12-16 22:29:27.822 [INFO] -> frame=63624 fps=265 q=-0.0 size= 6176768KiB time=00:44:11.96 bitrate=19080.2kbits/s speed=  11x    
+2025-12-16 22:29:32.822 [INFO] -> frame=64924 fps=265 q=-0.0 size= 6309376KiB time=00:45:06.24 bitrate=19098.9kbits/s speed=  11x    
+2025-12-16 22:29:37.822 [INFO] -> frame=66251 fps=265 q=-0.0 size= 6446080KiB time=00:46:01.56 bitrate=19121.9kbits/s speed=  11x    
+2025-12-16 22:29:42.822 [INFO] -> frame=67590 fps=265 q=-0.0 size= 6596096KiB time=00:46:57.47 bitrate=19178.6kbits/s speed=  11x    
+2025-12-16 22:29:47.822 [INFO] -> frame=68892 fps=265 q=-0.0 size= 6754816KiB time=00:47:51.77 bitrate=19268.7kbits/s speed=  11x    
+2025-12-16 22:29:52.822 [INFO] -> frame=70229 fps=265 q=-0.0 size= 6871808KiB time=00:48:47.47 bitrate=19229.5kbits/s speed=  11x    
+2025-12-16 22:29:57.822 [INFO] -> frame=71564 fps=265 q=-0.0 size= 7019264KiB time=00:49:43.16 bitrate=19275.4kbits/s speed=  11x    
+2025-12-16 22:30:02.822 [INFO] -> frame=72888 fps=265 q=-0.0 size= 7113984KiB time=00:50:38.32 bitrate=19180.9kbits/s speed=  11x    
+2025-12-16 22:30:07.822 [INFO] -> frame=74211 fps=265 q=-0.0 size= 7244032KiB time=00:51:33.53 bitrate=19182.9kbits/s speed=  11x    
+2025-12-16 22:30:12.822 [INFO] -> frame=75549 fps=265 q=-0.0 size= 7362304KiB time=00:52:29.37 bitrate=19150.5kbits/s speed=11.1x    
+2025-12-16 22:30:17.823 [INFO] -> frame=76881 fps=265 q=-0.0 size= 7468544KiB time=00:53:24.87 bitrate=19090.4kbits/s speed=11.1x    
+2025-12-16 22:30:22.823 [INFO] -> frame=78212 fps=265 q=-0.0 size= 7585024KiB time=00:54:20.46 bitrate=19057.5kbits/s speed=11.1x    
+2025-12-16 22:30:27.823 [INFO] -> frame=79554 fps=265 q=-0.0 size= 7705344KiB time=00:55:16.37 bitrate=19033.5kbits/s speed=11.1x    
+2025-12-16 22:30:32.823 [INFO] -> frame=80891 fps=265 q=-0.0 size= 7819264KiB time=00:56:12.17 bitrate=18995.3kbits/s speed=11.1x    
+2025-12-16 22:30:37.823 [INFO] -> frame=82206 fps=265 q=-0.0 size= 7957248KiB time=00:57:07.01 bitrate=19021.1kbits/s speed=11.1x    
+2025-12-16 22:30:42.823 [INFO] -> frame=83538 fps=265 q=-0.0 size= 8109568KiB time=00:58:02.47 bitrate=19076.5kbits/s speed=11.1x    
+2025-12-16 22:30:47.823 [INFO] -> frame=84852 fps=265 q=-0.0 size= 8292608KiB time=00:58:57.37 bitrate=19204.4kbits/s speed=11.1x    
+2025-12-16 22:30:52.823 [INFO] -> frame=86175 fps=265 q=-0.0 size= 8466176KiB time=00:59:52.46 bitrate=19305.6kbits/s speed=11.1x    
+2025-12-16 22:30:57.823 [INFO] -> frame=87506 fps=265 q=-0.0 size= 8594688KiB time=01:00:48.07 bitrate=19300.0kbits/s speed=11.1x    
+2025-12-16 22:31:02.823 [INFO] -> frame=88816 fps=265 q=-0.0 size= 8776448KiB time=01:01:42.67 bitrate=19417.5kbits/s speed=11.1x    
+2025-12-16 22:31:07.823 [INFO] -> frame=90130 fps=265 q=-0.0 size= 8963072KiB time=01:02:37.50 bitrate=19541.0kbits/s speed=11.1x    
+2025-12-16 22:31:12.823 [INFO] -> frame=91447 fps=265 q=-0.0 size= 9138688KiB time=01:03:32.37 bitrate=19637.1kbits/s speed=11.1x    
+2025-12-16 22:31:17.823 [INFO] -> frame=92771 fps=265 q=-0.0 size= 9349120KiB time=01:04:27.66 bitrate=19802.1kbits/s speed=11.1x    
+2025-12-16 22:31:22.823 [INFO] -> frame=94105 fps=265 q=-0.0 size= 9492224KiB time=01:05:23.37 bitrate=19819.8kbits/s speed=11.1x    
+2025-12-16 22:31:27.824 [INFO] -> frame=95422 fps=265 q=-0.0 size= 9636864KiB time=01:06:18.17 bitrate=19844.6kbits/s speed=11.1x    
+2025-12-16 22:31:32.824 [INFO] -> frame=96729 fps=265 q=-0.0 size= 9788928KiB time=01:07:12.76 bitrate=19884.8kbits/s speed=  11x    
+2025-12-16 22:31:37.824 [INFO] -> frame=98067 fps=265 q=-0.0 size= 9879808KiB time=01:08:08.57 bitrate=19795.5kbits/s speed=11.1x    
+2025-12-16 22:31:42.824 [INFO] -> frame=99389 fps=265 q=-0.0 size=10019584KiB time=01:09:03.57 bitrate=19809.1kbits/s speed=  11x    
+2025-12-16 22:31:47.824 [INFO] -> frame=100720 fps=265 q=-0.0 size=10152192KiB time=01:09:59.16 bitrate=19805.5kbits/s speed=11.1x    
+2025-12-16 22:31:52.824 [INFO] -> frame=102037 fps=265 q=-0.0 size=10323456KiB time=01:10:54.08 bitrate=19879.6kbits/s speed=  11x    
+2025-12-16 22:31:57.824 [INFO] -> frame=103386 fps=265 q=-0.0 size=10462464KiB time=01:11:50.36 bitrate=19884.3kbits/s speed=11.1x    
+2025-12-16 22:32:02.824 [INFO] -> frame=104698 fps=265 q=-0.0 size=10649600KiB time=01:12:45.07 bitrate=19986.3kbits/s speed=11.1x    
+2025-12-16 22:32:07.824 [INFO] -> frame=106017 fps=265 q=-0.0 size=10780160KiB time=01:13:40.07 bitrate=19979.5kbits/s speed=11.1x    
+2025-12-16 22:32:12.824 [INFO] -> frame=107395 fps=265 q=-0.0 size=10872320KiB time=01:14:37.56 bitrate=19891.6kbits/s speed=11.1x    
+2025-12-16 22:32:17.824 [INFO] -> frame=108833 fps=265 q=-0.0 size=10907904KiB time=01:15:37.56 bitrate=19692.8kbits/s speed=11.1x    
+2025-12-16 22:32:22.824 [INFO] -> frame=110267 fps=266 q=-0.0 size=10956032KiB time=01:16:37.47 bitrate=19522.0kbits/s speed=11.1x    
+2025-12-16 22:32:27.824 [INFO] -> frame=111700 fps=266 q=-0.0 size=11014656KiB time=01:17:37.17 bitrate=19374.9kbits/s speed=11.1x    
+2025-12-16 22:32:32.825 [INFO] -> frame=113138 fps=266 q=-0.0 size=11054592KiB time=01:18:35.78 bitrate=19203.4kbits/s speed=11.1x    
+2025-12-16 22:32:32.840 [INFO] -> [Parsed_loudnorm_0 @ 0x14f0ec003dc0] 
+2025-12-16 22:32:32.840 [INFO] -> Input Integrated:    -18.7 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Input True Peak:      -2.3 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Input LRA:             9.8 LU
+2025-12-16 22:32:32.840 [INFO] -> Input Threshold:     -29.5 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Output Integrated:   -24.0 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Output True Peak:     -5.2 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Output LRA:            6.9 LU
+2025-12-16 22:32:32.840 [INFO] -> Output Threshold:    -34.6 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Normalization Type:   Dynamic
+2025-12-16 22:32:32.840 [INFO] -> Target Offset:        -0.0 LU
+2025-12-16 22:32:32.840 [INFO] -> [Parsed_loudnorm_0 @ 0x14f0e8003e00] 
+2025-12-16 22:32:32.840 [INFO] -> Input Integrated:    -20.7 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Input True Peak:      -0.7 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Input LRA:            12.3 LU
+2025-12-16 22:32:32.840 [INFO] -> Input Threshold:     -32.0 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Output Integrated:   -24.0 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Output True Peak:     -3.2 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Output LRA:            8.2 LU
+2025-12-16 22:32:32.840 [INFO] -> Output Threshold:    -35.0 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Normalization Type:   Dynamic
+2025-12-16 22:32:32.840 [INFO] -> Target Offset:        -0.0 LU
+2025-12-16 22:32:32.840 [INFO] -> [Parsed_loudnorm_0 @ 0x14f0f4003dc0] 
+2025-12-16 22:32:32.840 [INFO] -> Input Integrated:    -18.8 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Input True Peak:      -4.7 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Input LRA:            10.1 LU
+2025-12-16 22:32:32.840 [INFO] -> Input Threshold:     -29.5 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Output Integrated:   -24.0 LUFS
+2025-12-16 22:32:32.840 [INFO] -> Output True Peak:     -8.3 dBTP
+2025-12-16 22:32:32.840 [INFO] -> Output LRA:            7.2 LU
+2025-12-16 22:32:32.840 [INFO] -> Output Threshold:    -34.5 LUFS
+2025-12-16 22:32:32.840 [INFO] -> 
+2025-12-16 22:32:32.840 [INFO] -> Normalization Type:   Dynamic
+2025-12-16 22:32:32.840 [INFO] -> Target Offset:        -0.0 LU
+2025-12-16 22:32:32.869 [INFO] -> [out#0/matroska @ 0x5626a9f74b80] video:10820647KiB audio:224005KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.091531%
+2025-12-16 22:32:32.869 [INFO] -> frame=113146 fps=266 q=-0.0 Lsize=11054761KiB time=01:18:38.79 bitrate=19191.5kbits/s speed=11.1x    
+2025-12-16 22:32:32.877 [INFO] -> [aac @ 0x5626a9fa9280] Qavg: 795.811
+2025-12-16 22:32:32.877 [INFO] -> [aac @ 0x5626a9eafb80] Qavg: 868.225
+2025-12-16 22:32:32.877 [INFO] -> [aac @ 0x5626a9eaec40] Qavg: 777.675
+2025-12-16 22:32:32.927 [INFO] -> Exit Code: 0
+2025-12-16 22:32:32.927 [INFO] -> Completed: True
+2025-12-16 22:32:34.202 [INFO] -> Encoding successful: True
+2025-12-16 22:32:34.203 [INFO] -> Setting working file to: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.203 [INFO] -> Changing owner on working file: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+
+
+2025-12-16 22:32:34.216 [INFO] -> Permissions [644] set on file: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.216 [INFO] -> New working file size: 11320075397
+2025-12-16 22:32:34.216 [INFO] -> Initing file: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.233 [INFO] -> Reading new video information
+2025-12-16 22:32:34.233 [INFO] -> ----------------------------------------------------------------------
+2025-12-16 22:32:34.233 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -probesize 300M -analyzeduration 240000000 -i /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.233 [INFO] -> ----------------------------------------------------------------------
+Input #0, matroska,webm, from '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv':
+  Metadata:
+    COMMENT         : Created by FileFlows
+                    : https://fileflows.com
+    ENCODER         : Lavf61.7.100
+  Duration: 01:18:39.13, start: -0.011000, bitrate: 19190 kb/s
+  Stream #0:0: Video: hevc (Main 10), yuv420p10le(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+      Metadata:
+        ENCODER         : Lavc61.19.101 hevc_qsv
+        DURATION        : 01:18:39.131000000
+  Stream #0:1(eng): Audio: aac (LC), 96000 Hz, stereo, fltp (default)
+      Metadata:
+        ENCODER         : Lavc61.19.101 aac
+        DURATION        : 01:18:38.811000000
+  Stream #0:2(eng): Audio: aac (LC), 96000 Hz, stereo, fltp
+      Metadata:
+        ENCODER         : Lavc61.19.101 aac
+        DURATION        : 01:18:38.811000000
+  Stream #0:3(eng): Audio: aac (LC), 96000 Hz, stereo, fltp
+      Metadata:
+        ENCODER         : Lavc61.19.101 aac
+        DURATION        : 01:18:38.811000000
+At least one output file must be specified
+2025-12-16 22:32:34.327 [INFO] -> 10-Bit detected
+2025-12-16 22:32:34.327 [INFO] -> Frames Per Second: 23.98
+2025-12-16 22:32:34.327 [INFO] -> Video stream duration: 01:18:39.1310000
+2025-12-16 22:32:34.328 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:32:34.328 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:32:34.328 [INFO] -> Audio channels: 2, from stereo
+2025-12-16 22:32:34.328 [INFO] -> Setting new video information
+2025-12-16 22:32:34.328 [INFO] -> Setting traits
+2025-12-16 22:32:34.328 [INFO] -> Setting file traits: HEVC, AAC, Stereo, 1080p
+2025-12-16 22:32:34.328 [INFO] -> Setting Video Info
+2025-12-16 22:32:34.328 [INFO] -> Setting Video stream information
+2025-12-16 22:32:34.328 [INFO] -> Setting Video audio information
+2025-12-16 22:32:34.328 [INFO] -> Setting Video resolution
+2025-12-16 22:32:34.328 [INFO] -> Setting Video variables
+2025-12-16 22:32:34.328 [INFO] -> Setting metadata
+2025-12-16 22:32:34.328 [INFO] -> Setting audio metadata
+2025-12-16 22:32:34.328 [INFO] -> Setting subtitle metadata
+2025-12-16 22:32:34.328 [INFO] -> Setting mimetype
+2025-12-16 22:32:34.328 [INFO] -> Setting metadata
+2025-12-16 22:32:34.328 [INFO] -> Clearing FFmpeg Builder Model
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.328 [INFO] -> Flow Element execution time: 00:07:06.5838412
+2025-12-16 22:32:34.328 [INFO] -> Flow Element output: 1
+2025-12-16 22:32:34.328 [INFO] -> ======================================================================
+2025-12-16 22:32:34.337 [INFO] -> ======================================================================
+2025-12-16 22:32:34.337 [INFO] -> Executing Flow Element 24: Log Variables [FileFlows.BasicNodes.Logging.LogVariables]
+2025-12-16 22:32:34.337 [INFO] -> ======================================================================
+2025-12-16 22:32:34.337 [INFO] -> Working File: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.338 [INFO] -> Variables: 
+library.Name: Tests
+library.Path: /data/media/transcode-tests/
+common: /app/common
+AudioLangID.ForceRetag: True
+ffmpeg: /usr/local/bin/ffmpeg
+ffprobe: /usr/local/bin/ffprobe
+unrar: unrar
+rar: rar
+7zip: 7z
+ffmpeg_vmaf: /app/common/ffmpeg-static/ffmpeg
+temp: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+ExecutedFlowElements: [FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode, FileFlows.Shared.Models.ExecutedNode]
+FlowName: Radarr or Sonarr
+file.OriginalName: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+ext: .mkv
+file.Name: 8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+file.NameNoExtension: 8a4086a4-af86-4ab2-b177-a5ffa776a37a
+file.FullName: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+file.Extension: .mkv
+file.Size: 11320075397
+folder.Name: Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+folder.FullName: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+ORIGINAL_CREATE_UTC: 12/16/2025 17:58:38
+ORIGINAL_LAST_WRITE_UTC: 12/16/2025 17:58:38
+file.Create: 12/16/2025 21:58:38
+file.Create.Year: 2025
+file.Create.Month: 12
+file.Create.Day: 16
+file.Modified: 12/16/2025 21:58:38
+file.Modified.Year: 2025
+file.Modified.Month: 12
+file.Modified.Day: 16
+file.Orig.Extension: .mkv
+file.Orig.FileName: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+file.Orig.Name: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+file.Orig.FileNameNoExtension: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+file.Orig.NameNoExtension: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+file.Orig.FullName: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+file.Orig.Size: 13547832935
+folder.Orig.Name: transcode-tests
+folder.Orig.FullName: /data/media/transcode-tests
+folder.Orig.Size: 15742934803
+file.Orig.RelativeName: sterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+folder.Size: 11326154480
+vi.OriginalDuration: 01:18:39.1300000
+vi.VideoInfo.FileName: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+vi.VideoInfo.Bitrate: 19190000
+vi.VideoInfo.AlreadyProcessed: True
+vi.VideoInfo.VideoStreams: [0 / hevc]
+vi.VideoInfo.AudioStreams: [1 / eng / aac / 2.0 / Default, 2 / eng / aac / 2.0, 3 / eng / aac / 2.0]
+vi.VideoInfo.SubtitleStreams: []
+vi.VideoInfo.Chapters: []
+vi.VideoInfo.Attachments: []
+vi.Width: 1920
+video.Width: 1920
+vi.Height: 1080
+video.Height: 1080
+vi.Duration: 4719.131
+video.Duration: 4719.131
+vi.Video.Codec: hevc
+video.Video.Codec: hevc
+vi.Codec: hevc
+video.Codec: hevc
+vi.Audio.Codec: aac
+video.Audio.Codec: aac
+vi.Audio.Channels: 2
+video.Audio.Channels: 2
+vi.Audio.Language: eng
+video.Audio.Language: eng
+vi.Audio.Codecs: aac, aac, aac
+video.Audio.Codecs: aac, aac, aac
+vi.Audio.Languages: eng, eng, eng
+video.Audio.Languages: eng, eng, eng
+vi.Resolution: 1080p
+video.Resolution: 1080p
+vi.FramesPerSecond: 23.98
+video.FramesPerSecond: 23.98
+vi.FPS: 23.98
+video.FPS: 23.98
+vi.HDR: False
+video.HDR: False
+FileFlows.Url: http://localhost:5000
+Output: 1
+FfmpegBuilderModel.VideoStreams: [0 / hevc / Changed]
+FfmpegBuilderModel.AudioStreams: [0 / eng / aac / Default / Changed, 1 / eng / aac / Changed, 2 / eng / aac / Changed]
+FfmpegBuilderModel.SubtitleStreams: []
+FfmpegBuilderModel.MetadataParameters: []
+FfmpegBuilderModel.Extension: mkv
+FfmpegBuilderModel.InputFiles: [FileFlows.VideoNodes.FfmpegBuilderNodes.Models.InputFile]
+FfmpegBuilderModel.CustomParameters: [-x265-params, preset=veryslow:aq-mode=3:hdr10=1:hdr10_opt=1:colorprim=9:transfer=16:colormatrix=9]
+FfmpegBuilderModel.ParameterReplacements: []
+FfmpegBuilderModel.ForceEncode: True
+null
+FfmpegBuilderModel.RemoveAttachments: False
+FfmpegBuilderModel.GpuIndex: 1
+FfmpegBuilderModel.VideoInfo.FileName: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv
+FfmpegBuilderModel.VideoInfo.Bitrate: 22966000
+FfmpegBuilderModel.VideoInfo.AlreadyProcessed: False
+FfmpegBuilderModel.VideoInfo.VideoStreams: [0 / h264]
+FfmpegBuilderModel.VideoInfo.AudioStreams: [1 / eng / dts-hd / 2.0 / Default, 2 / eng / dts-hd / 2.0, 3 / eng / dts-hd / 2.0]
+FfmpegBuilderModel.VideoInfo.SubtitleStreams: []
+FfmpegBuilderModel.VideoInfo.Chapters: []
+FfmpegBuilderModel.VideoInfo.Attachments: []
+null
+null
+null
+FfmpegBuilderModel.RemoveAdditionalMetadata: False
+detected_hw_encoder: qsv
+target_bit_depth: 10
+source_bit_depth: 8
+is_hdr: False
+is_dolby_vision: False
+denoiseLevel: 20
+isRestoredContent: False
+isOldCelAnimation: False
+sourceBitrateKbps: 22966
+applied_vpp_qsv_filter: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+applied_denoise: vpp_qsv=denoise=13
+qsv_denoise_value: 13
+video_filters: vpp_qsv=denoise=13
+filters: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+recommended_qsv_params: -bf 7 -refs 4 -g 250 -extbrc 1 -look_ahead_depth 20
+recommended_x265_params: bframes=8:ref=4:aq-mode=3:psy-rd=1.0
+AutoQuality_Metric: VMAF
+AutoQuality_UpstreamVideoFilters: vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+AutoQuality_ReferenceCRF: 8
+AutoQuality_AvgLuminance: 104.69861972789117
+AutoQuality_LuminanceBoost: 0
+AutoQuality_FilterMode: upstream
+AutoQuality_CRF: 17
+AutoQuality_Score: 95.54380333333334
+AutoQuality_Target: 95
+AutoQuality_TargetVMAF: 95
+AutoQuality_Iterations: 3
+AutoQuality_Results: [{"crf":20,"score":93.65000266666668},{"crf":18,"score":94.98448499999999},{"crf":17,"score":95.54380333333334}]
+FmpegModelFinalDuration: 01:18:39.1300000
+
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.339 [INFO] -> Flow Element execution time: 00:00:00.0018687
+2025-12-16 22:32:34.339 [INFO] -> Flow Element output: 1
+2025-12-16 22:32:34.339 [INFO] -> ======================================================================
+2025-12-16 22:32:34.339 [INFO] -> ======================================================================
+2025-12-16 22:32:34.339 [INFO] -> Executing Flow Element 25: Bitrate check [FileFlows.FlowRunner.RunnerFlowElements.ExecuteFlow]
+2025-12-16 22:32:34.339 [INFO] -> ======================================================================
+2025-12-16 22:32:34.339 [INFO] -> Working File: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.339 [INFO] -> Increasing total flow parts by: 7
+2025-12-16 22:32:34.339 [INFO] -> Loading Flow Properties into variables
+2025-12-16 22:32:34.339 [INFO] -> Output = 1
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.344 [INFO] -> ======================================================================
+2025-12-16 22:32:34.344 [INFO] -> Executing Flow Element 26: Variable Match [FileFlows.BasicNodes.Functions.VariableMatch]
+2025-12-16 22:32:34.344 [INFO] -> ======================================================================
+2025-12-16 22:32:34.344 [INFO] -> Working File: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.345 [INFO] -> Variable: force
+2025-12-16 22:32:34.345 [INFO] -> Test Value: 1
+2025-12-16 22:32:34.345 [INFO] -> Variables[force]: 
+2025-12-16 22:32:34.345 [INFO] -> Variable had no appropriate string value
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.345 [INFO] -> Flow Element execution time: 00:00:00.0003393
+2025-12-16 22:32:34.345 [INFO] -> Flow Element output: 2
+2025-12-16 22:32:34.345 [INFO] -> ======================================================================
+2025-12-16 22:32:34.345 [INFO] -> ======================================================================
+2025-12-16 22:32:34.345 [INFO] -> Executing Flow Element 27: MiB per hour per resolution [FileFlows.Server.ScriptNode]
+2025-12-16 22:32:34.345 [INFO] -> ======================================================================
+2025-12-16 22:32:34.345 [INFO] -> Working File: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.345 [INFO] -> Adjust variable 'Output' to: 1
+2025-12-16 22:32:34.345 [INFO] -> Shared Directory for scripts: /app/Data/Data/Config/188072272/Scripts/Shared
+2025-12-16 22:32:34.346 [INFO] -> 1080p video detected: 1920x1080
+2025-12-16 22:32:34.346 [INFO] -> File size is 11320075397 (10.54 GB) and should be below: 6.4 GB
+2025-12-16 22:32:34.346 [INFO] -> Duration: 4719.131 seconds
+2025-12-16 22:32:34.346 [INFO] -> Detected mibPerHour: 8235.498145155168
+2025-12-16 22:32:34.346 [INFO] -> Above threshold of 5000
+2025-12-16 22:32:34.346 [INFO] -> Script result: 2
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.346 [INFO] -> Flow Element execution time: 00:00:00.0009772
+2025-12-16 22:32:34.346 [INFO] -> Flow Element output: 2
+2025-12-16 22:32:34.346 [INFO] -> ======================================================================
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:32:34.351 [INFO] -> ======================================================================
+2025-12-16 22:32:34.351 [INFO] -> Executing Flow Element 29: Move File [FileFlows.BasicNodes.File.MoveFile]
+2025-12-16 22:32:34.351 [INFO] -> ======================================================================
+2025-12-16 22:32:34.351 [INFO] -> Working File: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.353 [INFO] -> Final destination path: /data/media/transcode-tests
+2025-12-16 22:32:34.353 [INFO] -> Final destination filename: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:32:34.354 [INFO] -> Source Directory: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+2025-12-16 22:32:34.354 [INFO] -> shortNameLookup: Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo
+2025-12-16 22:32:34.354 [INFO] -> Moving file: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.354 [INFO] -> Destination: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:32:34.354 [INFO] -> Moving working file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:32:34.354 [INFO] -> MoveFile: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.354 [INFO] -> Destination: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+Json Message Sent: { Method = LibraryIgnorePath, Params = System.Object[] }
+2025-12-16 22:32:34.354 [INFO] -> LocalFileService.FileMove: Path: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.354 [INFO] -> LocalFileService.FileMove: Destination: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:32:34.354 [INFO] -> LocalFileService.FileMove: Overwrite: True
+2025-12-16 22:32:34.354 [INFO] -> File exists: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv
+2025-12-16 22:32:34.354 [INFO] -> Checking destination exists: /data/media/transcode-tests
+2025-12-16 22:32:34.355 [INFO] -> About to move file '/temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa/8a4086a4-af86-4ab2-b177-a5ffa776a37a.mkv' to '/data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv'
+
+
+
+2025-12-16 22:33:00.478 [INFO] -> Info -> Permissions [644] set on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+Info -> Changing owner on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+Info -> Change owner command: chown 99:100 /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+Info -> Permissions [644] set on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.478 [INFO] -> File moved to: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.478 [INFO] -> Initing new moved file
+2025-12-16 22:33:00.478 [INFO] -> Initing file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.479 [INFO] -> No additional files configured to move
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:33:00.480 [INFO] -> Flow Element execution time: 00:00:26.1280540
+2025-12-16 22:33:00.480 [INFO] -> Flow Element output: 1
+2025-12-16 22:33:00.480 [INFO] -> ======================================================================
+2025-12-16 22:33:00.485 [INFO] -> ======================================================================
+2025-12-16 22:33:00.485 [INFO] -> Executing Flow Element 30: Write Text [BasicNodes.File.WriteText]
+2025-12-16 22:33:00.485 [INFO] -> ======================================================================
+2025-12-16 22:33:00.485 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.486 [INFO] -> Text: v2+audio_normalization+ac3+video_filters=vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le
+2025-12-16 22:33:00.486 [INFO] -> File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv.fflowed
+
+
+
+2025-12-16 22:33:00.496 [INFO] -> Info -> Permissions [644] set on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv.fflowed
+Info -> Changing owner on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv.fflowed
+Info -> Change owner command: chown 99:100 /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv.fflowed
+Info -> Permissions [644] set on file: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv.fflowed
+2025-12-16 22:33:00.496 [INFO] -> Text written to file
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:33:00.497 [INFO] -> Flow Element execution time: 00:00:00.0111506
+2025-12-16 22:33:00.497 [INFO] -> Flow Element output: 1
+2025-12-16 22:33:00.497 [INFO] -> ======================================================================
+2025-12-16 22:33:00.502 [INFO] -> ======================================================================
+2025-12-16 22:33:00.502 [INFO] -> Executing Flow Element 31: Fail Flow [FileFlows.BasicNodes.Functions.FailFlow]
+2025-12-16 22:33:00.502 [INFO] -> ======================================================================
+2025-12-16 22:33:00.502 [INFO] -> Working File: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.502 [INFO] -> Failing flow: New bitrate is still too high
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:33:00.502 [INFO] -> Flow Element execution time: 00:00:00.0003239
+2025-12-16 22:33:00.502 [INFO] -> Flow Element output: -1
+2025-12-16 22:33:00.502 [INFO] -> ======================================================================
+2025-12-16 22:33:00.503 [ERRR] -> Flow Element returned error code: FailFlow
+2025-12-16 22:33:00.503 [ERRR] -> Flow Element returned error code: ExecuteFlow
+2025-12-16 22:33:00.503 [INFO] -> flowExecutor result: -1
+2025-12-16 22:33:00.503 [INFO] -> Original Size: 13547832935
+2025-12-16 22:33:00.503 [INFO] -> Final Size: 11320075397
+2025-12-16 22:33:00.503 [INFO] -> Output Path: /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo__vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=13:format=p010le.mkv
+2025-12-16 22:33:00.503 [INFO] -> Final Failure Reason: New bitrate is still too high
+Json Message Sent: { Method = UpdateLibraryFile, Params = System.Object[] }
+2025-12-16 22:33:00.511 [INFO] -> Run status: ProcessingFailed
+Exit Code: 4
+2025-12-16 22:33:00.598 [INFO] -> Deleted temporary directory: /temp/Runner-d2eaca44-0161-402d-8776-4ada4c9f59fa
+2025-12-16 22:33:00.598 [INFO] -> Finishing file: ProcessingFailed

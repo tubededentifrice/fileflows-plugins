@@ -146,6 +146,30 @@ ffmpeg.VideoInfo         // Original VideoInfo
 video.Filters            // string[] - forces change if set
 video.OptionalFilter     // string[] - only if change detected
 video.EncodingParameters // string[]
+
+// FfmpegAudioStream / FfmpegSubtitleStream (stream manipulation)
+stream.Deleted           // bool - Set true to remove stream from output
+stream.Language          // string - ISO 639-2/B code (e.g., "eng", "fre")
+stream.IsDefault         // bool - Mark stream as default
+stream.Title             // string - Stream title/description
+stream.Index             // number - Overall stream index
+stream.TypeIndex         // number - Type-relative index (for -map 0:a:N)
+stream.Codec             // string - Codec name
+stream.Channels          // number - Audio channels (e.g., 5.1 = 6)
+```
+
+### Stream Manipulation Patterns
+```javascript
+// Remove streams by language
+for (let audio of ffmpeg.AudioStreams) {
+    if (!LanguageHelper.AreSame(audio.Language, 'eng')) {
+        audio.Deleted = true;  // Marks for removal
+    }
+}
+ffmpeg.ForceEncode = true;  // Required when modifying streams
+
+// Set default track
+ffmpeg.AudioStreams[0].IsDefault = true;
 ```
 
 ### Logger
@@ -210,7 +234,10 @@ http.DefaultRequestHeaders.Remove("X-API-Key");
 ```javascript
 Sleep(milliseconds)                          // Pause execution
 MissingVariable('VarName')                   // Report missing required variable
-LanguageHelper.GetIso1Code('English')        // Language code lookup
+LanguageHelper.GetIso1Code('English')        // Convert to ISO 639-1 (2-letter: 'en')
+LanguageHelper.GetIso2Code('en')             // Convert to ISO 639-2/B (3-letter: 'eng')
+LanguageHelper.AreSame('fre', 'fra')         // Compare languages (handles fre/fra/fr/French)
+LanguageHelper.GetEnglishFor('fre')          // Get English name ('French')
 
 // .NET interop
 System.IO.Path.GetFileName(path)
@@ -237,6 +264,7 @@ Scripts/Flow/     - Flow scripts available as nodes
 - `Scripts/Flow/Video/Video - Auto Tag Missing Language.js` - Detects missing/`und` (or force re-tags via `Variables['AudioLangID.ForceRetag']`) audio track languages using heuristics + offline LID (SpeechBrain; whisper.cpp fallback) and tags tracks via `mkvpropedit` (MKV) or ffmpeg remux; sample timing can be overridden via `Variables['AudioLangID.SampleStartSeconds']` / `Variables['AudioLangID.SampleDurationSeconds']`, duration fields are parsed from numeric seconds or `TimeSpan`-style strings, and auto sampling avoids intros when duration is unknown.
 - `DockerMods/FFmpegDockerMod.sh` - Container helper to install an FFmpeg that supports the filters/encoders required by `Scripts/Flow/Video/Video - Cleaning Filters.js` and `Scripts/Flow/Video/Video - Auto Quality.js` (QSV/VAAPI, OpenCL runtime deps best-effort, and metrics like `libvmaf`/`ssim`). Installs Jellyfin + BtbN builds and sets `/usr/local/bin/ffmpeg` to either the best single build or a small selector wrapper (`FFMPEG_FORCE=jellyfin|btbn`).
 - `DockerMods/AudioLangIDDockerMod.sh` - Container helper to install offline audio language detection tools used by `Scripts/Flow/Video/Video - Auto Tag Missing Language.js` (`mkvpropedit`, SpeechBrain LID wrapper, whisper.cpp fallback, and cached models); installs Python deps into a venv under `/opt/fileflows-langid/venv` to avoid PEP 668 pip failures (pins `huggingface_hub` for SpeechBrain compatibility and forces caches under `/opt/fileflows-langid`), includes `sox`/`libsox-fmt-all` so torchaudio backends are available, symlinks wrappers into `/usr/bin` in case `/usr/local/bin` isn’t on `PATH`, and creates an uninstall shim named `"<script> --uninstall"` to work around FileFlows sudo quoting during DockerMod uninstall.
+- `Scripts/Flow/Video/Video - Language Based Track Selection.js` - Keeps only audio/subtitle tracks matching the original language or specified additional languages; marks non-matching tracks with `Deleted=true`; reorders tracks so original language comes first, then additional languages in specified order; stores selection metadata in `Variables['TrackSelection.*']` for downstream scripts. Requires Movie/TV Show Lookup to run first for `Variables.OriginalLanguage`.
 - `Scripts/Flow/Video/*.js` - Bitrate (MiB/hour) and resolution detection utilities
 
 ## Integration Pattern
