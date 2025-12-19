@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 18
+ * @revision 19
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -10,7 +10,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace) {
-    Logger.ILog('Cleaning filters.js revision 17 loaded');
+    Logger.ILog('Cleaning filters.js revision 19 loaded');
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -333,6 +333,23 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return `vpp_qsv=${parts.join(':')}`;
     }
 
+    function extractYearFromFilename(filePath) {
+        if (!filePath) return null;
+        const filename = String(filePath).split('/').pop().split('\\').pop();
+        if (!filename) return null;
+
+        // Pattern: .YYYY. (year 1900-2099 enclosed in dots, common in scene releases)
+        const match = filename.match(/\.(19\d{2}|20\d{2})\./);
+        if (match) {
+            const year = parseInt(match[1], 10);
+            const currentYear = new Date().getFullYear();
+            if (year >= 1900 && year <= currentYear + 1) {
+                return year;
+            }
+        }
+        return null;
+    }
+
     function detectInterlacedWithIdet(ffmpegPath, inputFile, durationSeconds) {
         const framesPerSample = 250;
         const timeSamples = [];
@@ -381,7 +398,12 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return { interlaced, reason: 'idet', tff, bff, progressive, undetermined };
     }
 
-    const year = Variables.VideoMetadata?.Year || 2012;
+    const workingFile = Variables.file?.FullName || Flow.WorkingFile;
+    const filenameYear = extractYearFromFilename(workingFile);
+    const year = Variables.VideoMetadata?.Year || filenameYear || 2012;
+    if (!Variables.VideoMetadata?.Year && filenameYear) {
+        Logger.ILog(`Year extracted from filename: ${filenameYear}`);
+    }
     const genres = Variables.VideoMetadata?.Genres || [];
 
     // Override variables (set these in upstream nodes to force specific filter values)
