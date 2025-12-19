@@ -49,7 +49,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 16
+ * @revision 17
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -374,69 +374,73 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const targetDisplay = qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget;
     Logger.ILog(`Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`);
 
+    const referenceSamples = encodeReferenceSamples(ffmpegEncodePath, originalFile, samplePositions, SampleDurationSec, use10BitForTests, targetCodec, upstreamVideoFilters, referenceCRF);
+
+    if (referenceSamples.length === 0) {
+        Logger.ELog('Failed to encode any reference samples. Cannot proceed with quality search.');
+        Variables.AutoQuality_CRF = 'unchanged';
+        Variables.AutoQuality_Reason = 'reference_encode_failed';
+        return 1;
+    }
+
     const searchResults = [];
     let bestCRF = null;
     let bestScore = 0;
 
-    // Binary search for optimal CRF
     let lowCRF = MinCRF;
     let highCRF = MaxCRF;
     let iterations = 0;
 
-    while (lowCRF <= highCRF && iterations < MaxSearchIterations) {
-        iterations++;
-        const testCRF = Math.round((lowCRF + highCRF) / 2);
+    try {
+        while (lowCRF <= highCRF && iterations < MaxSearchIterations) {
+            iterations++;
+            const testCRF = Math.round((lowCRF + highCRF) / 2);
 
-        // Check if we already tested this CRF
-        const existing = searchResults.find(r => r.crf === testCRF);
-        if (existing) {
-            if (existing.score >= effectiveTarget) {
+            const existing = searchResults.find(r => r.crf === testCRF);
+            if (existing) {
+                if (existing.score >= effectiveTarget) {
+                    highCRF = testCRF - 1;
+                } else {
+                    lowCRF = testCRF + 1;
+                }
+                continue;
+            }
+
+            Logger.ILog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
+            Flow.AdditionalInfoRecorder?.('Auto Quality', `CRF ${testCRF}`, 1);
+
+            const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
+            Flow.PartPercentageUpdate?.(progressPct);
+
+            const qualityScore = measureQualityAtCRF(ffmpegEncodePath, ffmpegPath, originalFile, testCRF, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, referenceSamples);
+
+            if (qualityScore < 0) {
+                Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
+                lowCRF = testCRF + 1;
+                continue;
+            }
+
+            searchResults.push({ crf: testCRF, score: qualityScore });
+            const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
+            Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}`);
+
+            if (qualityScore >= effectiveTarget) {
+                bestCRF = testCRF;
+                bestScore = qualityScore;
+                if (PreferSmaller) {
+                    lowCRF = testCRF + 1;
+                } else {
+                    break;
+                }
+            } else {
                 highCRF = testCRF - 1;
-            } else {
-                lowCRF = testCRF + 1;
             }
-            continue;
         }
-
-        Logger.ILog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
-        Flow.AdditionalInfoRecorder?.('Auto Quality', `CRF ${testCRF}`, 1);
-
-        // Update progress percentage
-        const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
-        Flow.PartPercentageUpdate?.(progressPct);
-
-        const qualityScore = measureQualityAtCRF(ffmpegEncodePath, ffmpegPath, originalFile, testCRF, targetCodec, samplePositions, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceCRF);
-
-        if (qualityScore < 0) {
-            Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
-            // Try to continue with a different CRF
-            lowCRF = testCRF + 1;
-            continue;
-        }
-
-        searchResults.push({ crf: testCRF, score: qualityScore });
-        const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
-        Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}`);
-
-        if (qualityScore >= effectiveTarget) {
-            bestCRF = testCRF;
-            bestScore = qualityScore;
-            if (PreferSmaller) {
-                // Try higher CRF (smaller file)
-                lowCRF = testCRF + 1;
-            } else {
-                // Found acceptable, stop
-                break;
-            }
-        } else {
-            // Quality too low, need lower CRF
-            highCRF = testCRF - 1;
-        }
+    } finally {
+        cleanupFiles(referenceSamples.map(r => r.path));
     }
 
-    // If no CRF met the target, use the best we found or leave unchanged
     if (bestCRF === null) {
-        // Find the CRF with highest score from our results
         if (searchResults.length > 0) {
             const best = searchResults.reduce((a, b) => a.score > b.score ? a : b);
             bestCRF = best.crf;
@@ -444,7 +448,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const scoreDisplay = qualityMetric === 'SSIM' ? bestScore.toFixed(4) : bestScore.toFixed(2);
             Logger.WLog(`No CRF met target ${qualityMetric} ${targetDisplay}. Using best found: CRF ${bestCRF} (${qualityMetric} ${scoreDisplay})`);
         } else {
-            // Complete failure - leave quality unchanged
             Logger.ELog(`${qualityMetric} search failed completely. Leaving quality settings unchanged.`);
             logResultsTable(searchResults, null, effectiveTarget, qualityMetric);
             Variables.AutoQuality_CRF = 'unchanged';
@@ -453,7 +456,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
-    // Log results table
     logResultsTable(searchResults, bestCRF, effectiveTarget, qualityMetric);
 
     // ===== APPLY CRF TO ENCODER =====
@@ -839,13 +841,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return overallAvg;
     }
 
-    function measureQualityAtCRF(ffmpegEncode, ffmpegMetric, inputFile, crf, encoder, positions, sampleDur, use10Bit, metric, upstreamFilters, referenceCrf) {
+    function encodeReferenceSamples(ffmpegEncode, inputFile, positions, sampleDur, use10Bit, encoder, upstreamFilters, referenceCrf) {
+        // Pre-encode reference samples once for reuse across all CRF iterations.
+        // Returns array of {pos, path, filterMode} for successful samples.
         const tempDir = Flow.TempPath;
-        const scores = [];
         const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
+        const results = [];
 
-        // Determine software encoder for test encodes (consistent and deterministic across runners).
-        // Upstream hw filters (qsv) are applied before encoding; we download back to system memory when needed.
         const encSig = String(encoder || '').toLowerCase();
         let testEncoder = 'libx265';
         if (encSig.includes('h264') || encSig.includes('x264') || encSig.includes('avc')) testEncoder = 'libx264';
@@ -867,29 +869,15 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         const upstreamNeedsQsv = detectNeedsQsv(upstreamFiltersStr);
 
         function splitFilterChain(chain) {
-            // Best-effort split on unescaped commas. This matches how FileFlows typically emits filter strings.
             const s = String(chain || '');
             const parts = [];
             let cur = '';
             let escaped = false;
             for (let i = 0; i < s.length; i++) {
                 const ch = s[i];
-                if (escaped) {
-                    cur += ch;
-                    escaped = false;
-                    continue;
-                }
-                if (ch === '\\\\') {
-                    cur += ch;
-                    escaped = true;
-                    continue;
-                }
-                if (ch === ',') {
-                    const t = cur.trim();
-                    if (t) parts.push(t);
-                    cur = '';
-                    continue;
-                }
+                if (escaped) { cur += ch; escaped = false; continue; }
+                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
+                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
                 cur += ch;
             }
             const tail = cur.trim();
@@ -897,19 +885,12 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             return parts;
         }
 
-        function isHwuploadSegment(seg) {
-            return /^hwupload(=|$)/i.test(String(seg || '').trim());
-        }
-
-        function isHwdownloadSegment(seg) {
-            return /^hwdownload(=|$)/i.test(String(seg || '').trim());
-        }
-
+        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
+        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
         function isQsvFilterSegment(seg) {
             const s = String(seg || '').trim().toLowerCase();
             if (!s) return false;
             if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
-            // Any other *_qsv filter (eg: overlay_qsv) should be treated as hardware-only.
             if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
             return false;
         }
@@ -923,44 +904,29 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const segments = splitFilterChain(vf);
             if (segments.length === 0) return '';
 
-            // Insert upload before the first QSV filter (so any leading crop/scale runs in software).
             const uploadFmt = use10Bit ? 'p010le' : 'nv12';
             let firstQsv = -1;
-            for (let i = 0; i < segments.length; i++) {
-                if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; }
-            }
+            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
             if (firstQsv < 0) firstQsv = 0;
 
             let hasHwuploadBefore = false;
-            for (let i = 0; i < firstQsv; i++) {
-                if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; }
-            }
-            if (!hasHwuploadBefore) {
-                segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64');
-            }
+            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
+            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
 
-            // Ensure we return to system memory for software encoding (and any trailing software filters).
             let lastQsv = -1;
-            for (let i = segments.length - 1; i >= 0; i--) {
-                if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; }
-            }
+            for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
             if (lastQsv < 0) lastQsv = segments.length - 1;
 
             let hasHwdownloadAfter = false;
-            for (let i = lastQsv + 1; i < segments.length; i++) {
-                if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; }
-            }
+            for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
             if (!hasHwdownloadAfter) {
                 const downloadFmt = use10Bit ? 'p010le' : 'nv12';
-                // QSV downloads are typically NV12/P010; yuv420p(10le) is not a valid direct hwdownload target.
-                // Convert to the desired software pix fmt after the download format.
                 if (downloadFmt === pixFmt) {
                     segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
                 } else {
                     segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
                 }
             }
-
             return segments.join(',');
         }
 
@@ -981,91 +947,201 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
             const args = ['-hide_banner', '-loglevel', 'error', '-y'];
             const qsvRequired = detectNeedsQsv(filters);
-
-            if (qsvRequired) {
-                // Best-effort QSV init so qsv filters work even when decoding happens in software.
-                // We intentionally do NOT force QSV decoding here; instead we hwupload frames for qsv filters.
-                args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
-            }
-
+            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
             args.push('-ss', String(Math.floor(posSeconds)));
             args.push('-i', inputFile);
             args.push('-t', String(sampleDur));
             args.push('-map', '0:v:0');
-
             const vf = buildSamplingFilterGraph(filters);
-            if (vf) {
-                args.push('-vf', vf);
-            }
-
+            if (vf) { args.push('-vf', vf); }
             args.push('-c:v', testEncoder);
             args.push('-crf', String(qualityValue));
             args.push('-preset', 'fast');
             args.push('-pix_fmt', pixFmt);
-
-            // Encoder-specific options
-            if (testEncoder === 'libx265') {
-                args.push('-tag:v', 'hvc1');
-                if (use10Bit) args.push('-profile:v', 'main10');
-            } else if (testEncoder === 'libx264' && use10Bit) {
-                args.push('-profile:v', 'high10');
-            }
-
+            if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
+            else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
             args.push('-an', '-sn', outputFile);
             return args;
         }
 
+        const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
+
+        Logger.ILog(`Pre-encoding ${positions.length} reference samples at CRF ${referenceCrf}...`);
+
         for (let i = 0; i < positions.length; i++) {
             const pos = positions[i];
             const sampleId = Flow.NewGuid();
-            const encodedSample = `${tempDir}/${sampleId}_encoded.mkv`;
-            const referenceSample = `${tempDir}/${sampleId}_reference.mkv`;
+            const referencePath = `${tempDir}/${sampleId}_reference.mkv`;
+
+            let activeFilters = upstreamFiltersStr;
+            let filterMode = 'upstream';
 
             try {
-	                const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
-	                let activeFilters = upstreamFiltersStr;
-	                let filterMode = 'upstream';
+                let refResult = Flow.Execute({
+                    command: ffmpegEncode,
+                    argumentList: buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters),
+                    timeout: 600
+                });
 
-                function runEncodeSample(qualityValue, outFile, which) {
-                    return Flow.Execute({
+                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
+                    Logger.WLog(`Reference sample ${i + 1} failed with QSV filters at ${Math.round(pos)}s; retrying with software-only filters`);
+                    activeFilters = softwareFilters;
+                    filterMode = 'software-fallback';
+                    refResult = Flow.Execute({
                         command: ffmpegEncode,
-                        argumentList: buildEncodeArgs(pos, qualityValue, outFile, activeFilters),
+                        argumentList: buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters),
                         timeout: 600
                     });
                 }
 
-	                // Extra high quality reference transcode (with the same upstream filters).
-	                let refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
-	                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
-	                    Logger.WLog(`Reference sample failed with QSV filters at ${pos}s; retrying with software-only filters for sampling`);
-	                    activeFilters = softwareFilters;
-	                    filterMode = 'software-fallback';
-	                    refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
-	                }
-
                 if (refResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode reference sample at ${pos}s (crf=${referenceCrf})`);
+                    Logger.WLog(`Failed to encode reference sample ${i + 1} at ${Math.round(pos)}s`);
                     continue;
                 }
 
-	                // Candidate transcode.
-	                let encResult = runEncodeSample(crf, encodedSample, 'encoded');
-	                if (encResult.exitCode !== 0 && filterMode === 'upstream' && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
-	                    // Keep reference and encoded consistent: redo both in software-only mode.
-	                    Logger.WLog(`Encoded sample failed with QSV filters at CRF ${crf}, ${pos}s; retrying with software-only filters for sampling`);
-	                    cleanupFiles([encodedSample, referenceSample]);
-	                    activeFilters = softwareFilters;
-	                    filterMode = 'software-fallback';
-                    refResult = runEncodeSample(referenceCrf, referenceSample, 'reference');
-                    if (refResult.exitCode !== 0) {
-                        Logger.WLog(`Failed to encode reference sample (software fallback) at ${pos}s (crf=${referenceCrf})`);
-                        continue;
-                    }
-                    encResult = runEncodeSample(crf, encodedSample, 'encoded');
+                results.push({ pos: pos, path: referencePath, filterMode: filterMode, activeFilters: activeFilters });
+                Logger.DLog(`Reference sample ${i + 1} encoded at ${Math.round(pos)}s (${filterMode})`);
+            } catch (err) {
+                Logger.WLog(`Error encoding reference sample ${i + 1}: ${err}`);
+            }
+        }
+
+        if (results.length === 0) {
+            Logger.ELog('Failed to encode any reference samples');
+        } else {
+            Logger.ILog(`Successfully pre-encoded ${results.length}/${positions.length} reference samples`);
+        }
+
+        return results;
+    }
+
+    function measureQualityAtCRF(ffmpegEncode, ffmpegMetric, inputFile, crf, encoder, sampleDur, use10Bit, metric, referenceSamples) {
+        const tempDir = Flow.TempPath;
+        const scores = [];
+        const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
+
+        if (!referenceSamples || referenceSamples.length === 0) {
+            Logger.ELog('No reference samples available for quality measurement');
+            return -1;
+        }
+
+        const encSig = String(encoder || '').toLowerCase();
+        let testEncoder = 'libx265';
+        if (encSig.includes('h264') || encSig.includes('x264') || encSig.includes('avc')) testEncoder = 'libx264';
+        else if (encSig.includes('av1')) testEncoder = 'libsvtav1';
+
+        function detectNeedsQsv(filters) {
+            const s = String(filters || '').trim().toLowerCase();
+            if (!s) return false;
+            if (s.indexOf('vpp_qsv') >= 0) return true;
+            if (s.indexOf('scale_qsv') >= 0) return true;
+            if (s.indexOf('deinterlace_qsv') >= 0) return true;
+            if (s.indexOf('tonemap_qsv') >= 0) return true;
+            if (s.indexOf('hwupload') >= 0 || s.indexOf('hwdownload') >= 0) return true;
+            return /_qsv(?:=|,|:|$)/i.test(s);
+        }
+
+        function splitFilterChain(chain) {
+            const s = String(chain || '');
+            const parts = [];
+            let cur = '';
+            let escaped = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (escaped) { cur += ch; escaped = false; continue; }
+                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
+                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
+                cur += ch;
+            }
+            const tail = cur.trim();
+            if (tail) parts.push(tail);
+            return parts;
+        }
+
+        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
+        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
+        function isQsvFilterSegment(seg) {
+            const s = String(seg || '').trim().toLowerCase();
+            if (!s) return false;
+            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
+            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
+            return false;
+        }
+
+        function buildSamplingFilterGraph(filters) {
+            let vf = String(filters || '').trim();
+            if (!vf) return '';
+            const qsvRequired = detectNeedsQsv(vf);
+            if (!qsvRequired) return vf;
+
+            const segments = splitFilterChain(vf);
+            if (segments.length === 0) return '';
+
+            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
+            let firstQsv = -1;
+            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
+            if (firstQsv < 0) firstQsv = 0;
+
+            let hasHwuploadBefore = false;
+            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
+            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
+
+            let lastQsv = -1;
+            for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
+            if (lastQsv < 0) lastQsv = segments.length - 1;
+
+            let hasHwdownloadAfter = false;
+            for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
+            if (!hasHwdownloadAfter) {
+                const downloadFmt = use10Bit ? 'p010le' : 'nv12';
+                if (downloadFmt === pixFmt) {
+                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
+                } else {
+                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
                 }
+            }
+            return segments.join(',');
+        }
+
+        function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
+            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const qsvRequired = detectNeedsQsv(filters);
+            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
+            args.push('-ss', String(Math.floor(posSeconds)));
+            args.push('-i', inputFile);
+            args.push('-t', String(sampleDur));
+            args.push('-map', '0:v:0');
+            const vf = buildSamplingFilterGraph(filters);
+            if (vf) { args.push('-vf', vf); }
+            args.push('-c:v', testEncoder);
+            args.push('-crf', String(qualityValue));
+            args.push('-preset', 'fast');
+            args.push('-pix_fmt', pixFmt);
+            if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
+            else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
+            args.push('-an', '-sn', outputFile);
+            return args;
+        }
+
+        for (let i = 0; i < referenceSamples.length; i++) {
+            const ref = referenceSamples[i];
+            const pos = ref.pos;
+            const referencePath = ref.path;
+            const activeFilters = ref.activeFilters;
+            const filterMode = ref.filterMode;
+
+            const sampleId = Flow.NewGuid();
+            const encodedSample = `${tempDir}/${sampleId}_encoded.mkv`;
+
+            try {
+                const encResult = Flow.Execute({
+                    command: ffmpegEncode,
+                    argumentList: buildEncodeArgs(pos, crf, encodedSample, activeFilters),
+                    timeout: 600
+                });
 
                 if (encResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode sample at CRF ${crf}, pos ${pos}s`);
+                    Logger.WLog(`Failed to encode sample at CRF ${crf}, pos ${Math.round(pos)}s`);
                     continue;
                 }
 
@@ -1077,7 +1153,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
                 let filterComplex;
                 if (metric === 'VMAF') {
-                    // libvmaf: main/distorted first, reference second
                     filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall`;
                 } else {
                     filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]ssim`;
@@ -1088,7 +1163,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     argumentList: [
                         '-hide_banner', '-loglevel', 'info', '-nostats', '-y',
                         '-i', encodedSample,
-                        '-i', referenceSample,
+                        '-i', referencePath,
                         '-filter_complex', filterComplex,
                         '-f', 'null', '-'
                     ],
@@ -1099,12 +1174,10 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
                 let score = null;
                 if (metric === 'VMAF') {
-                    // Parse the final summary line that libvmaf prints (avoid \s/\d escapes for Jint compatibility).
                     const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                     if (vmafMatch) {
                         score = parseFloat(vmafMatch[1]);
                     } else {
-                        // Some builds can emit JSON-ish snippets; best-effort parse.
                         const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                         if (jsonMatch) score = parseFloat(jsonMatch[1]);
                     }
@@ -1125,7 +1198,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             } catch (err) {
                 Logger.WLog(`Error processing sample ${i + 1}: ${err}`);
             } finally {
-                cleanupFiles([encodedSample, referenceSample]);
+                cleanupFiles([encodedSample]);
             }
         }
 
