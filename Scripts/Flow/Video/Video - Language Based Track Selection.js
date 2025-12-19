@@ -5,27 +5,25 @@
  *              Tracks are reordered: original language first (preserving relative order within each language), then additional languages in provided order, then unknown.
  *              Requires "Movie Lookup"/"TV Show Lookup" node to be executed first to set Variables.OriginalLanguage.
  * @author Vincent Courcelle
- * @revision 2
+ * @revision 3
  * @minimumVersion 24.0.0.0
  * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Also accepts an array (e.g., ["eng","fra"]). Original language is always kept first.
  * @param {bool} ProcessAudio Apply to audio streams (default: true)
  * @param {bool} ProcessSubtitles Reorder subtitle streams (default: true). Subtitles are always kept.
- * @param {bool} TreatUnknownAsBad Deprecated/ignored (unknown-language audio is kept unless original-language audio exists)
  * @param {bool} KeepFirstIfNoneMatch If no audio tracks match any language, keep the first audio track to avoid empty audio.
  * @param {bool} ReorderTracks Reorder tracks so original language comes first, then additional languages in order specified.
  * @output Tracks were modified (deleted/undeleted or reordered)
  * @output No changes were made
  * @output No original language found (lookup node not executed?)
  */
-function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, TreatUnknownAsBad, KeepFirstIfNoneMatch, ReorderTracks) {
-    Logger.ILog('Video - Language Based Track Selection.js revision 2 loaded');
+function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIfNoneMatch, ReorderTracks) {
+    Logger.ILog('Video - Language Based Track Selection.js revision 3 loaded');
 
     // =========================================================================
     // CONFIGURATION DEFAULTS
     // =========================================================================
     ProcessAudio = ProcessAudio !== false; // default true
     ProcessSubtitles = ProcessSubtitles !== false; // default true
-    TreatUnknownAsBad = !!TreatUnknownAsBad; // default false
     KeepFirstIfNoneMatch = KeepFirstIfNoneMatch !== false; // default true
     ReorderTracks = ReorderTracks !== false; // default true
 

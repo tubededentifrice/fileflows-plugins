@@ -1,7 +1,7 @@
 /**
- * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality.
+ * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 17
+ * @revision 18
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -839,6 +839,32 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     Logger.ILog(`Recommended QSV params: ${Variables.recommended_qsv_params}`);
+
+    // ===== HDR COLOR METADATA PRESERVATION =====
+    // These FFmpeg-level options work with any encoder (QSV, NVENC, libx265, etc.) and ensure
+    // HDR10/Dolby Vision color signaling is preserved in the output stream.
+    if (isHDR || isDolbyVision) {
+        const hdrColorParams = [
+            '-color_primaries', 'bt2020',
+            '-color_trc', 'smpte2084',
+            '-colorspace', 'bt2020nc'
+        ];
+
+        try {
+            const ep = video.EncodingParameters;
+            if (ep) {
+                for (let i = 0; i < hdrColorParams.length; i++) {
+                    listAdd(ep, hdrColorParams[i]);
+                }
+                Variables.applied_hdr_color_params = hdrColorParams.join(' ');
+                Logger.ILog(`HDR color metadata params added: ${Variables.applied_hdr_color_params}`);
+            } else {
+                Logger.WLog('Could not add HDR color params: EncodingParameters not available');
+            }
+        } catch (err) {
+            Logger.WLog(`Failed to add HDR color metadata params: ${err}`);
+        }
+    }
 
     // "Prove" the filters are present on the stream in Filter.
     try {

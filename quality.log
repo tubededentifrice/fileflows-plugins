@@ -1321,7 +1321,7 @@ Output #0, null, to 'pipe:':
 2025-12-18 21:46:22.869 [INFO] -> CRF 20: VMAF 93.77
 2025-12-18 21:46:22.869 [INFO] -> [3/6] Testing CRF 19...
 2025-12-18 21:46:22.870 [INFO] -> ----------------------------------------------------------------------
-2025-12-18 21:46:22.870 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=60:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 10 -preset fast -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /data/media/transcode-tests/ReferenceCRF10.mkv
+2025-12-18 21:46:22.870 [INFO] -> Executing: /usr/local/bin/ffmpeg -hide_banner -loglevel error -y -init_hw_device qsv=qsv -filter_hw_device qsv -ss 471 -i /data/media/transcode-tests/Asterix.bei.den.Briten.1986.DTS-HD.DL.1080p.BluRay.Remux-DrLo.mkv -t 8 -map 0:v:0 -vf format=p010le,hwupload=extra_hw_frames=64,vpp_qsv=cw=1792:ch=1072:cx=64:cy=4:denoise=60:format=p010le,hwdownload,format=p010le,format=yuv420p10le -c:v libx265 -crf 10 -preset veryslow -pix_fmt yuv420p10le -tag:v hvc1 -profile:v main10 -an -sn /data/media/transcode-tests/ReferenceCRF10.mkv
 2025-12-18 21:46:22.870 [INFO] -> ----------------------------------------------------------------------
 libva info: VA-API version 1.22.0
 libva info: Trying to open /usr/lib/jellyfin-ffmpeg/lib/dri/iHD_drv_video.so

@@ -39,6 +39,7 @@ VARIABLE OVERRIDES:
 - Variables.TargetVMAF, Variables.MinCRF, Variables.MaxCRF
 - Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
 - Variables['ffmpeg_vmaf']: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
+- Variables.Preset: Override encoder preset (ultrafast to veryslow)
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
@@ -49,7 +50,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 17
+ * @revision 18
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -59,10 +60,11 @@ OUTPUT VARIABLES:
  * @param {int} MaxSearchIterations Maximum binary search iterations. Default: 6
  * @param {bool} PreferSmaller When two CRFs meet target, prefer the smaller file (higher CRF). Default: true
  * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
+ * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
-function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxSearchIterations, PreferSmaller, UseTags) {
+function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxSearchIterations, PreferSmaller, UseTags, Preset) {
     function quoteProcessArg(arg) {
         // Fallback quoting when ProcessStartInfo.ArgumentList isn't available.
         // Keep it simple: quote args containing whitespace or quotes.
@@ -141,11 +143,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     if (!MaxSearchIterations || MaxSearchIterations <= 0) MaxSearchIterations = 6;
     if (PreferSmaller === undefined || PreferSmaller === null) PreferSmaller = true;
     if (TargetVMAF === undefined || TargetVMAF === null) TargetVMAF = 0;
+    if (!Preset) Preset = 'veryslow';
 
     // Allow variable overrides
     if (Variables.TargetVMAF) TargetVMAF = parseInt(Variables.TargetVMAF);
     if (Variables.MinCRF) MinCRF = parseInt(Variables.MinCRF);
     if (Variables.MaxCRF) MaxCRF = parseInt(Variables.MaxCRF);
+    if (Variables.Preset) Preset = String(Variables.Preset);
     if (Variables.AutoQualityPreset) {
         const preset = Variables.AutoQualityPreset.toLowerCase();
         if (preset === 'quality') { TargetVMAF = 97; MinCRF = 16; MaxCRF = 24; }
@@ -458,8 +462,8 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
     logResultsTable(searchResults, bestCRF, effectiveTarget, qualityMetric);
 
-    // ===== APPLY CRF TO ENCODER =====
-    applyCRF(video, bestCRF, targetCodec);
+    // ===== APPLY CRF AND PRESET TO ENCODER =====
+    applyCRF(video, bestCRF, targetCodec, Preset);
 
     // Store results
     Variables.AutoQuality_CRF = bestCRF;
@@ -956,7 +960,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             if (vf) { args.push('-vf', vf); }
             args.push('-c:v', testEncoder);
             args.push('-crf', String(qualityValue));
-            args.push('-preset', 'fast');
+            args.push('-preset', Preset);
             args.push('-pix_fmt', pixFmt);
             if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
             else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
@@ -1115,7 +1119,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             if (vf) { args.push('-vf', vf); }
             args.push('-c:v', testEncoder);
             args.push('-crf', String(qualityValue));
-            args.push('-preset', 'fast');
+            args.push('-preset', Preset);
             args.push('-pix_fmt', pixFmt);
             if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
             else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
@@ -1216,7 +1220,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     }
 
-    function applyCRF(videoStream, crf, encoder) {
+    function applyCRF(videoStream, crf, encoder, preset) {
         const crfArg = getCRFArgument(encoder);
         const ep = videoStream.EncodingParameters;
         if (!ep) return;
@@ -1357,6 +1361,16 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             addToken(ep, '-crf');
             addToken(ep, String(crf));
             Logger.ILog(`Applied -crf ${crf} to encoder`);
+        }
+
+        // Apply preset - strip existing and add new
+        const presetRemoved = stripArgAndValue(ep, t => String(t) === '-preset');
+        if (presetRemoved > 0) Logger.ILog(`Auto quality: removed ${presetRemoved} existing preset argument tokens`);
+
+        if (typeof ep.Add === 'function' || Array.isArray(ep)) {
+            addToken(ep, '-preset');
+            addToken(ep, String(preset));
+            Logger.ILog(`Applied -preset ${preset} to encoder`);
         }
     }
 
