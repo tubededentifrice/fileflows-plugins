@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 20
+ * @revision 21
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,7 +11,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 20 loaded');
+    Logger.ILog('Cleaning filters.js revision 21 loaded');
     MpDecimateAnimation = MpDecimateAnimation === true || MpDecimateAnimation === 'true' || MpDecimateAnimation === 1 || MpDecimateAnimation === '1';
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     function normalizeBitrateToKbps(value) {
@@ -116,6 +116,32 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return false;
     }
 
+    function listRemoveAt(list, index) {
+        if (!list) return false;
+        try {
+            if (Array.isArray(list)) {
+                list.splice(index, 1);
+                return true;
+            }
+        } catch (err) { }
+        try {
+            if (typeof list.RemoveAt === 'function') {
+                list.RemoveAt(index);
+                return true;
+            }
+        } catch (err) { }
+        return false;
+    }
+
+    function listCount(list) {
+        if (!list) return null;
+        if (Array.isArray(list)) return list.length;
+        try {
+            if (typeof list.Count === 'number') return list.Count;
+        } catch (err) { }
+        return null;
+    }
+
     function flattenFilterExpressions(filters) {
         const parts = [];
         for (let i = 0; i < (filters || []).length; i++) {
@@ -183,61 +209,113 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return 'vpp_qsv=' + merged.join(':');
     }
 
-    function ensureVideoFiltersInEncodingParameters(videoStream, filtersToApply) {
+    function tryAppendFilterToBuilderList(videoStream, propName, filter) {
+        if (!videoStream || !propName || !filter) return false;
+        let current = null;
+        try { current = videoStream[propName]; } catch (err) { return false; }
+
+        // Some runner versions expose Filter as a single string (one filtergraph).
+        try {
+            if (typeof current === 'string') {
+                const existing = String(current || '').trim();
+                if (!existing) {
+                    videoStream[propName] = filter;
+                    return true;
+                }
+                const parts = existing.split(',').map(x => x.trim()).filter(x => x);
+                if (parts.indexOf(filter) >= 0) return true;
+                videoStream[propName] = existing + ',' + filter;
+                return true;
+            }
+        } catch (err) { }
+
+        // If it's already a mutable JS/.NET list, use it.
+        if (listAddUnique(current, filter)) return true;
+
+        // Try replacing fixed-size arrays (eg: System.String[]) with a new array that includes the filter.
+        try {
+            const existing = toEnumerableArray(current, 2000).map(safeTokenString).filter(x => x);
+            if (existing.indexOf(filter) >= 0) return true;
+            const newArr = System.Array.CreateInstance(System.String, existing.length + 1);
+            for (let i = 0; i < existing.length; i++) newArr.SetValue(existing[i], i);
+            newArr.SetValue(filter, existing.length);
+            videoStream[propName] = newArr;
+            return true;
+        } catch (err) { }
+
+        // Last resort: assign a JS array and hope the runner can enumerate it.
+        try {
+            const existing = toEnumerableArray(current, 2000).map(safeTokenString).filter(x => x);
+            if (existing.indexOf(filter) >= 0) return true;
+            videoStream[propName] = existing.concat([filter]);
+            return true;
+        } catch (err) { }
+
+        return false;
+    }
+
+    function ensureSingleVideoFilterArgAcrossParams(videoStream, filtersToApply) {
         const partsToApply = flattenFilterExpressions(filtersToApply);
         if (partsToApply.length === 0) return { changed: false, reason: 'no-filters' };
 
         const ep = videoStream ? videoStream.EncodingParameters : null;
-        if (!ep) return { changed: false, reason: 'no-encoding-params' };
+        const ap = videoStream ? videoStream.AdditionalParameters : null;
+        if (!ep && !ap) return { changed: false, reason: 'no-param-lists' };
 
-        const tokens = toEnumerableArray(ep, 5000).map(safeTokenString).filter(x => x);
-        let filterArgIndex = -1;
-        for (let i = 0; i < tokens.length - 1; i++) {
-            const t = String(tokens[i] || '').trim();
-            if (t === '-vf' || t.startsWith('-filter:v')) {
-                filterArgIndex = i;
-                break;
-            }
-        }
-
-        const buildDesiredChain = () => {
-            // De-dupe while preserving order.
-            const seen = {};
-            const ordered = [];
-            for (let i = 0; i < partsToApply.length; i++) {
-                const p = partsToApply[i];
-                if (seen[p]) continue;
-                seen[p] = true;
-                ordered.push(p);
-            }
-            return ordered.join(',');
+        const isVideoFilterFlag = (t) => {
+            const s = String(t || '').trim();
+            return s === '-vf' || s === '-filter:v' || s === '-filter:v:0';
         };
 
-        if (filterArgIndex < 0) {
-            // No existing filter arg found in EncodingParameters; add one so the executor can pick it up.
-            // Many FileFlows runner versions will skip generating their own default video filter when one is already present.
-            const desired = buildDesiredChain();
-            listAdd(ep, '-filter:v:0');
-            listAdd(ep, desired);
-            return { changed: true, reason: 'added-filter-arg', before: '', after: desired };
+        const collectFilterChains = (list) => {
+            const chains = [];
+            const count = listCount(list);
+            if (count === null) return chains;
+            for (let i = 0; i < count - 1; i++) {
+                const t = safeTokenString(list[i]);
+                if (!isVideoFilterFlag(t)) continue;
+                const v = safeTokenString(list[i + 1]);
+                if (v) chains.push(String(v).trim());
+                i++;
+            }
+            return chains;
+        };
+
+        const removeAllVideoFilterArgs = (list) => {
+            const count0 = listCount(list);
+            if (count0 === null) return false;
+            let removed = false;
+            let i = 0;
+            while (i < (listCount(list) - 1)) {
+                const t = safeTokenString(list[i]);
+                if (!isVideoFilterFlag(t)) { i++; continue; }
+                if (listRemoveAt(list, i + 1)) removed = true;
+                if (listRemoveAt(list, i)) removed = true;
+                continue;
+            }
+            return removed;
+        };
+
+        const existingChains = [
+            ...collectFilterChains(ep),
+            ...collectFilterChains(ap)
+        ].filter(x => x);
+
+        const existingParts = flattenFilterExpressions(existingChains);
+
+        let mergedParts = [];
+        if (existingParts.length) {
+            const seen = {};
+            for (let i = 0; i < existingParts.length; i++) {
+                const p = existingParts[i];
+                if (!p || seen[p]) continue;
+                seen[p] = true;
+                mergedParts.push(p);
+            }
         }
 
-        const before = String(tokens[filterArgIndex + 1] || '').trim();
-        const existingParts = before ? before.split(',').map(x => x.trim()).filter(x => x) : [];
-
-        // If existing is only a format-only scale_qsv and we have a vpp_qsv, replace entirely to avoid redundant format conversion.
         const isFormatOnlyScaleQsv = (p) => p === 'scale_qsv=format=p010le' || p === 'scale_qsv=format=nv12';
         const desiredHasVpp = partsToApply.some(p => p.startsWith('vpp_qsv='));
-        if (desiredHasVpp && existingParts.length === 1 && isFormatOnlyScaleQsv(existingParts[0])) {
-            const after = buildDesiredChain();
-            if (after && after !== before) {
-                listSetAt(ep, filterArgIndex + 1, after);
-                return { changed: true, reason: 'replaced-format-only-scale', before, after };
-            }
-            return { changed: false, reason: 'no-change', before, after: before };
-        }
-
-        let mergedParts = existingParts.slice();
 
         for (let i = 0; i < partsToApply.length; i++) {
             const desired = partsToApply[i];
@@ -259,28 +337,36 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             if (mergedParts.indexOf(desired) < 0) mergedParts.push(desired);
         }
 
-        const after = mergedParts.join(',');
-        if (after && after !== before) {
-            listSetAt(ep, filterArgIndex + 1, after);
-            return { changed: true, reason: 'merged', before, after };
+        // If we have vpp_qsv with an explicit format, drop redundant format-only scale_qsv.
+        if (desiredHasVpp) {
+            const hasFormatInVpp = mergedParts.some(p => p.startsWith('vpp_qsv=') && p.indexOf('format=') >= 0);
+            if (hasFormatInVpp) mergedParts = mergedParts.filter(p => !isFormatOnlyScaleQsv(p));
         }
-        return { changed: false, reason: 'no-change', before, after };
+
+        const after = mergedParts.join(',');
+        const before = existingChains.join(' | ');
+
+        const removedEp = removeAllVideoFilterArgs(ep);
+        const removedAp = removeAllVideoFilterArgs(ap);
+
+        const target = ep || ap;
+        if (!target) return { changed: false, reason: 'no-target-list', before, after: '' };
+
+        listAdd(target, '-filter:v:0');
+        listAdd(target, after);
+
+        const changed = removedEp || removedAp || (String(before || '').trim() !== String(after || '').trim());
+        return { changed, reason: existingChains.length ? 'merged-and-deduped' : 'added-filter-arg', before, after };
     }
 
     function addVideoFilter(videoStream, filter) {
         if (!filter) return null;
-        // Prefer Filters in FFmpeg Builder "New mode" (some versions still expose Filter/OptionalFilter too).
-        // Also mirror into Filter when available for compatibility/visibility.
-        const addedFilters = listAddUnique(videoStream.Filters, filter);
-        const addedFilter = listAddUnique(videoStream.Filter, filter);
-        if (addedFilters) return 'Filters';
-        if (addedFilter) return 'Filter';
-
+        // Prefer Filters in FFmpeg Builder "New mode".
+        if (tryAppendFilterToBuilderList(videoStream, 'Filters', filter)) return 'Filters';
+        // Some versions expose a singular 'Filter' list/array.
+        if (tryAppendFilterToBuilderList(videoStream, 'Filter', filter)) return 'Filter';
         // OptionalFilter is not reliably applied in all builder modes; prefer it last.
-        if (listAddUnique(videoStream.OptionalFilter, filter)) {
-            return 'OptionalFilter';
-        }
-
+        if (tryAppendFilterToBuilderList(videoStream, 'OptionalFilter', filter)) return 'OptionalFilter';
         return null;
     }
 
@@ -1002,16 +1088,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // EncodingParameters (-filter:v:0), and can ignore script-added Filter/Filters collections. Ensure our computed filters
     // are present in the encoding filter argument.
     try {
-        const ensured = ensureVideoFiltersInEncodingParameters(video, appliedFiltersForExecutor);
+        const ensured = ensureSingleVideoFilterArgAcrossParams(video, appliedFiltersForExecutor);
         if (ensured.changed) {
             const b = ensured.before ? ensured.before.substring(0, 220) : '';
             const a = ensured.after ? ensured.after.substring(0, 220) : '';
-            Logger.WLog(`Injected video filters into EncodingParameters (${ensured.reason}). Before: '${b}' After: '${a}'`);
+            Logger.WLog(`Ensured single video filter arg (${ensured.reason}). Before: '${b}' After: '${a}'`);
         } else {
-            Logger.DLog(`Video filter EncodingParameters unchanged (${ensured.reason}).`);
+            Logger.DLog(`Video filter args unchanged (${ensured.reason}).`);
         }
     } catch (err) {
-        Logger.WLog(`Failed ensuring filters in EncodingParameters: ${err}`);
+        Logger.WLog(`Failed ensuring single video filter arg: ${err}`);
     }
 
     /**
