@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 37
+ * @revision 38
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,7 +11,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 37 loaded');
+    Logger.ILog('Cleaning filters.js revision 38 loaded');
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
     AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
@@ -549,10 +549,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     function detectTargetBitDepth(videoStream) {
         const signature = [
             asJoinedString(videoStream.EncodingParameters),
-            asJoinedString(videoStream.AdditionalParameters)
+            asJoinedString(videoStream.AdditionalParameters),
+            asJoinedString(videoStream.Filter),
+            asJoinedString(videoStream.Filters),
+            asJoinedString(videoStream.OptionalFilter),
+            safeTokenString(videoStream.Codec)
         ].join(' ').toLowerCase();
 
-        if (signature.includes('p010') || signature.includes('main10') || signature.includes('10bit') || signature.includes('10-bit')) return 10;
+        // Many FileFlows "10-bit" presets express the target bit depth via scale_qsv/vpp_qsv filters (format=p010le),
+        // not via explicit -pix_fmt/-profile args. Detect these too so we don't accidentally fall back to nv12.
+        if (signature.includes('p010') || signature.includes('format=p010le') || signature.includes('main10') || signature.includes('10bit') || signature.includes('10-bit')) return 10;
         return 8;
     }
 
@@ -889,6 +895,25 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     let addedHardwareOnlyFilters = false; // eg: vpp_qsv / deinterlace_qsv implies HW frames in filtergraph
     const targetBitDepth = detectTargetBitDepth(video);
     Variables.target_bit_depth = targetBitDepth;
+
+    // If the user selected a 10-bit QSV HEVC encoder preset, keep (or add) the Main10 profile.
+    // This is especially important when hybrid CPU detours are used, since any accidental nv12 hop can push the pipeline back to 8-bit.
+    if (hwEncoder === 'qsv' && targetBitDepth >= 10) {
+        try {
+            const encSig = (asJoinedString(video.EncodingParameters) + ' ' + asJoinedString(video.Codec)).toLowerCase();
+            const isHevcQsv = encSig.indexOf('hevc_qsv') >= 0;
+            if (isHevcQsv && listCount(video.EncodingParameters) !== null) {
+                const profilePred = (t) => t === '-profile' || t.startsWith('-profile:') || t.startsWith('-profile:v');
+                const addedProfile = ensureArgWithValue(video.EncodingParameters, '-profile:v:0', 'main10', profilePred);
+                if (addedProfile) {
+                    Variables.applied_qsv_profile = 'main10';
+                    Logger.ILog('Ensured QSV profile: -profile:v:0 main10');
+                }
+            }
+        } catch (err) {
+            Logger.DLog(`Unable to ensure QSV Main10 profile: ${err}`);
+        }
+    }
     const sourceBits = videoInfo?.VideoStreams?.[0]?.Bits || (videoInfo?.VideoStreams?.[0]?.Is10Bit ? 10 : 0);
     Variables.source_bit_depth = sourceBits || 'unknown';
     const isHDR = Variables.video?.HDR || videoInfo?.VideoStreams?.[0]?.HDR || false;
@@ -1018,9 +1043,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const appliedFiltersSummary = [];
     const appliedFiltersForExecutor = [];
     // NOTE: For QSV hwframes, hwdownload only supports a limited set of SW formats (typically nv12/p010le).
-    // CPU-only filters often prefer planar formats (yuv420p/yuv420p10le), so we download to nv12/p010le first,
-    // then convert to a CPU-friendly planar format before applying CPU filters.
-    const hybridCpuFormat = targetBitDepth >= 10 ? 'yuv420p10le' : 'yuv420p';
+    // For 10-bit pipelines, keep the CPU detour in p010le end-to-end to avoid unintended nv12 fallbacks.
+    const hybridCpuFormat = targetBitDepth >= 10 ? 'p010le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
     const skipMpDecimate = truthyVar(Variables.SkipMpDecimate) || truthyVar(Variables.SkipDecimate);
     const forceMpDecimate = MpDecimateAnimation || truthyVar(Variables.ForceMpDecimate);
