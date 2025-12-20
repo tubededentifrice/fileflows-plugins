@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 32
+ * @revision 34
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,7 +11,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 32 loaded');
+    Logger.ILog('Cleaning filters.js revision 34 loaded');
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
     AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
@@ -298,8 +298,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     function ensureSingleVideoFilterArgAcrossParams(videoStream, filtersToApply, addIfMissing) {
-        const partsToApply = flattenFilterExpressions(filtersToApply);
-        if (partsToApply.length === 0) return { changed: false, reason: 'no-filters' };
+        const rawFilters = (filtersToApply || []).map(x => String(x || '').trim()).filter(x => x);
+        if (rawFilters.length === 0) return { changed: false, reason: 'no-filters' };
 
         const ep = videoStream ? videoStream.EncodingParameters : null;
         const ap = videoStream ? videoStream.AdditionalParameters : null;
@@ -348,6 +348,27 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             return { changed: false, reason: 'no-existing-filter-args', before: '', after: '' };
         }
 
+        const before = existingChains.join(' | ');
+
+        // IMPORTANT: If our desired chain contains hwdownload/hwupload, we must preserve ordering and duplicates
+        // (eg: format=p010le may be needed before and after CPU filters). Avoid splitting/deduping in this case.
+        const preserveOrderAndDuplicates = rawFilters.some(f => f.indexOf('hwdownload') >= 0 || f.indexOf('hwupload') >= 0);
+        if (preserveOrderAndDuplicates) {
+            const after = rawFilters.join(',');
+            const removedEp = removeAllVideoFilterArgs(ep);
+            const removedAp = removeAllVideoFilterArgs(ap);
+
+            const target = ep || ap;
+            if (!target) return { changed: false, reason: 'no-target-list', before, after: '' };
+
+            listAdd(target, '-filter:v:0');
+            listAdd(target, after);
+
+            const changed = removedEp || removedAp || (String(before || '').trim() !== String(after || '').trim());
+            return { changed, reason: 'replaced-preserve-order', before, after };
+        }
+
+        const partsToApply = flattenFilterExpressions(rawFilters);
         const existingParts = flattenFilterExpressions(existingChains);
 
         let mergedParts = [];
@@ -391,7 +412,6 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         }
 
         const after = mergedParts.join(',');
-        const before = existingChains.join(' | ');
 
         const removedEp = removeAllVideoFilterArgs(ep);
         const removedAp = removeAllVideoFilterArgs(ap);
@@ -797,6 +817,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const hwEncoder = detectHardwareEncoder(video);
     const isHardwareEncode = !!hwEncoder;
     Variables.detected_hw_encoder = hwEncoder || 'none';
+    const hwFramesLikely = detectHardwareFramesLikely(video);
+    Variables.hw_frames_likely = hwFramesLikely;
+    let addedHardwareOnlyFilters = false; // eg: vpp_qsv / deinterlace_qsv implies HW frames in filtergraph
     const targetBitDepth = detectTargetBitDepth(video);
     Variables.target_bit_depth = targetBitDepth;
     const sourceBits = videoInfo?.VideoStreams?.[0]?.Bits || (videoInfo?.VideoStreams?.[0]?.Is10Bit ? 10 : 0);
@@ -922,10 +945,14 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     Variables.sourceBitrateKbps = Math.round(bitrateKbps);
 
     // ===== APPLY FILTERS =====
-    // In hybrid mode (QSV encode + some CPU filters), wrap CPU filters with hwdownload/hwupload.
+    // When the filtergraph is using hardware frames (eg via QSV), CPU-only filters must be wrapped with
+    // hwdownload (and hwupload when needed). We accumulate CPU filters that require bridging in hybridCpuFilters.
     const hybridCpuFilters = [];
     const appliedFiltersSummary = [];
     const appliedFiltersForExecutor = [];
+    // NOTE: For QSV hwframes, hwdownload only supports a limited set of SW formats (typically nv12/p010le).
+    // CPU-only filters often prefer planar formats (yuv420p/yuv420p10le), so we download to nv12/p010le first,
+    // then convert to a CPU-friendly planar format before applying CPU filters.
     const hybridCpuFormat = targetBitDepth >= 10 ? 'yuv420p10le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
     const skipMpDecimate = truthyVar(Variables.SkipMpDecimate) || truthyVar(Variables.SkipDecimate);
@@ -998,6 +1025,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     }
                     appliedFiltersSummary.push('deinterlace_qsv');
                     appliedFiltersForExecutor.push('deinterlace_qsv');
+                    addedHardwareOnlyFilters = true;
                 }
             } else {
                 Logger.WLog('AutoDeinterlace enabled but ffmpeg path or input file missing; skipping interlace detection');
@@ -1007,8 +1035,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         }
     }
 
+    const cpuFiltersNeedHwBridge = () => hwFramesLikely || addedHardwareOnlyFilters;
+
     if (denoiseLevel > 0) {
-        if (UseCPUFilters && !isHardwareEncode) {
+        if (UseCPUFilters && !isHardwareEncode && !cpuFiltersNeedHwBridge()) {
             // ===== CPU MODE: hqdn3d =====
             let hqdn3dValue;
             if (forceHqdn3d) {
@@ -1048,6 +1078,37 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 appliedFiltersForExecutor.push(`deband=${debandParams}`);
             }
 
+        } else if (UseCPUFilters && !isHardwareEncode && cpuFiltersNeedHwBridge()) {
+            // ===== CPU FILTERS WITH HW FRAMES: download to system memory, apply CPU filters, (no upload needed for CPU encoders) =====
+            let hqdn3dValue;
+            if (forceHqdn3d) {
+                hqdn3dValue = forceHqdn3d;
+                Logger.ILog(`Forced CPU denoise (hwdownload path): hqdn3d=${hqdn3dValue}`);
+            } else {
+                const spatial = (denoiseLevel * 8 / 100).toFixed(1);
+                const temporal = (denoiseLevel * 16 / 100).toFixed(1);
+                hqdn3dValue = `${spatial}:${spatial}:${temporal}:${temporal}`;
+                Logger.ILog(`Auto CPU denoise (hwdownload path) for ${year}: hqdn3d=${hqdn3dValue} (level ${denoiseLevel}%)`);
+            }
+            hybridCpuFilters.push(`hqdn3d=${hqdn3dValue}`);
+            Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
+            appliedFiltersSummary.push(Variables.applied_denoise);
+
+            if (isAnimation && year <= 2010) {
+                let debandParams;
+                if (isOldCelAnimation && (AggressiveCompression || isRestoredContent)) {
+                    debandParams = '1thr=0.06:2thr=0.06:3thr=0.06:range=24:blur=1';
+                } else if (year <= 1995) {
+                    debandParams = '1thr=0.05:2thr=0.05:3thr=0.05:range=20:blur=1';
+                } else {
+                    debandParams = '1thr=0.04:2thr=0.04:3thr=0.04:range=16:blur=1';
+                }
+                hybridCpuFilters.push(`deband=${debandParams}`);
+                Logger.ILog(`Applied deband filter (hwdownload path): ${debandParams}`);
+                Variables.applied_deband = debandParams;
+                appliedFiltersSummary.push(`deband=${debandParams}`);
+            }
+
         } else {
             // ===== HARDWARE MODE =====
             // When hardware encoding is used, avoid CPU filters unless explicitly allowed (they commonly break hwaccel pipelines).
@@ -1074,6 +1135,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
                 }
                 Variables.applied_vpp_qsv_filter = vppFilter;
+                addedHardwareOnlyFilters = true;
 
                 // Remove any scale_qsv format filters added by Video Encode Advanced node
                 // to prevent duplicate -filter:v:0 arguments in the final command.
@@ -1186,8 +1248,17 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     if (UseCPUFilters) {
                         // Treat UseCPUFilters as "allow CPU extras" in QSV mode (wrapped safely).
                         if (forceHqdn3d) {
-                            Logger.ILog(`Hybrid CPU denoise forced: hqdn3d=${forceHqdn3d}`);
-                            hybridCpuFilters.push(`hqdn3d=${forceHqdn3d}`);
+                            Logger.ILog(`CPU denoise extra enabled: hqdn3d=${forceHqdn3d}`);
+                            if (cpuFiltersNeedHwBridge()) {
+                                hybridCpuFilters.push(`hqdn3d=${forceHqdn3d}`);
+                            } else {
+                                const addedVia = addVideoFilter(video, `hqdn3d=${forceHqdn3d}`);
+                                if (!addedVia) {
+                                    Logger.ELog('Unable to attach CPU denoise filter (QSV extras)');
+                                    return -1;
+                                }
+                                appliedFiltersForExecutor.push(`hqdn3d=${forceHqdn3d}`);
+                            }
                             appliedFiltersSummary.push(`hqdn3d=${forceHqdn3d}`);
                         }
                     }
@@ -1201,10 +1272,20 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                         } else {
                             debandParams = '1thr=0.04:2thr=0.04:3thr=0.04:range=16:blur=1';
                         }
-                        hybridCpuFilters.push(`deband=${debandParams}`);
+                        if (cpuFiltersNeedHwBridge()) {
+                            hybridCpuFilters.push(`deband=${debandParams}`);
+                        } else {
+                            const deband = `deband=${debandParams}`;
+                            const addedVia = addVideoFilter(video, deband);
+                            if (!addedVia) {
+                                Logger.ELog('Unable to attach deband filter (QSV extras)');
+                                return -1;
+                            }
+                            appliedFiltersForExecutor.push(deband);
+                        }
                         Variables.applied_deband = debandParams;
                         appliedFiltersSummary.push(`deband=${debandParams}`);
-                        Logger.ILog(`Hybrid CPU deband enabled: ${debandParams}`);
+                        Logger.ILog(`CPU deband enabled: ${debandParams}`);
                     }
                 }
             } else {
@@ -1221,8 +1302,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // mpdecimate drops near-duplicate frames and typically produces VFR output. Force -vsync vfr so ffmpeg
     // doesn't re-duplicate frames to match a CFR output, and so audio stays in sync.
     if (enableMpDecimate) {
-        if (isHardwareEncode && detectHardwareFramesLikely(video)) {
-            // Hardware decode/filters path: use the hybrid chain (hwdownload -> CPU filter -> hwupload).
+        if (cpuFiltersNeedHwBridge()) {
+            // Hardware frames path: use hwdownload (and hwupload when QSV encode is used).
             hybridCpuFilters.push(mpDecimateFilter);
             Variables.applied_mpdecimate = `${mpDecimateFilter} (hybrid)`;
             appliedFiltersSummary.push(mpDecimateFilter);
@@ -1248,15 +1329,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         const wantGradfun = (isHDR || isDolbyVision) || (!isAnimation && year <= 2005);
         if (wantGradfun) {
             const gradfun = (isHDR || isDolbyVision) ? 'gradfun=strength=0.9:radius=16' : 'gradfun=strength=1.2:radius=16';
-            if (isHardwareEncode) {
-                if (AllowCpuFiltersWithHardwareEncode) {
-                    hybridCpuFilters.push(gradfun);
-                    Variables.applied_gradfun = true;
-                    appliedFiltersSummary.push(gradfun);
-                    Logger.ILog(`Hybrid CPU gradfun enabled: ${gradfun}`);
-                } else {
-                    Logger.ILog('Skipping gradfun due to hardware encoder (CPU filter)');
-                }
+            if (isHardwareEncode && !AllowCpuFiltersWithHardwareEncode) {
+                Logger.ILog('Skipping gradfun due to hardware encoder (CPU filter)');
+            } else if (cpuFiltersNeedHwBridge()) {
+                hybridCpuFilters.push(gradfun);
+                Variables.applied_gradfun = true;
+                appliedFiltersSummary.push(gradfun);
+                Logger.ILog(`CPU gradfun enabled (hwdownload path): ${gradfun}`);
             } else {
                 addVideoFilter(video, gradfun);
                 Variables.applied_gradfun = true;
@@ -1283,15 +1362,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             }
 
             const deband = `deband=${debandParams}`;
-            if (isHardwareEncode) {
-                if (AllowCpuFiltersWithHardwareEncode) {
-                    hybridCpuFilters.push(deband);
-                    Variables.applied_deband = debandParams;
-                    appliedFiltersSummary.push(deband);
-                    Logger.ILog(`Hybrid CPU deband enabled: ${debandParams}`);
-                } else {
-                    Logger.ILog('Skipping deband due to hardware encoder (CPU filter)');
-                }
+            if (isHardwareEncode && !AllowCpuFiltersWithHardwareEncode) {
+                Logger.ILog('Skipping deband due to hardware encoder (CPU filter)');
+            } else if (cpuFiltersNeedHwBridge()) {
+                hybridCpuFilters.push(deband);
+                Variables.applied_deband = debandParams;
+                appliedFiltersSummary.push(deband);
+                Logger.ILog(`CPU deband enabled (hwdownload path): ${debandParams}`);
             } else {
                 addVideoFilter(video, deband);
                 Variables.applied_deband = debandParams;
@@ -1305,14 +1382,24 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     if (hybridCpuFilters.length > 0) {
-        const hybrid = `hwdownload,format=${uploadHwFormat},format=${hybridCpuFormat},${hybridCpuFilters.join(',')},format=${uploadHwFormat},hwupload=extra_hw_frames=64`;
+        // Build a single, ordered CPU segment that safely bridges HW->SW (and back to HW for QSV encodes when needed).
+        const needUploadBackToHw = isHardwareEncode && hwEncoder === 'qsv';
+        const parts = ['hwdownload', `format=${uploadHwFormat}`];
+        if (hybridCpuFormat !== uploadHwFormat) parts.push(`format=${hybridCpuFormat}`);
+        for (let i = 0; i < hybridCpuFilters.length; i++) parts.push(hybridCpuFilters[i]);
+        if (needUploadBackToHw) {
+            parts.push(`format=${uploadHwFormat}`);
+            parts.push('hwupload=extra_hw_frames=64');
+        }
+        const hybrid = parts.join(',');
         const addedVia = addVideoFilter(video, hybrid);
         if (!addedVia) {
             Logger.ELog(`Unable to attach hybrid CPU filter chain; no compatible filter collection found on video stream.`);
             return -1;
         }
         Variables.applied_hybrid_cpu_filters = hybridCpuFilters.join(',');
-        Logger.ILog(`Attached hybrid CPU filter chain via ${addedVia}: ${hybrid}`);
+        Variables.applied_hybrid_cpu_filters_mode = needUploadBackToHw ? 'hwdownload+hwupload' : 'hwdownload-only';
+        Logger.ILog(`Attached hybrid CPU filter chain (${Variables.applied_hybrid_cpu_filters_mode}) via ${addedVia}: ${hybrid}`);
         appliedFiltersForExecutor.push(hybrid);
     }
 
@@ -1366,37 +1453,17 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
      *   - Removes color banding common in older animation
      *   - Strength varies by age and restoration status
      *
-         * GRADFUN (live action <= 2005):
-         *   - Light gradient debanding for older live action
-         *
-         * MPDECIMATE (heuristic for Animation/Anime):
-         *   - Drops near-duplicate frames and forces VFR output via -vsync vfr
-         *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
-         *
-         * OPTIONAL (manual use / not implemented here):
-         *   - nlmeans: High quality denoiser (very slow, use for archival)
-         *   - unsharp: Sharpening after denoise (can hurt compression)
-         */
-
-    /**
-     * ENCODER PARAMETERS
-     * ==================
-     * For QSV encodes, FileFlows may omit some useful quality options depending on runner/build/version.
-     * Apply a small, safe set of QSV tuning options (only if they are not already present).
+     * GRADFUN (live action <= 2005):
+     *   - Light gradient debanding for older live action
      *
-     * Notes:
-     * - Auto Quality controls `-global_quality:v` downstream; this script does not touch it.
-     * - These are intentionally conservative for local-network playback (good quality + reasonable seekability).
-     */
-    if (isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent)) {
-        Variables.recommended_qsv_params = '-bf 7 -refs 6 -g 256 -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1';
-        Variables.recommended_x265_params = 'bframes=16:ref=6:rc-lookahead=60:aq-mode=3:aq-strength=0.8:psy-rd=0.7:psy-rdoq=0:deblock=1,1';
-    } else {
-        Variables.recommended_qsv_params = '-bf 7 -refs 4 -g 250 -extbrc 1 -look_ahead_depth 20';
-        Variables.recommended_x265_params = 'bframes=8:ref=4:aq-mode=3:psy-rd=1.0';
-    }
-
-    Logger.ILog(`Recommended QSV params: ${Variables.recommended_qsv_params}`);
+     * MPDECIMATE (heuristic for Animation/Anime):
+     *   - Drops near-duplicate frames and forces VFR output via -vsync vfr
+     *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
+     *
+     * OPTIONAL (manual use / not implemented here):
+     *   - nlmeans: High quality denoiser (very slow, use for archival)
+     *   - unsharp: Sharpening after denoise (can hurt compression)
+    */
 
     // Apply QSV tuning (only add if missing).
     if (hwEncoder === 'qsv') {
