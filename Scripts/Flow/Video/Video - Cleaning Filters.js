@@ -1,17 +1,17 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 34
+ * @revision 37
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
  * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (advanced; may break hardware pipelines depending on runner settings)
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable QSV deinterlacing (uses a quick `idet` probe)
- * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; forces VFR output via `-vsync vfr`)
+ * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 34 loaded');
+    Logger.ILog('Cleaning filters.js revision 37 loaded');
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
     AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
@@ -556,22 +556,63 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return 8;
     }
 
-    function ensureVsyncVfrInEncodingParameters(videoStream) {
+    function getCfrRateForMpDecimate(sourceFps) {
+        const fps = parseFloat(sourceFps || 0) || 0;
+
+        // Common case: 24p content stored as 60p with duplicates.
+        if (fps >= 48) return '24000/1001';
+
+        const near = (v, target, eps) => Math.abs(v - target) <= (eps || 0.05);
+        if (near(fps, 23.976, 0.06) || near(fps, 23.98, 0.06) || near(fps, 24.0, 0.06)) return '24000/1001';
+        if (near(fps, 25.0, 0.06)) return '25';
+        if (near(fps, 29.97, 0.08) || near(fps, 30.0, 0.08)) return '30000/1001';
+        if (near(fps, 50.0, 0.10)) return '50';
+        if (near(fps, 59.94, 0.10) || near(fps, 60.0, 0.10)) return '60000/1001';
+
+        // Default for animation workflows.
+        return '24000/1001';
+    }
+
+    function ensureCfrFramingInEncodingParameters(videoStream, outputRate) {
         try {
             const ep = videoStream ? videoStream.EncodingParameters : null;
-            if (!ep) return { changed: false, reason: 'no-encoding-params' };
+            const ap = videoStream ? videoStream.AdditionalParameters : null;
+            if (!ep && !ap) return { changed: false, reason: 'no-param-lists' };
 
-            const tokens = toEnumerableArray(ep, 5000).map(safeTokenString).filter(x => x);
-            for (let i = 0; i < tokens.length; i++) {
-                const t = String(tokens[i] || '').trim().toLowerCase();
-                if (t === '-vsync' || t.startsWith('-vsync:') || t.startsWith('-fps_mode')) {
-                    return { changed: false, reason: 'already-present' };
-                }
+            const isVsyncFlag = (t) => {
+                const s = String(t || '').trim().toLowerCase();
+                return s === '-vsync' || s.startsWith('-vsync:');
+            };
+            const isFpsModeFlag = (t) => {
+                const s = String(t || '').trim().toLowerCase();
+                return s === '-fps_mode' || s.startsWith('-fps_mode:');
+            };
+            const isRFlag = (t) => {
+                const s = String(t || '').trim().toLowerCase();
+                return s === '-r' || s.startsWith('-r:');
+            };
+
+            const r1 = removeArgWithValue(ep, isVsyncFlag);
+            const r2 = removeArgWithValue(ap, isVsyncFlag);
+            const r3 = removeArgWithValue(ep, isFpsModeFlag);
+            const r4 = removeArgWithValue(ap, isFpsModeFlag);
+            const r5 = removeArgWithValue(ep, isRFlag);
+            const r6 = removeArgWithValue(ap, isRFlag);
+
+            const target = ep || ap;
+            if (!target) return { changed: false, reason: 'no-target-list' };
+
+            listAdd(target, '-fps_mode');
+            listAdd(target, 'cfr');
+
+            if (outputRate) {
+                listAdd(target, '-r');
+                listAdd(target, String(outputRate));
             }
 
-            listAdd(ep, '-vsync');
-            listAdd(ep, 'vfr');
-            return { changed: true, reason: 'added' };
+            const removedAny = (r1.removed || r2.removed || r3.removed || r4.removed || r5.removed || r6.removed);
+            const changed = removedAny || true; // always adds fps_mode cfr (+ optional -r)
+            return { changed, reason: removedAny ? 'replaced-existing' : 'added' };
         } catch (err) {
             return { changed: false, reason: 'error', error: String(err) };
         }
@@ -635,7 +676,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         // High-FPS anime encodes (59.94/60) are common and often contain lots of duplicates (24p content in a 60p stream).
         if (sourceFps && sourceFps >= 48) return { enable: true, reason: 'high-fps' };
 
-        // Older animation tends to have more repeats/holds; probe to avoid unnecessary VFR outputs.
+        // Older animation tends to have more repeats/holds; probe to avoid unnecessary mpdecimate (and any CFR retiming) for negligible gains.
         if (!ffmpegPath || !inputFile) return { enable: false, reason: 'no-probe' };
 
         const sampleSeconds = 12;
@@ -671,6 +712,32 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         if (lower.startsWith('mpdecimate=')) return s;
         if (lower.startsWith('mpdecimate:')) return s;
         return 'mpdecimate=' + s;
+    }
+
+    function shouldAddSetPtsAfterMpDecimate(mpDecimateExpression) {
+        const s = String(mpDecimateExpression || '').toLowerCase();
+        // If the user already provided setpts, don't add another.
+        if (s.indexOf('setpts=') >= 0) return false;
+        return true;
+    }
+
+    function ensureUploadFormatBeforeHwUpload(filterChain, uploadFormat) {
+        const s = String(filterChain || '').trim();
+        if (!s) return s;
+        if (s.indexOf('hwupload') < 0) return s;
+
+        const fmt = `format=${uploadFormat}`;
+
+        // If the filter already has format=XYZ immediately before hwupload, keep it.
+        // (We only ensure the *presence* of the correct format before hwupload.)
+        if (s.indexOf(`${fmt},hwupload`) >= 0) return s;
+        if (s.indexOf(`${fmt},hwupload=`) >= 0) return s;
+
+        // Insert right before the first hwupload occurrence.
+        // Works for both '...,hwupload' and '...,hwupload=...'
+        return s
+            .replace(',hwupload=', `,${fmt},hwupload=`)
+            .replace(',hwupload', `,${fmt},hwupload`);
     }
 
     function getVppQsvFormat(bitDepth) {
@@ -990,11 +1057,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     Variables.mpdecimate_reason = mpDecimateReason;
     Variables.mpdecimate_filter = mpDecimateFilter;
 
-    // We'll attach mpdecimate after denoise decisions, but inject -vsync vfr up-front when it's enabled.
+    // We'll attach mpdecimate after denoise decisions, but enforce CFR framing up-front when it's enabled.
     if (enableMpDecimate) {
-        const vs = ensureVsyncVfrInEncodingParameters(video);
-        if (vs.changed) Logger.WLog('Added -vsync vfr due to mpdecimate (VFR output).');
-        Variables.applied_vsync = 'vfr';
+        const outputRate = Variables.MpDecimateCfrRate || Variables.CfrRate || getCfrRateForMpDecimate(sourceFps);
+        const cfr = ensureCfrFramingInEncodingParameters(video, outputRate);
+        if (cfr.changed) Logger.WLog(`Enabled CFR output framing for mpdecimate (-fps_mode cfr -r ${outputRate}).`);
+        Variables.applied_fps_mode = 'cfr';
+        Variables.applied_r = String(outputRate);
         Logger.ILog(`mpdecimate decision: enabled (${mpDecimateReason})`);
     } else {
         Variables.applied_mpdecimate = `skipped (${mpDecimateReason})`;
@@ -1299,26 +1368,30 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     // ===== OPTIONAL DUPLICATE FRAME REMOVAL (mpdecimate) =====
-    // mpdecimate drops near-duplicate frames and typically produces VFR output. Force -vsync vfr so ffmpeg
-    // doesn't re-duplicate frames to match a CFR output, and so audio stays in sync.
+    // mpdecimate drops near-duplicate frames. We keep output CFR for robust playback, and regenerate timestamps
+    // with setpts after mpdecimate to avoid non-monotonic DTS spam.
     if (enableMpDecimate) {
         if (cpuFiltersNeedHwBridge()) {
             // Hardware frames path: use hwdownload (and hwupload when QSV encode is used).
             hybridCpuFilters.push(mpDecimateFilter);
+            if (shouldAddSetPtsAfterMpDecimate(mpDecimateFilter)) hybridCpuFilters.push('setpts=N/FRAME_RATE/TB');
             Variables.applied_mpdecimate = `${mpDecimateFilter} (hybrid)`;
             appliedFiltersSummary.push(mpDecimateFilter);
             Logger.ILog(`mpdecimate enabled (hybrid): ${mpDecimateFilter}`);
         } else {
             // CPU frames path: attach directly, even if encoding is QSV (FFmpeg will upload frames for the encoder).
-            const addedVia = addVideoFilter(video, mpDecimateFilter);
+            const mp = shouldAddSetPtsAfterMpDecimate(mpDecimateFilter)
+                ? (mpDecimateFilter + ',setpts=N/FRAME_RATE/TB')
+                : mpDecimateFilter;
+            const addedVia = addVideoFilter(video, mp);
             if (!addedVia) {
                 Logger.ELog('Unable to attach mpdecimate filter');
                 return -1;
             }
-            Variables.applied_mpdecimate = mpDecimateFilter;
+            Variables.applied_mpdecimate = mp;
             appliedFiltersSummary.push(mpDecimateFilter);
-            appliedFiltersForExecutor.push(mpDecimateFilter);
-            Logger.ILog(`Applied mpdecimate via ${addedVia}: ${mpDecimateFilter}`);
+            appliedFiltersForExecutor.push(mp);
+            Logger.ILog(`Applied mpdecimate via ${addedVia}: ${mp}`);
         }
     }
 
@@ -1388,10 +1461,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         if (hybridCpuFormat !== uploadHwFormat) parts.push(`format=${hybridCpuFormat}`);
         for (let i = 0; i < hybridCpuFilters.length; i++) parts.push(hybridCpuFilters[i]);
         if (needUploadBackToHw) {
-            parts.push(`format=${uploadHwFormat}`);
             parts.push('hwupload=extra_hw_frames=64');
         }
-        const hybrid = parts.join(',');
+        let hybrid = parts.join(',');
+        if (needUploadBackToHw) {
+            // Main10-safe: ensure we upload p010le (not yuv420p10le) back to QSV surfaces.
+            hybrid = ensureUploadFormatBeforeHwUpload(hybrid, uploadHwFormat);
+        }
         const addedVia = addVideoFilter(video, hybrid);
         if (!addedVia) {
             Logger.ELog(`Unable to attach hybrid CPU filter chain; no compatible filter collection found on video stream.`);
@@ -1456,9 +1532,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
      * GRADFUN (live action <= 2005):
      *   - Light gradient debanding for older live action
      *
-     * MPDECIMATE (heuristic for Animation/Anime):
-     *   - Drops near-duplicate frames and forces VFR output via -vsync vfr
-     *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
+         * MPDECIMATE (heuristic for Animation/Anime):
+         *   - Drops near-duplicate frames, keeps output CFR via -fps_mode cfr + -r, and regenerates timestamps via setpts
+         *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
      *
      * OPTIONAL (manual use / not implemented here):
      *   - nlmeans: High quality denoiser (very slow, use for archival)
