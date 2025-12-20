@@ -30,7 +30,7 @@ function Script(URI, ApiKey) {
 
     // Fetch the episode of the serie before touching anything
     // Logic moved to Shared/SonarrVc.js
-    let [ogEpisodeFile, episode] = sonarr.fetchEpisode(ogFullName, series);
+    let [_ogEpisodeFile, episode] = sonarr.fetchEpisode(ogFullName, series);
     if (episode?.id !== undefined) {
         Logger.ILog(`Original episode found: Season ${episode.seasonNumber} Episode: ${episode.episodeNumber}`);
     } else {

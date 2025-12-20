@@ -73,7 +73,7 @@ function Script(
         return listAdd(list, item);
     }
 
-    function listSetAt(list, index, value) {
+    function _listSetAt(list, index, value) {
         if (!list) return false;
         try {
             // JS array or .NET indexer

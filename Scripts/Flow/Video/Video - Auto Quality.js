@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString, parseDurationSeconds, clampNumber, runProcess } from 'Shared/ScriptHelpers';
+import { toEnumerableArray, safeString, parseDurationSeconds, clampNumber } from 'Shared/ScriptHelpers';
 
 /**
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
@@ -48,7 +48,7 @@ function Script(
             s.indexOf('"') === -1
         )
             return s;
-        return '"' + s.replace(/\"/g, '\\"') + '"';
+        return '"' + s.replace(/"/g, '\\"') + '"';
     }
 
     function escapeFfmpegFilterArgValue(value) {
@@ -112,7 +112,7 @@ function Script(
             }
 
             // -stats style output: time=00:00:12.34
-            m = s.match(/time=([\.:0-9]+)/i);
+            m = s.match(/time=([.:0-9]+)/i);
             if (m) {
                 tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
                 return;
@@ -580,7 +580,7 @@ function Script(
         `Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`
     );
 
-    const filtersNeedQsv = detectNeedsQsvFilters(upstreamVideoFilters);
+    const _filtersNeedQsv = detectNeedsQsvFilters(upstreamVideoFilters);
 
     // Reference strategy:
     // - encoded: pre-encode high quality reference samples using the same encoder + filters as tests.
@@ -970,11 +970,6 @@ function Script(
         return Math.max(0, q);
     }
 
-    function getReferenceCRF(minCrf) {
-        // Backwards-compatible helper name used in older revisions.
-        return getReferenceQuality(minCrf, 'libx265');
-    }
-
     function calculateAutoTargetVMAF() {
         // Content-aware VMAF targeting
         // Check multiple sources for metadata (Radarr/Sonarr search scripts populate these)
@@ -1148,7 +1143,7 @@ function Script(
         return results;
     }
 
-    function analyzeLuminance(ffmpeg, inputFile, positions, sampleDur) {
+    function analyzeLuminance(ffmpeg, inputFile, positions, _sampleDur) {
         // Analyze average luminance across sample positions using signalstats filter
         // Returns average Y (luma) value 0-255, or -1 on failure
         const luminanceValues = [];
@@ -1926,7 +1921,7 @@ function Script(
                     const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                     if (vmafMatch) score = parseFloat(vmafMatch[1]);
                     else {
-                        const jsonMatch = output.match(/\"vmaf\"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                        const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
                         if (jsonMatch) score = parseFloat(jsonMatch[1]);
                     }
                 } else {
@@ -1993,8 +1988,6 @@ function Script(
 
         // Rebuild args, replacing any existing CRF/Preset
         let skipNext = false;
-        let setCRF = false;
-        let setPreset = false;
 
         for (let i = 0; i < args.length; i++) {
             if (skipNext) {
@@ -2027,14 +2020,12 @@ function Script(
 
         ep.Add(crfArg);
         ep.Add(String(crf));
-        setCRF = true;
 
         if (preset && !encoder.includes('_qsv')) {
             // QSV presets are often handled differently or hardcoded in the node,
             // but for SW encoding we enforce the preset here.
             ep.Add('-preset');
             ep.Add(preset);
-            setPreset = true;
         }
 
         Logger.ILog(`Applied settings: ${crfArg} ${crf}, preset ${preset || 'default'}`);

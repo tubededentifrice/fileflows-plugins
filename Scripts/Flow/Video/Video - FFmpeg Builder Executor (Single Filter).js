@@ -110,8 +110,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     function quoteForAudit(arg) {
         const s = String(arg === undefined || arg === null ? '' : arg);
         if (s.length === 0) return '""';
-        if (!/[\\s\"]/g.test(s)) return s;
-        return '"' + s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"') + '"';
+        if (!/[\s"]/g.test(s)) return s;
+        return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
     }
 
     function buildAuditCommandLine(executable, args) {
@@ -551,8 +551,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     function quoteProcessArg(arg) {
         const s = String(arg === undefined || arg === null ? '' : arg);
         if (s.length === 0) return '""';
-        if (!/[\\s\"]/g.test(s)) return s;
-        return '"' + s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"') + '"';
+        if (!/[\s"]/g.test(s)) return s;
+        return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
     }
 
     function probeDurationSeconds(ffmpegPath, inputFile) {
@@ -728,7 +728,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             }
 
             // -stats style output: time=00:00:12.34
-            m = s.match(/time=([\.:0-9]+)/i);
+            m = s.match(/time=([.:0-9]+)/i);
             if (m) {
                 tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
                 maybeUpdateAdditionalInfo(false);
