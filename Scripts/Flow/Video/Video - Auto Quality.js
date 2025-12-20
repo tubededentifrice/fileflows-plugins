@@ -294,8 +294,9 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     }
 
     // "Extra high quality" reference transcode quality used as the VMAF/SSIM reference.
-    const referenceCRF = getReferenceCRF(MinCRF);
-    Variables.AutoQuality_ReferenceCRF = referenceCRF;
+    // For hardware encoders this is a "quality value" (eg QSV global_quality), not CRF.
+    const referenceQuality = getReferenceQuality(MinCRF, targetCodec);
+    Variables.AutoQuality_ReferenceCRF = referenceQuality;
 
     // ===== CONTENT-AWARE TARGET QUALITY =====
     let effectiveTargetVMAF = TargetVMAF;
@@ -334,6 +335,16 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     // ===== CALCULATE SAMPLE POSITIONS =====
     const samplePositions = calculateSamplePositions(duration, SampleCount, SampleDurationSec);
     Logger.ILog(`Sample positions: ${samplePositions.map(p => Math.round(p) + 's').join(', ')}`);
+
+    // Extract short video-only sample files once (provider-style) to avoid repeatedly opening/seeking the full source.
+    // If extraction fails, fall back to seeking into the full source for each encode/metric run.
+    const samples = extractVideoSamples(ffmpegEncodePath, originalFile, samplePositions, SampleDurationSec);
+    const extractedCount = samples.filter(s => s.isTempSample).length;
+    if (extractedCount > 0) {
+        Logger.ILog(`Extracted ${extractedCount}/${samplePositions.length} sample files for quality testing`);
+    } else {
+        Logger.WLog('Could not extract sample files; falling back to direct seeking into the source for tests');
+    }
 
     // ===== DARK SCENE DETECTION =====
     // Analyze luminance of samples to detect dark content
@@ -378,13 +389,26 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const targetDisplay = qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget;
     Logger.ILog(`Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`);
 
-    const referenceSamples = encodeReferenceSamples(ffmpegEncodePath, originalFile, samplePositions, SampleDurationSec, use10BitForTests, targetCodec, upstreamVideoFilters, referenceCRF);
+    const filtersNeedQsv = detectNeedsQsvFilters(upstreamVideoFilters);
+
+    // Reference strategy:
+    // - No filters: use the raw sample as reference (no reference transcode).
+    // - Software-only filters: apply them to the reference stream inside the VMAF/SSIM pass (no reference transcode).
+    // - QSV filters: prefilter+encode a reference file once per sample so VMAF doesn't penalize intentional filtering.
+    const referenceMode = (!upstreamVideoFilters ? 'source' : (filtersNeedQsv ? 'encoded' : 'filtered-in-metric'));
+
+    const referenceSamples = (referenceMode === 'encoded')
+        ? encodeReferenceSamples(ffmpegEncodePath, samples, SampleDurationSec, use10BitForTests, video, targetCodec, upstreamVideoFilters, referenceQuality)
+        : [];
 
     if (referenceSamples.length === 0) {
-        Logger.ELog('Failed to encode any reference samples. Cannot proceed with quality search.');
-        Variables.AutoQuality_CRF = 'unchanged';
-        Variables.AutoQuality_Reason = 'reference_encode_failed';
-        return 1;
+        if (referenceMode === 'encoded') {
+            Logger.ELog('Failed to encode any reference samples. Cannot proceed with quality search.');
+            Variables.AutoQuality_CRF = 'unchanged';
+            Variables.AutoQuality_Reason = 'reference_encode_failed';
+            cleanupFiles(samples.filter(s => s.isTempSample).map(s => s.inputFile));
+            return 1;
+        }
     }
 
     const searchResults = [];
@@ -416,7 +440,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
             Flow.PartPercentageUpdate?.(progressPct);
 
-            const qualityScore = measureQualityAtCRF(ffmpegEncodePath, ffmpegPath, originalFile, testCRF, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, referenceSamples);
+            const qualityScore = measureQualityAtCRF(ffmpegEncodePath, ffmpegPath, samples, testCRF, video, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceMode, referenceSamples);
 
             if (qualityScore < 0) {
                 Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
@@ -442,6 +466,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
     } finally {
         cleanupFiles(referenceSamples.map(r => r.path));
+        cleanupFiles(samples.filter(s => s.isTempSample).map(s => s.inputFile));
     }
 
     if (bestCRF === null) {
@@ -683,11 +708,19 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return deduped.join(',');
     }
 
-    function getReferenceCRF(minCrf) {
-        // Keep the reference high quality but fast enough for short samples.
-        // CRF-like scales: lower is better; clamp to 0.
-        const q = (parseInt(minCrf) || 18) - 8;
+    function getReferenceQuality(minValue, targetCodec) {
+        // Keep the reference noticeably higher quality than the search range.
+        // For software CRF-like scales: lower is better; clamp to 0.
+        // For QSV global_quality: lower is better; clamp to 1.
+        const q = (parseInt(minValue) || 18) - 8;
+        const codec = String(targetCodec || '').toLowerCase();
+        if (codec.indexOf('_qsv') >= 0) return Math.max(1, q);
         return Math.max(0, q);
+    }
+
+    function getReferenceCRF(minCrf) {
+        // Backwards-compatible helper name used in older revisions.
+        return getReferenceQuality(minCrf, 'libx265');
     }
 
     function calculateAutoTargetVMAF() {
@@ -771,6 +804,62 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             positions.push(startOffset + (spacing * i));
         }
         return positions;
+    }
+
+    function detectNeedsQsvFilters(filters) {
+        const s = String(filters || '').trim().toLowerCase();
+        if (!s) return false;
+        if (s.indexOf('vpp_qsv') >= 0) return true;
+        if (s.indexOf('scale_qsv') >= 0) return true;
+        if (s.indexOf('deinterlace_qsv') >= 0) return true;
+        if (s.indexOf('tonemap_qsv') >= 0) return true;
+        if (s.indexOf('hwupload') >= 0 || s.indexOf('hwdownload') >= 0) return true;
+        return /_qsv(?:=|,|:|$)/i.test(s);
+    }
+
+    function extractVideoSamples(ffmpegExtract, inputFile, positions, sampleDur) {
+        // Provider-style: extract short video-only sample files once, then run encodes/metrics against those.
+        // Returns an array of sample descriptors; if extraction fails, entries fall back to seeking into inputFile.
+        const results = [];
+        const tempDir = Flow.TempPath;
+
+        const pad6 = (n) => ('000000' + String(n)).slice(-6);
+
+        for (let i = 0; i < (positions || []).length; i++) {
+            const pos = positions[i];
+            const sec = Math.max(0, Math.floor(pos || 0));
+            const sampleName = `sample_${pad6(sec)}`;
+            const samplePath = `${tempDir}/${sampleName}.mkv`;
+
+            let extracted = false;
+            try {
+                const args = [
+                    '-hide_banner', '-loglevel', 'error', '-y',
+                    '-ss', String(sec),
+                    '-i', inputFile,
+                    '-t', String(sampleDur),
+                    '-map', '0:v:0',
+                    '-an', '-sn',
+                    '-c:v', 'copy',
+                    '-map_chapters', '-1',
+                    samplePath
+                ];
+
+                const r = Flow.Execute({ command: ffmpegExtract, argumentList: args, timeout: 120 });
+                if (r && r.exitCode === 0 && System.IO.File.Exists(samplePath)) {
+                    extracted = true;
+                }
+            } catch (e) { }
+
+            if (extracted) {
+                results.push({ pos: pos, inputFile: samplePath, seekSeconds: 0, durationSeconds: sampleDur, isTempSample: true, key: sampleName });
+            } else {
+                try { if (System.IO.File.Exists(samplePath)) System.IO.File.Delete(samplePath); } catch (e) { }
+                results.push({ pos: pos, inputFile: inputFile, seekSeconds: sec, durationSeconds: sampleDur, isTempSample: false, key: sampleName });
+            }
+        }
+
+        return results;
     }
 
     function analyzeLuminance(ffmpeg, inputFile, positions, sampleDur) {

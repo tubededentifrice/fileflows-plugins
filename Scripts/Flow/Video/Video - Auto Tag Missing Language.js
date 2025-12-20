@@ -2,7 +2,7 @@
  * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
  * @help Run after a "Video File" node so `vi.VideoInfo` is available. For MKV outputs, `mkvpropedit` is used for instant in-place tagging; otherwise an ffmpeg stream-copy remux is done.
  * @author Vincent Courcelle
- * @revision 9
+ * @revision 10
  * @minimumVersion 24.0.0.0
  * @param {bool} DryRun Log what would change, but do not modify the file. Default: false
  * @param {bool} UseHeuristics Infer language from track title / filename tags (e.g. "English", "[jpn]"). Default: true
@@ -18,7 +18,7 @@
  * @output Error
  */
 function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence, UseWhisperFallback, SampleStartSeconds, SampleDurationSeconds, PreferMkvPropEdit, ForceRetag) {
-    Logger.ILog('Audio - Auto tag missing language.js revision 9 loaded');
+    Logger.ILog('Audio - Auto tag missing language.js revision 10 loaded');
 
     function toEnumerableArray(value, maxItems) {
         if (!value) return [];
@@ -368,6 +368,140 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
     const videoVar = (typeof video !== 'undefined' && video) ? video : getVariablesKey('video');
     const ffmpegModel = getVariablesKey('FfmpegBuilderModel');
 
+    function getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel) {
+        const candidates = [];
+        function addCandidate(obj) {
+            if (!obj) return;
+            if (candidates.indexOf(obj) >= 0) return;
+            candidates.push(obj);
+        }
+
+        // The selected primary reference
+        addCandidate(primaryVideoInfo);
+
+        // Video File node globals/variables might expose VideoInfo either directly or nested
+        if (viObj) {
+            try {
+                if (viObj['VideoInfo']) addCandidate(viObj['VideoInfo']);
+                else if (viObj['AudioStreams'] || viObj['VideoStreams']) addCandidate(viObj);
+            } catch (err) { }
+        }
+        if (videoObj) {
+            try {
+                if (videoObj['VideoInfo']) addCandidate(videoObj['VideoInfo']);
+                else if (videoObj['AudioStreams'] || videoObj['VideoStreams']) addCandidate(videoObj);
+            } catch (err) { }
+        }
+
+        // FFmpeg Builder model may also carry a VideoInfo reference used later in the flow
+        if (ffModel) {
+            try { if (ffModel['VideoInfo']) addCandidate(ffModel['VideoInfo']); } catch (err) { }
+        }
+
+        return candidates;
+    }
+
+    function applyInMemoryLanguageUpdates(changesList, primaryVideoInfo, viObj, videoObj, ffModel) {
+        if (!changesList || changesList.length === 0) return;
+
+        let updatedAudioStreams = 0;
+        let updatedBuilderStreams = 0;
+        let failedUpdates = 0;
+
+        function updateAudioStreamsOnVideoInfo(videoInfoObj, label) {
+            if (!videoInfoObj) return;
+
+            let audioList = null;
+            try { audioList = videoInfoObj.AudioStreams; } catch (err) { audioList = null; }
+            if (!audioList) return;
+
+            const list = toEnumerableArray(audioList, 500);
+            if (!list || list.length === 0) return;
+
+            for (const c of changesList) {
+                if (!c || !c.iso) continue;
+
+                // Prefer matching by TypeIndex (0:a:N) when available; fall back to list index.
+                let target = null;
+                for (let i = 0; i < list.length; i++) {
+                    const s = list[i];
+                    if (!s) continue;
+                    try {
+                        if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                            target = s;
+                            break;
+                        }
+                    } catch (err) { }
+                }
+                if (!target) target = (c.audioIndex >= 0 && c.audioIndex < list.length) ? list[c.audioIndex] : null;
+                if (!target) continue;
+
+                try {
+                    target.Language = c.iso;
+                    updatedAudioStreams++;
+                } catch (err2) {
+                    failedUpdates++;
+                    Logger.WLog('Failed to update in-memory audio language on ' + label + ' for 0:a:' + String(c.typeIndex) + ': ' + safeString(err2));
+                }
+            }
+        }
+
+        function updateFfmpegBuilderAudioStreams(ffModelObj) {
+            if (!ffModelObj) return;
+            let audioList = null;
+            try { audioList = ffModelObj.AudioStreams; } catch (err) { audioList = null; }
+            if (!audioList) return;
+
+            const list = toEnumerableArray(audioList, 500);
+            if (!list || list.length === 0) return;
+
+            for (const c of changesList) {
+                if (!c || !c.iso) continue;
+
+                let target = null;
+                for (let i = 0; i < list.length; i++) {
+                    const s = list[i];
+                    if (!s) continue;
+                    try {
+                        if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                            target = s;
+                            break;
+                        }
+                    } catch (err) { }
+                }
+                if (!target) continue;
+
+                try {
+                    target.Language = c.iso;
+                    updatedBuilderStreams++;
+                } catch (err2) {
+                    failedUpdates++;
+                    Logger.WLog('Failed to update in-memory FFmpeg Builder audio language for 0:a:' + String(c.typeIndex) + ': ' + safeString(err2));
+                }
+            }
+        }
+
+        const candidates = getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel);
+        for (let i = 0; i < candidates.length; i++) {
+            updateAudioStreamsOnVideoInfo(candidates[i], 'VideoInfo[' + i + ']');
+        }
+
+        updateFfmpegBuilderAudioStreams(ffModel);
+
+        // Expose a compact mapping for downstream nodes, even if a .NET object property is not writable.
+        // Keyed by TypeIndex (0:a:N), value is ISO-639-2/B code.
+        try {
+            const map = {};
+            for (const c of changesList) {
+                if (!c || !c.iso) continue;
+                map[String(c.typeIndex)] = String(c.iso);
+            }
+            Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(map);
+        } catch (err) { }
+
+        Logger.ILog('Updated in-memory audio language metadata: VideoInfo=' + updatedAudioStreams + ', FfmpegBuilderModel=' + updatedBuilderStreams + (failedUpdates ? (', failed=' + failedUpdates) : ''));
+    }
+
     const videoInfo =
         (viVar && viVar['VideoInfo']) ||
         getVariablesKey('vi.VideoInfo') ||
@@ -412,6 +546,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         if (!forceRetag && hasLang) continue;
 
         pending.push({
+            streamRef: stream,
             audioIndex: i,
             typeIndex: (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null) ? stream.TypeIndex : i,
             title: safeString(stream && stream.Title),
@@ -519,6 +654,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         }
 
         changes.push({
+            streamRef: track.streamRef,
             audioIndex: track.audioIndex,
             typeIndex: track.typeIndex,
             iso: detectedIso,
@@ -559,6 +695,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             Logger.ELog('mkvpropedit failed: ' + safeString((proc && (proc.standardError || proc.standardOutput)) || ''));
             return -1;
         }
+
+        // Ensure downstream nodes can see updated languages without re-parsing the file.
+        applyInMemoryLanguageUpdates(changes, videoInfo, viVar, videoVar, ffmpegModel);
         Logger.ILog('Tagged languages in-place with mkvpropedit.');
         return 1;
     }
@@ -579,6 +718,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
     }
 
     Flow.SetWorkingFile(outputFile);
+
+    // Ensure downstream nodes can see updated languages without re-parsing the file.
+    applyInMemoryLanguageUpdates(changes, videoInfo, viVar, videoVar, ffmpegModel);
     Logger.ILog('Tagged languages via ffmpeg remux and updated working file.');
     return 1;
 }
