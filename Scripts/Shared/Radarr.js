@@ -1,45 +1,15 @@
+import { ServiceApi } from "Shared/ServiceApi";
+
 /**
  * @description Class that interacts with Radarr
- * @revision 7
+ * @revision 8
  * @minimumVersion 1.0.0.0
  */
-export class Radarr
+export class Radarr extends ServiceApi
 {
-    URL;
-    ApiKey;
-
     constructor(URL, ApiKey)
     {
-        this.URL = ((URL) ? URL : Variables['Radarr.Url']);
-        if (!this.URL)
-            MissingVariable('Radarr.Url');
-        this.ApiKey = ((ApiKey) ? ApiKey : Variables['Radarr.ApiKey']);
-        if (!this.ApiKey)
-            MissingVariable('Radarr.ApiKey');
-    }
-
-    getUrl(endpoint, queryParmeters)
-    {
-        let url = '' + this.URL;
-        if (url.endsWith('/') === false)
-            url += '/';
-        url = `${url}api/v3/${endpoint}?apikey=${this.ApiKey}`;
-        if(queryParmeters)
-            url += '&' + queryParmeters;
-        return url;
-    }
-
-    fetchJson(endpoint, queryParmeters)
-    {
-        let url = this.getUrl(endpoint, queryParmeters);
-        let response = http.GetAsync(url).Result;
-        let body = response.Content.ReadAsStringAsync().Result;
-        if (!response.IsSuccessStatusCode)
-        {
-            Logger.WLog('Unable to fetch: ' + url + '\n' + body);
-            return null;
-        }
-        return JSON.parse(body);
+        super(URL, ApiKey, 'Radarr');
     }
 
     /**
@@ -192,55 +162,53 @@ export class Radarr
     }
 
     /**
-     * Specifies a command for Sonarr to run. see sonarr rename script for usage
-     * @param {string} commandName the name of the command to be run
-     * @param {object} commandBody the body of the command to be sent
-     * @returns {object} JSON of the response or null if unsuccessful
+     * Searches for a movie by file or folder path in Radarr
+     * @param {string} searchPattern - The search string to use (from the folder or file name)
+     * @returns {Object|null} Movie object if found, or null if not found
      */
-    sendCommand(commandName, commandBody) {
-        let endpoint = `${this.URL}/api/v3/command`;
-        commandBody['name'] = commandName;
-    
-        let jsonData = JSON.stringify(commandBody);
-        http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
-        let response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
-    
-        http.DefaultRequestHeaders.Remove("X-API-Key");
-    
-        if (response.IsSuccessStatusCode) {
-            let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
-            return responseData;
-        } else {
-            let error = response.Content.ReadAsStringAsync().Result;
-            Logger.WLog("API error: " + error);
+    searchMovieByPath(searchPattern) {
+        try {
+            const movie = this.getMovieByPath(searchPattern);
+            return movie || null;
+        } catch (error) {
+            Logger.ELog(`Error searching movie by path: ${error.message}`);
             return null;
         }
     }
 
     /**
-     * Sleeps, waiting for a command to complete
-     * @param {int} commandId ID of command being run
-     * @returns bool whether the coommand ran successfully
+     * Searches the Radarr queue for a movie based on the search pattern
+     * @param {string} searchPattern - The search string (file or folder name)
+     * @returns {Object|null} Movie object if found, or null if not found
      */
-    waitForCompletion(commandId) 
-    {
-        const startTime = new Date().getTime();
-        const timeout = 30000; // 30 seconds in milliseconds
-        const endpoint = `command/${commandId}`;
-    
-        while (new Date().getTime() - startTime <= timeout) {
-            let response = this.fetchJson(endpoint, '');
-            if (response.status === 'completed') {
-                Logger.ILog('Scan completed!');
-                return true;
-            } else if (response.status === 'failed') {
-                Logger.WLog(`Command ${commandId} failed`)
-                return false;
+    searchInQueue(searchPattern) {
+        return this.searchApi(
+            "queue", 
+            searchPattern, 
+            (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
+            { includeMovie: "true" },
+            (item) => {
+                Logger.ILog(`Found Movie in Queue: ${item.movie.title}`);
+                return item.movie;
             }
-            Logger.ILog(`Checking status: ${response.status}`);
-            Sleep(100); // Delay before next check
-        }
-        Logger.WLog('Timeout: Scan did not complete within 30 seconds.');
-        return false;
+        );
+    }
+
+    /**
+     * Searches the Radarr download history for a movie based on the search pattern
+     * @param {string} searchPattern - The search string (file or folder name)
+     * @returns {Object|null} Movie object if found, or null if not found
+     */
+    searchInDownloadHistory(searchPattern) {
+        return this.searchApi(
+            "history",
+            searchPattern,
+            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
+            { eventType: 3, includeMovie: "true" },
+            (item) => {
+                Logger.ILog(`Found Movie in History: ${item.movie.title}`);
+                return item.movie;
+            }
+        );
     }
 }

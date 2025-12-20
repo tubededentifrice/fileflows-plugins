@@ -1,9 +1,10 @@
 import { FfmpegBuilderDefaults } from "Shared/FfmpegBuilderDefaults";
+import { toEnumerableArray, safeString, clampNumber, truthy, parseDurationSeconds, secondsToClock } from "Shared/ScriptHelpers";
 
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 11
+ * @revision 12
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -13,59 +14,9 @@ import { FfmpegBuilderDefaults } from "Shared/FfmpegBuilderDefaults";
  * @output Skipped (no changes)
  */
 function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCommentLength) {
-    function truthy(value) { return value === true || value === 'true' || value === 1 || value === '1'; }
-
-    function clampNumber(value, min, max) {
-        const n = parseFloat(value);
-        if (isNaN(n)) return min;
-        if (n < min) return min;
-        if (n > max) return max;
-        return n;
-    }
-
-    function safeTokenString(token) {
-        if (token === null || token === undefined) return '';
-        if (typeof token === 'string' || typeof token === 'number' || typeof token === 'boolean') return String(token);
-        try {
-            const json = JSON.stringify(token);
-            if (json && json !== '{}' && json !== '[]') return json;
-        } catch (err) { }
-        return String(token);
-    }
-
-    function toEnumerableArray(value, maxItems) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [value];
-
-        const limit = maxItems || 500;
-
-        // .NET IEnumerable via GetEnumerator()
-        try {
-            if (typeof value.GetEnumerator === 'function') {
-                const result = [];
-                const enumerator = value.GetEnumerator();
-                let count = 0;
-                while (enumerator.MoveNext() && count < limit) {
-                    result.push(enumerator.Current);
-                    count++;
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        // .NET List<T> style (Count + indexer)
-        try {
-            if (typeof value.Count === 'number') {
-                const result = [];
-                const count = Math.min(value.Count, limit);
-                for (let i = 0; i < count; i++) result.push(value[i]);
-                return result;
-            }
-        } catch (err) { }
-
-        return [value];
-    }
+    // Shared helpers are imported, but we can alias them if we want to match existing code exactly
+    // or just use them directly. The existing code uses `safeTokenString` which is identical to `safeString`.
+    const safeTokenString = safeString;
 
     function normalizeInputFile(value) {
         if (value === null || value === undefined) return '';
@@ -482,14 +433,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     function tryGetDurationSeconds(model) {
         // Prefer the duration already computed by FileFlows, but fall back to builder model and finally stderr parsing.
         function tryParseDurationSeconds(value) {
-            if (value === null || value === undefined) return NaN;
-            if (typeof value === 'number') return value;
-            const s = String(value).trim();
-            if (!s) return NaN;
-            if (/^[0-9]+(\.[0-9]+)?$/.test(s)) return parseFloat(s);
-            if (s.indexOf(':') >= 0) return humanTimeToSeconds(s);
-            const n = parseFloat(s);
-            return isNaN(n) ? NaN : n;
+            return parseDurationSeconds(value);
         }
         try {
             const d = Variables.video && Variables.video.Duration !== undefined ? tryParseDurationSeconds(Variables.video.Duration) : NaN;
@@ -515,31 +459,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     function humanTimeToSeconds(text) {
-        const t = String(text || '').trim();
-        if (!t) return 0;
-        // "123.45"
-        if (/^[0-9]+(\.[0-9]+)?$/.test(t)) return parseFloat(t);
-        // "HH:MM:SS.xx" or "MM:SS.xx"
-        const parts = t.split(':').map(p => parseFloat(p));
-        if (!parts.length) return 0;
-        let seconds = 0;
-        seconds += parts.pop() || 0;
-        if (parts.length) seconds += (parts.pop() || 0) * 60;
-        if (parts.length) seconds += (parts.pop() || 0) * 3600;
-        return seconds;
-    }
-
-    function secondsToClock(seconds) {
-        const s0 = parseFloat(seconds || 0);
-        if (isNaN(s0) || s0 <= 0) return '00:00:00';
-        const total = Math.floor(s0);
-        const h = Math.floor(total / 3600);
-        const m = Math.floor((total % 3600) / 60);
-        const s = Math.floor(total % 60);
-        const hh = String(h).padStart(2, '0');
-        const mm = String(m).padStart(2, '0');
-        const ss = String(s).padStart(2, '0');
-        return `${hh}:${mm}:${ss}`;
+        return parseDurationSeconds(text);
     }
 
     function quoteProcessArg(arg) {

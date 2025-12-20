@@ -1,8 +1,10 @@
+import { toEnumerableArray, safeString, parseDurationSeconds, runProcess, clampNumber, truthy } from "Shared/ScriptHelpers";
+
 /**
  * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
  * @help Run after a "Video File" node so `vi.VideoInfo` is available. For MKV outputs, `mkvpropedit` is used for instant in-place tagging (sets both legacy `language` and modern `language-ietf`/BCP47 when possible); otherwise an ffmpeg stream-copy remux is done.
  * @author Vincent Courcelle
- * @revision 11
+ * @revision 12
  * @minimumVersion 24.0.0.0
  * @param {bool} DryRun Log what would change, but do not modify the file. Default: false
  * @param {bool} UseHeuristics Infer language from track title / filename tags (e.g. "English", "[jpn]"). Default: true
@@ -18,127 +20,20 @@
  * @output Error
  */
 function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence, UseWhisperFallback, SampleStartSeconds, SampleDurationSeconds, PreferMkvPropEdit, ForceRetag) {
-    Logger.ILog('Audio - Auto tag missing language.js revision 11 loaded');
-
-    function toEnumerableArray(value, maxItems) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [value];
-
-        const limit = maxItems || 500;
-        try {
-            if (typeof value.GetEnumerator === 'function') {
-                const result = [];
-                const enumerator = value.GetEnumerator();
-                let count = 0;
-                while (enumerator.MoveNext() && count < limit) {
-                    result.push(enumerator.Current);
-                    count++;
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        try {
-            if (typeof value.Count === 'number') {
-                const result = [];
-                const count = Math.min(value.Count, limit);
-                for (let i = 0; i < count; i++) result.push(value[i]);
-                return result;
-            }
-        } catch (err) { }
-
-        return [value];
-    }
-
-    function safeString(value) {
-        if (value === null || value === undefined) return '';
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-        try {
-            const json = JSON.stringify(value);
-            if (json && json !== '{}') return json;
-        } catch (err) { }
-        return String(value);
-    }
+    Logger.ILog('Audio - Auto tag missing language.js revision 12 loaded');
 
     function toInt(value, fallback) {
         const n = parseInt(value, 10);
         return isNaN(n) ? fallback : n;
     }
 
-    function parseDurationSeconds(value) {
-        if (value === null || value === undefined) return 0;
-        if (typeof value === 'number') return (isFinite(value) && value > 0) ? value : 0;
-
-        let s = '';
-        if (typeof value === 'string') {
-            s = value;
-        } else {
-            // Important: for .NET types (eg TimeSpan), prefer .ToString() over JSON.stringify,
-            // otherwise we may lose the textual time representation and end up with "{}".
-            try { s = String(value); } catch (err) { s = safeString(value); }
-        }
-        s = (s || '').trim();
-        if (!s) return 0;
-
-        // Strip accidental JSON string quotes, e.g. "\"01:23:45\"" -> "01:23:45"
-        if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) {
-            s = s.substring(1, s.length - 1).trim();
-        }
-
-        // Plain number string (seconds)
-        if (/^\d+(\.\d+)?$/.test(s)) {
-            const n = parseFloat(s);
-            return (isFinite(n) && n > 0) ? n : 0;
-        }
-
-        // .NET TimeSpan ToString can be: "d.hh:mm:ss.fffffff" or "hh:mm:ss.fffffff" or "mm:ss.fffffff"
-        let m = s.match(/^(\d+)\.(\d+):(\d{2}):(\d{2})(\.\d+)?$/);
-        if (m) {
-            const days = toInt(m[1], 0);
-            const hours = toInt(m[2], 0);
-            const minutes = toInt(m[3], 0);
-            const seconds = toInt(m[4], 0);
-            const frac = m[5] ? parseFloat(m[5]) : 0;
-            return Math.max(0, (days * 86400) + (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
-        }
-
-        m = s.match(/^(\d+):(\d{2}):(\d{2})(\.\d+)?$/);
-        if (m) {
-            const hours = toInt(m[1], 0);
-            const minutes = toInt(m[2], 0);
-            const seconds = toInt(m[3], 0);
-            const frac = m[4] ? parseFloat(m[4]) : 0;
-            return Math.max(0, (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
-        }
-
-        m = s.match(/^(\d+):(\d{2})(\.\d+)?$/);
-        if (m) {
-            const minutes = toInt(m[1], 0);
-            const seconds = toInt(m[2], 0);
-            const frac = m[3] ? parseFloat(m[3]) : 0;
-            return Math.max(0, (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
-        }
-
-        // Last resort: parseFloat (handles "123.4ms" poorly, but avoids returning 1 for "01:23:45").
-        const n = parseFloat(s);
-        return (isFinite(n) && n > 0) ? n : 0;
-    }
-
     function parseBool(value) {
         if (value === null || value === undefined) return null;
-        if (typeof value === 'boolean') return value;
-        const s = safeString(value).trim().toLowerCase();
-        if (!s) return null;
-        if (s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on') return true;
-        if (s === '0' || s === 'false' || s === 'no' || s === 'n' || s === 'off') return false;
-        return null;
+        return truthy(value);
     }
 
     function clampInt(value, minValue, maxValue) {
-        if (value < minValue) return minValue;
-        if (value > maxValue) return maxValue;
-        return value;
+        return clampNumber(value, minValue, maxValue);
     }
 
     function normalizeLangToIso6392b(codeOrName) {
@@ -306,14 +201,6 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             if (c.re.test(s)) return c.iso;
         }
         return '';
-    }
-
-    function runProcess(command, args, timeoutSeconds) {
-        try {
-            return Flow.Execute({ command: command, argumentList: args || [], timeout: timeoutSeconds || 60 });
-        } catch (err) {
-            return { exitCode: -1, standardOutput: '', standardError: safeString(err), completed: false };
-        }
     }
 
     function toolWorks(command, versionArgs) {

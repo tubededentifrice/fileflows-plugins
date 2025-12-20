@@ -1,53 +1,15 @@
+import { ServiceApi } from "Shared/ServiceApi";
+
 /**
  * @description Class that interacts with Sonarr
- * @revision 9
+ * @revision 10
  * @minimumVersion 1.0.0.0
  */
-export class Sonarr
+export class Sonarr extends ServiceApi
 {
-    URL;
-    ApiKey;
-
     constructor(URL, ApiKey)
     {
-        this.URL = ((URL) ? URL : Variables['Sonarr.Url']);
-        if (!this.URL)
-            MissingVariable('Sonarr.Url');
-        this.ApiKey = ((ApiKey) ? ApiKey : Variables['Sonarr.ApiKey']);
-        if (!this.ApiKey)
-            MissingVariable('Sonarr.ApiKey');
-    }
-
-    getUrl(endpoint, queryParmeters)
-    {
-        let url = '' + this.URL;
-        if (url.endsWith('/') === false)
-            url += '/';
-        url = `${url}api/v3/${endpoint}?apikey=${this.ApiKey}`;
-        if(queryParmeters)
-            url += '&' + queryParmeters;
-        return url;
-    }
-
-    fetchJson(endpoint, queryParmeters)
-    {
-        let url = this.getUrl(endpoint, queryParmeters);
-        let json = this.fetchString(url);
-        if(!json)
-            return null;
-        return JSON.parse(json);
-    }
-
-    fetchString(url)
-    {
-        let response = http.GetAsync(url).Result;
-        let body = response.Content.ReadAsStringAsync().Result;
-        if (!response.IsSuccessStatusCode)
-        {
-            Logger.WLog('Unable to fetch: ' + url + '\n' + body);
-            return null;
-        }
-        return body;
+        super(URL, ApiKey, 'Sonarr');
     }
 
     /**
@@ -231,61 +193,6 @@ export class Sonarr
     }
 
     /**
-         * Specifies a command for Sonarr to run. see sonarr rename script for usage
-         * @param {string} commandName the name of the command to be run
-         * @param {object} commandBody the body of the command to be sent
-         * @returns {object} JSON of the response or null if unsuccessful
-         */
-    sendCommand(commandName, commandBody) 
-    {
-        let endpoint = `${this.URL}/api/v3/command`;
-        commandBody['name'] = commandName;
-
-        let jsonData = JSON.stringify(commandBody);
-        http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
-        let response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
-
-        http.DefaultRequestHeaders.Remove("X-API-Key");
-
-        if (response.IsSuccessStatusCode) {
-            let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
-            Logger.ILog(`${commandName} command sent successfully`);
-            return responseData;
-        } else {
-            let error = response.Content.ReadAsStringAsync().Result;
-            Logger.WLog("API error: " + error);
-            return null;
-        }
-    }
-
-    /**
-     * Sleeps, waiting for a command to complete
-     * @param {int} commandId ID of command being run
-     * @returns bool whether the coommand ran successfully
-     */
-    waitForCompletion(commandId) 
-    {
-        const startTime = new Date().getTime();
-        const timeout = 30000;
-        const endpoint = `command/${commandId}`;
-
-        while (new Date().getTime() - startTime <= timeout) {
-            let response = this.fetchJson(endpoint, '');
-            if (response.status === 'completed') {
-                Logger.ILog('Command completed!');
-                return true;
-            } else if (response.status === 'failed') {
-                Logger.WLog(`Command ${commandId} failed`)
-                return false;
-            }
-            Logger.ILog(`Checking status: ${response.status}`);
-            Sleep(100);
-        }
-        Logger.WLog(`Timeout: Command ${commandId} did not complete within 30 seconds.`);
-        return false;
-    }
-
-    /**
      * Fetches files Sonarr marks as able to rename
      * @param {int} seriesId ID series to fetch files for
      * @returns List of Sonarr rename objects for each file
@@ -303,7 +210,9 @@ export class Sonarr
      * @returns Response if ran successfully otherwise null
      */
     toggleMonitored(episodeIds, monitored=true) {
-        let endpoint = `${this.URL}/api/v3/episode/monitor`;
+        let endpoint = `${this.BaseUrl}/api/v3/episode/monitor`;
+        if (this.BaseUrl.endsWith('/')) endpoint = `${this.BaseUrl}api/v3/episode/monitor`;
+        
         let jsonData = JSON.stringify(
             {
                 episodeIds: episodeIds,
@@ -311,18 +220,22 @@ export class Sonarr
             }
         );
     
-        http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
-        let response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
-    
-        http.DefaultRequestHeaders.Remove("X-API-Key");
-    
-        if (response.IsSuccessStatusCode) {
-            let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
-            Logger.ILog(`Monitored toggled for ${episodeIds}`);
-            return responseData;
-        } else {
-            let error = response.Content.ReadAsStringAsync().Result;
-            Logger.WLog("API error: " + error);
+        try {
+            http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
+            let response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
+            http.DefaultRequestHeaders.Remove("X-API-Key");
+        
+            if (response.IsSuccessStatusCode) {
+                let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
+                Logger.ILog(`Monitored toggled for ${episodeIds}`);
+                return responseData;
+            } else {
+                let error = response.Content.ReadAsStringAsync().Result;
+                Logger.WLog("API error: " + error);
+                return null;
+            }
+        } catch(err) {
+            Logger.ELog("Exception toggling monitor: " + err);
             return null;
         }
     }
@@ -349,6 +262,57 @@ export class Sonarr
         let queryParams = `episodeFileId=${episodeFileId}`;
         let response = this.fetchJson(endpoint, queryParams);
     
-        return response[0];
+        return response && response.length ? response[0] : null;
+    }
+
+    /**
+     * Searches for a series by file or folder path in Sonarr
+     * @param {string} searchPattern - The search string to use (from the folder or file name)
+     * @returns {Object|null} Series object if found, or null if not found
+     */
+    searchSeriesByPath(searchPattern) {
+        try {
+            const series = this.getShowByPath(searchPattern);
+            return series || null;
+        } catch (error) {
+            Logger.ELog(`Error searching series by path: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Searches the Sonarr queue for a series based on the search pattern
+     * @param {string} searchPattern - The search string (file or folder name)
+     * @returns {Object|null} Series object if found, or null if not found
+     */
+    searchInQueue(searchPattern) {
+        return this.searchApi(
+            "queue",
+            searchPattern,
+            (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
+            { includeSeries: "true" },
+            (item) => {
+                Logger.ILog(`Found TV Show in Queue: ${item.series.title}`);
+                return item.series;
+            }
+        );
+    }
+
+    /**
+     * Searches the Sonarr download history for a series based on the search pattern
+     * @param {string} searchPattern - The search string (file or folder name)
+     * @returns {Object|null} Series object if found, or null if not found
+     */
+    searchInDownloadHistory(searchPattern) {
+        return this.searchApi(
+            "history",
+            searchPattern,
+            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
+            { eventType: 3, includeSeries: "true" },
+            (item) => {
+                Logger.ILog(`Found TV Show in History: ${item.series.title}`);
+                return item.series;
+            }
+        );
     }
 }

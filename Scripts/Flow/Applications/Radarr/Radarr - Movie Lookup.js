@@ -3,7 +3,7 @@ import { Radarr } from "Shared/Radarr";
 /**
  * @description This script looks up a Movie from Radarr and retrieves its metadata
  * @author Vincent Courcelle
- * @revision 1
+ * @revision 2
  * @param {string} URL Radarr root URL and port (e.g., http://radarr:1234)
  * @param {string} ApiKey API Key for Radarr
  * @param {bool} UseFolderName Whether to use the folder name instead of the file name for search
@@ -20,7 +20,6 @@ function Script(URL, ApiKey, UseFolderName) {
 
     const radarr = new Radarr(URL, ApiKey);
     const folderPath = Variables.folder.Orig.FullName;
-    const filePath = Variables.file.Orig.FullName;
     const searchPattern = UseFolderName
         ? getMovieFolderName(folderPath)
         : Variables.file.Orig.FileNameNoExtension;
@@ -29,10 +28,11 @@ function Script(URL, ApiKey, UseFolderName) {
     Logger.ILog(`Lookup name: ${searchPattern}`);
 
     // Search for the movie in Radarr by path, queue, or download history
+    // Logic moved to Shared/Radarr.js to enforce DRY
     let movie =
-        searchMovieByPath(searchPattern, radarr) ||
-        searchInQueue(searchPattern, radarr) ||
-        searchInDownloadHistory(searchPattern, radarr);
+        radarr.searchMovieByPath(searchPattern) ||
+        radarr.searchInQueue(searchPattern) ||
+        radarr.searchInDownloadHistory(searchPattern);
 
     if (!movie) {
         Logger.ILog(`No result found for: ${searchPattern}`);
@@ -77,126 +77,4 @@ function updateMovieMetadata(movie) {
  */
 function getMovieFolderName(folderPath) {
     return System.IO.Path.GetFileName(folderPath);
-}
-
-/**
- * @description Searches for a movie by file or folder path in Radarr
- * @param {string} searchPattern - The search string to use (from the folder or file name)
- * @param {Object} radarr - Radarr API instance
- * @returns {Object|null} Movie object if found, or null if not found
- */
-function searchMovieByPath(searchPattern, radarr) {
-    try {
-        const movie = radarr.getMovieByPath(searchPattern);
-        return movie || null;
-    } catch (error) {
-        Logger.ELog(`Error searching movie by path: ${error.message}`);
-        return null;
-    }
-}
-
-/**
- * @description Searches the Radarr queue for a movie based on the search pattern
- * @param {string} searchPattern - The search string (file or folder name)
- * @param {Object} radarr - Radarr API instance
- * @returns {Object|null} Movie object if found, or null if not found
- */
-function searchInQueue(searchPattern, radarr) {
-    return searchRadarrAPI("queue", searchPattern, radarr, (item, sp) => {
-        return item.outputPath.toLowerCase().includes(sp);
-    });
-}
-
-/**
- * @description Searches the Radarr download history for a movie based on the search pattern
- * @param {string} searchPattern - The search string (file or folder name)
- * @param {Object} radarr - Radarr API instance
- * @returns {Object|null} Movie object if found, or null if not found
- */
-function searchInDownloadHistory(searchPattern, radarr) {
-    return searchRadarrAPI(
-        "history",
-        searchPattern,
-        radarr,
-        (item, sp) => {
-            return item.data?.droppedPath?.toLowerCase().includes(sp);
-        },
-        { eventType: 3 }
-    );
-}
-
-/**
- * @description Generic function to search Radarr API (queue or history) based on a search pattern
- * @param {string} endpoint - The Radarr API endpoint to search (queue or history)
- * @param {string} searchPattern - The search string (file or folder name)
- * @param {Object} radarr - Radarr API instance
- * @param {Function} matchFunction - A function that determines if an item matches the search pattern
- * @param {Object} [extraParams={}] - Additional query parameters for the API request
- * @returns {Object|null} Movie object if found, or null if not found
- */
-function searchRadarrAPI(
-    endpoint,
-    searchPattern,
-    radarr,
-    matchFunction,
-    extraParams = {}
-) {
-    let page = 1;
-    const pageSize = 1000;
-    const includeMovie = "true";
-    let sp = null;
-
-    if (!searchPattern) {
-        Logger.WLog("No pattern passed in to find movie");
-        return null;
-    } else {
-        sp = searchPattern.toLowerCase();
-    }
-
-    try {
-        while (true) {
-            const queryParams = buildQueryParams({
-                page,
-                pageSize,
-                includeMovie,
-                ...extraParams,
-            });
-            const json = radarr.fetchJson(endpoint, queryParams);
-            const items = json.records;
-
-            if (items.length === 0) {
-                Logger.WLog(`Reached the end of ${endpoint} with no match.`);
-                break;
-            }
-
-            const matchingItem = items.find((item) => matchFunction(item, sp));
-            if (matchingItem) {
-                Logger.ILog(`Found Movie: ${matchingItem.movie.title}`);
-                return matchingItem.movie;
-            }
-
-            if (endpoint === "queue") {
-                Logger.WLog(`Reached the end of ${endpoint} with no match.`);
-                break;
-            }
-
-            page++;
-        }
-    } catch (error) {
-        Logger.ELog(`Error fetching Radarr ${endpoint}: ${error.message}`);
-        return null;
-    }
-}
-
-/**
- * @description Constructs a query string from the given parameters
- * @param {Object} params - Key-value pairs to be converted into a query string
- * @returns {string} The constructed query string
- */
-function buildQueryParams(params) {
-    return Object.keys(params)
-        .map(
-            (key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`
-        )
-        .join("&");
 }

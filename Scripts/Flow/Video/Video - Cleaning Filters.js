@@ -1,7 +1,9 @@
+import { toEnumerableArray, safeString, truthy } from "Shared/ScriptHelpers";
+
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 39
+ * @revision 40
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,14 +13,16 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 38 loaded');
-    const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
-    SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
-    AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
-    UseCPUFilters = truthyVar(UseCPUFilters) || truthyVar(Variables.UseCPUFilters);
-    AllowCpuFiltersWithHardwareEncode = truthyVar(AllowCpuFiltersWithHardwareEncode) || truthyVar(Variables.AllowCpuFiltersWithHardwareEncode);
-    AutoDeinterlace = truthyVar(AutoDeinterlace) || truthyVar(Variables.AutoDeinterlace);
-    MpDecimateAnimation = truthyVar(MpDecimateAnimation) || truthyVar(Variables.MpDecimateAnimation);
+    Logger.ILog('Cleaning filters.js revision 40 loaded');
+    
+    // Parameter normalization
+    SkipDenoise = truthy(SkipDenoise) || truthy(Variables.SkipDenoise);
+    AggressiveCompression = truthy(AggressiveCompression) || truthy(Variables.AggressiveCompression);
+    UseCPUFilters = truthy(UseCPUFilters) || truthy(Variables.UseCPUFilters);
+    AllowCpuFiltersWithHardwareEncode = truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
+    AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
+    MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
+
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -26,52 +30,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return Math.round(value);
     }
 
-    function toEnumerableArray(value, maxItems) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [value];
-
-        const limit = maxItems || 200;
-
-        // .NET IEnumerable via GetEnumerator()
-        try {
-            if (typeof value.GetEnumerator === 'function') {
-                const result = [];
-                const enumerator = value.GetEnumerator();
-                let count = 0;
-                while (enumerator.MoveNext() && count < limit) {
-                    result.push(enumerator.Current);
-                    count++;
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        // .NET List<T> style (Count + indexer)
-        try {
-            if (typeof value.Count === 'number') {
-                const result = [];
-                const count = Math.min(value.Count, limit);
-                for (let i = 0; i < count; i++) {
-                    // Jint typically supports indexer access via [i]
-                    result.push(value[i]);
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        return [value];
-    }
-
-    function safeTokenString(token) {
-        if (token === null || token === undefined) return '';
-        if (typeof token === 'string' || typeof token === 'number' || typeof token === 'boolean') return String(token);
-        try {
-            const json = JSON.stringify(token);
-            if (json && json !== '{}') return json;
-        } catch (err) { }
-        return String(token);
-    }
+    const safeTokenString = safeString;
 
     function asJoinedString(value) {
         if (!value) return '';
@@ -353,7 +312,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         const before = existingChains.join(' | ');
 
-        // IMPORTANT: If our desired chain contains hwdownload/hwupload, we must preserve ordering and duplicates
+        // If our desired chain contains hwdownload/hwupload, we must preserve ordering and duplicates
         // (eg: format=p010le may be needed before and after CPU filters). Avoid splitting/deduping in this case.
         const preserveOrderAndDuplicates = rawFilters.some(f => f.indexOf('hwdownload') >= 0 || f.indexOf('hwupload') >= 0);
         if (preserveOrderAndDuplicates) {
@@ -925,8 +884,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     Variables.is_dolby_vision = isDolbyVision;
 
     // Optional overrides via upstream variables
-    const skipBandingFix = Variables.SkipBandingFix === true || Variables.SkipBandingFix === 'true' || Variables.SkipBandingFix === 1 || Variables.SkipBandingFix === '1';
-    const forceDeband = Variables.ForceDeband === true || Variables.ForceDeband === 'true' || Variables.ForceDeband === 1 || Variables.ForceDeband === '1';
+    const skipBandingFix = truthy(Variables.SkipBandingFix);
+    const forceDeband = truthy(Variables.ForceDeband);
 
     if (!hwEncoder) {
         const sig = [
@@ -1045,12 +1004,12 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const hybridCpuFilters = [];
     const appliedFiltersSummary = [];
     const appliedFiltersForExecutor = [];
-    // NOTE: For QSV hwframes, hwdownload only supports a limited set of SW formats (typically nv12/p010le).
+    // For QSV hwframes, hwdownload only supports a limited set of SW formats (typically nv12/p010le).
     // For 10-bit pipelines, keep the CPU detour in p010le end-to-end to avoid unintended nv12 fallbacks.
     const hybridCpuFormat = targetBitDepth >= 10 ? 'p010le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
-    const skipMpDecimate = truthyVar(Variables.SkipMpDecimate) || truthyVar(Variables.SkipDecimate);
-    const forceMpDecimate = MpDecimateAnimation || truthyVar(Variables.ForceMpDecimate);
+    const skipMpDecimate = truthy(Variables.SkipMpDecimate) || truthy(Variables.SkipDecimate);
+    const forceMpDecimate = MpDecimateAnimation || truthy(Variables.ForceMpDecimate);
     let enableMpDecimate = false;
     let mpDecimateReason = 'disabled';
     if (skipMpDecimate) {
@@ -1204,7 +1163,6 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Variables.applied_deband = debandParams;
                 appliedFiltersSummary.push(`deband=${debandParams}`);
             }
-
         } else {
             // ===== HARDWARE MODE =====
             // When hardware encoding is used, avoid CPU filters unless explicitly allowed (they commonly break hwaccel pipelines).
@@ -1526,11 +1484,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // Some FileFlows runner/builder versions (especially FFmpeg Builder "New mode") primarily apply video filters from
     // EncodingParameters (-filter:v:0), and can ignore script-added Filter/Filters collections. Ensure our computed filters
     // are present in the encoding filter argument.
-    // IMPORTANT: When we have filters to apply, ALWAYS inject them into EncodingParameters to ensure they're used,
-    // since the Video Encode Advanced node adds its own `-filter:v:0 scale_qsv=format=p010le` which would override ours.
     try {
         const hasFiltersToApply = appliedFiltersForExecutor.length > 0;
-        const forceEncodingParamFilter = hasFiltersToApply || truthyVar(Variables['CleaningFilters.ForceEncodingParamFilter']);
+        const forceEncodingParamFilter = hasFiltersToApply || truthy(Variables['CleaningFilters.ForceEncodingParamFilter']);
         const ensured = ensureSingleVideoFilterArgAcrossParams(video, appliedFiltersForExecutor, forceEncodingParamFilter);
         if (ensured.changed) {
             const b = ensured.before ? ensured.before.substring(0, 220) : '';
@@ -1559,9 +1515,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
      * GRADFUN (live action <= 2005):
      *   - Light gradient debanding for older live action
      *
-         * MPDECIMATE (heuristic for Animation/Anime):
-         *   - Drops near-duplicate frames, keeps output CFR via -fps_mode cfr + -r, and regenerates timestamps via setpts
-         *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
+     * MPDECIMATE (heuristic for Animation/Anime):
+     *   - Drops near-duplicate frames, keeps output CFR via -fps_mode cfr + -r, and regenerates timestamps via setpts
+     *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
      *
      * OPTIONAL (manual use / not implemented here):
      *   - nlmeans: High quality denoiser (very slow, use for archival)
@@ -1581,10 +1537,6 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
                 const added = [];
 
-                // if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead'))) added.push('-look_ahead 1');
-                // if (ensureArgWithValue(ep, '-look_ahead_depth', (isAnimation ? '40' : '20'), isFlag('-look_ahead_depth'))) {
-                //     added.push(`-look_ahead_depth ${isAnimation ? '40' : '20'}`);
-                // }
                 if (ensureArgWithValue(ep, '-extbrc', '1', isFlag('-extbrc'))) added.push('-extbrc 1');
 
                 // B-frames / refs (mostly impacts compression at same quality).
