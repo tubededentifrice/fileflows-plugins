@@ -1,67 +1,10 @@
+import { toEnumerableArray, safeString, parseDurationSeconds, clampNumber, runProcess } from "Shared/ScriptHelpers";
+
 /**
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
-
-QUALITY METRICS:
-- VMAF (preferred): Netflix's perceptual quality metric. Requires FFmpeg with --enable-libvmaf
-- SSIM (fallback): Structural Similarity Index. Built into all FFmpeg versions, less perceptually accurate
-
-To check VMAF support: ffmpeg -h filter=libvmaf
-If missing, SSIM will be used automatically.
-
-HOW IT WORKS:
-1. Takes short samples from different parts of the video
-2. Analyzes luminance to detect dark content (boosts quality target for dark scenes)
-3. Encodes samples at various CRF values using binary search
-4. Calculates quality score (VMAF or SSIM) for each sample
-5. Finds the highest CRF (smallest file) that meets the target quality
-6. Applies the found CRF to the FFmpeg Builder encoder
-
-APPLES-TO-APPLES COMPARISON (revision 22+):
-- Both reference and test samples go through the EXACT same encoding pipeline (same encoder, same filters, same settings).
-- The only difference is the quality level: reference uses a very high quality, test uses the quality being evaluated.
-- This ensures the VMAF/SSIM score reflects only the quality setting difference, not encoder-introduced artifacts
-  (colorspace conversion, chroma subsampling, etc.) that would unfairly lower scores.
-
-DARK SCENE DETECTION:
-- Analyzes average luminance (Y) of samples
-- Very dark (<40): +3 quality boost (e.g., VMAF 95 → 98)
-- Dark (40-60): +2 quality boost
-- Somewhat dark (60-80): +1 quality boost
-- Normal/bright (>80): no adjustment
-This helps prevent banding/blocking artifacts in dark scenes.
-
-CONTENT-AWARE TARGETING (when TargetVMAF=0):
-- Old animation (pre-1995): VMAF 93 / SSIM 0.970
-- Old live action (pre-1990): VMAF 93 / SSIM 0.970
-- Standard content: VMAF 95 / SSIM 0.980
-- Modern/HDR/4K content: VMAF 96-97 / SSIM 0.985-0.990
-
-VARIABLE OVERRIDES:
-- Variables.TargetVMAF, Variables.MinCRF, Variables.MaxCRF
-- Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
-- Variables['ffmpeg_vmaf']: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
-- Variables.Preset: Override encoder preset (ultrafast to veryslow)
-- Variables.AutoQuality_ReferenceMode: 'auto' | 'encoded' | 'source' | 'filtered-in-metric' (default: auto → encoded)
-- Variables.AutoQuality_VmafFps: VMAF scoring FPS hint (eg 12); mapped to libvmaf n_subsample
-
-FILTER DETECTION (revision 23+):
-Upstream filters are read in priority order:
-1. EncodingParameters (-filter:v:0 chain) - set by FFmpeg Builder or Cleaning Filters
-2. Model Filter/Filters/OptionalFilter collections - legacy FFmpeg Builder mode
-3. Variables.filters or Variables.video_filters - fallback (set by Video - Cleaning Filters)
-Debug logging (via Logger.DLog) shows which source was used; check logs if filters aren't being applied.
-
-OUTPUT VARIABLES:
-- Variables.AutoQuality_CRF: The CRF value found
-- Variables.AutoQuality_Score: The quality score achieved
-- Variables.AutoQuality_Metric: 'VMAF' or 'SSIM'
-- Variables.AutoQuality_AvgLuminance: Average luminance of samples (0-255)
-- Variables.AutoQuality_LuminanceBoost: Quality boost applied for dark content (0-3)
-- Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
-
  * @author Vincent Courcelle
- * @revision 24
+ * @revision 25
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -76,25 +19,11 @@ OUTPUT VARIABLES:
  * @output Video already optimal (copy mode)
  */
 function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxSearchIterations, PreferSmaller, UseTags, Preset) {
-    function clampNumber(value, min, max) {
-        const n = parseFloat(value);
-        if (isNaN(n)) return min;
-        if (n < min) return min;
-        if (n > max) return max;
-        return n;
-    }
+    // Local alias for safeString to match previous code style if preferred, or just use safeString directly.
+    const safeTokenString = safeString;
 
     function humanTimeToSeconds(text) {
-        const t = String(text || '').trim();
-        if (!t) return 0;
-        if (/^[0-9]+(\.[0-9]+)?$/.test(t)) return parseFloat(t);
-        const parts = t.split(':').map(p => parseFloat(p));
-        if (!parts.length) return 0;
-        let seconds = 0;
-        seconds += parts.pop() || 0;
-        if (parts.length) seconds += (parts.pop() || 0) * 60;
-        if (parts.length) seconds += (parts.pop() || 0) * 3600;
-        return seconds;
+        return parseDurationSeconds(text);
     }
 
     function quoteProcessArg(arg) {
@@ -226,7 +155,9 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     }
 
     function executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
-        // Avoid Flow.Execute for helper probes so FileFlows doesn't log the full output.
+        // Use runProcess from ScriptHelpers for standard execution, but we need custom handling for silent execution
+        // to avoid logging to Flow UI (which runProcess/Flow.Execute usually does).
+        // Since we want to parse output without spamming the UI logs, we use System.Diagnostics.Process directly.
         const psi = new System.Diagnostics.ProcessStartInfo();
         psi.FileName = String(command);
         psi.UseShellExecute = false;
@@ -776,54 +707,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return '-crf';
     }
 
-    function toEnumerableArray(value, maxItems) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [value];
-
-        const limit = maxItems || 500;
-
-        // .NET IEnumerable via GetEnumerator()
-        try {
-            if (typeof value.GetEnumerator === 'function') {
-                const result = [];
-                const enumerator = value.GetEnumerator();
-                let count = 0;
-                while (enumerator.MoveNext() && count < limit) {
-                    result.push(enumerator.Current);
-                    count++;
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        // .NET List<T> style (Count + indexer)
-        try {
-            if (typeof value.Count === 'number') {
-                const result = [];
-                const count = Math.min(value.Count, limit);
-                for (let i = 0; i < count; i++) result.push(value[i]);
-                return result;
-            }
-        } catch (err) { }
-
-        return [value];
-    }
-
-    function safeTokenString(token) {
-        if (token === null || token === undefined) return '';
-        if (typeof token === 'string' || typeof token === 'number' || typeof token === 'boolean') return String(token);
-        try {
-            const json = JSON.stringify(token);
-            if (json && json !== '{}' && json !== '[]') return json;
-        } catch (err) { }
-        const s = String(token);
-        if (!s || s === 'null' || s === 'undefined') return '';
-        if (s === '[object Object]') return '';
-        if (/^(FileFlows|System|Microsoft|Newtonsoft)\\./.test(s)) return '';
-        return s;
-    }
-
     function asJoinedString(value) {
         if (!value) return '';
         const tokens = toEnumerableArray(value, 1000).map(safeTokenString).filter(x => x);
@@ -1365,172 +1248,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return results;
     }
 
-    function encodeReferenceSamples(ffmpegEncode, inputFile, positions, sampleDur, use10Bit, encoder, upstreamFilters, referenceCrf) {
-        // Pre-encode reference samples once for reuse across all CRF iterations.
-        // Returns array of {pos, path, filterMode} for successful samples.
-        const tempDir = Flow.TempPath;
-        const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
-        const results = [];
-
-        const encSig = String(encoder || '').toLowerCase();
-        let testEncoder = 'libx265';
-        if (encSig.includes('h264') || encSig.includes('x264') || encSig.includes('avc')) testEncoder = 'libx264';
-        else if (encSig.includes('av1')) testEncoder = 'libsvtav1';
-
-        const upstreamFiltersStr = String(upstreamFilters || '').trim();
-
-        function detectNeedsQsv(filters) {
-            const s = String(filters || '').trim().toLowerCase();
-            if (!s) return false;
-            if (s.indexOf('vpp_qsv') >= 0) return true;
-            if (s.indexOf('scale_qsv') >= 0) return true;
-            if (s.indexOf('deinterlace_qsv') >= 0) return true;
-            if (s.indexOf('tonemap_qsv') >= 0) return true;
-            if (s.indexOf('hwupload') >= 0 || s.indexOf('hwdownload') >= 0) return true;
-            return /_qsv(?:=|,|:|$)/i.test(s);
-        }
-
-        const upstreamNeedsQsv = detectNeedsQsv(upstreamFiltersStr);
-
-        function splitFilterChain(chain) {
-            const s = String(chain || '');
-            const parts = [];
-            let cur = '';
-            let escaped = false;
-            for (let i = 0; i < s.length; i++) {
-                const ch = s[i];
-                if (escaped) { cur += ch; escaped = false; continue; }
-                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
-                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
-                cur += ch;
-            }
-            const tail = cur.trim();
-            if (tail) parts.push(tail);
-            return parts;
-        }
-
-        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
-        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
-        function isQsvFilterSegment(seg) {
-            const s = String(seg || '').trim().toLowerCase();
-            if (!s) return false;
-            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
-            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
-            return false;
-        }
-
-        function buildSamplingFilterGraph(filters) {
-            let vf = String(filters || '').trim();
-            if (!vf) return '';
-            const qsvRequired = detectNeedsQsv(vf);
-            if (!qsvRequired) return vf;
-
-            const segments = splitFilterChain(vf);
-            if (segments.length === 0) return '';
-
-            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
-            let firstQsv = -1;
-            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
-            if (firstQsv < 0) firstQsv = 0;
-
-            let hasHwuploadBefore = false;
-            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
-            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
-
-            let lastQsv = -1;
-            for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
-            if (lastQsv < 0) lastQsv = segments.length - 1;
-
-            let hasHwdownloadAfter = false;
-            for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
-            if (!hasHwdownloadAfter) {
-                const downloadFmt = use10Bit ? 'p010le' : 'nv12';
-                if (downloadFmt === pixFmt) {
-                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
-                } else {
-                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
-                }
-            }
-            return segments.join(',');
-        }
-
-        function stripQsvOnlyFilters(filters) {
-            const vf = String(filters || '').trim();
-            if (!vf) return '';
-            const segs = splitFilterChain(vf);
-            const kept = [];
-            for (let i = 0; i < segs.length; i++) {
-                const seg = segs[i];
-                if (isQsvFilterSegment(seg)) continue;
-                if (isHwuploadSegment(seg) || isHwdownloadSegment(seg)) continue;
-                kept.push(seg);
-            }
-            return kept.join(',');
-        }
-
-        function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
-            const qsvRequired = detectNeedsQsv(filters);
-            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
-            args.push('-ss', String(Math.floor(posSeconds)));
-            args.push('-i', inputFile);
-            args.push('-t', String(sampleDur));
-            args.push('-map', '0:v:0');
-            const vf = buildSamplingFilterGraph(filters);
-            if (vf) { args.push('-vf', vf); }
-            args.push('-c:v', testEncoder);
-            args.push('-crf', String(qualityValue));
-            args.push('-preset', Preset);
-            args.push('-pix_fmt', pixFmt);
-            if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
-            else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
-            args.push('-an', '-sn', outputFile);
-            return args;
-        }
-
-        const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
-
-        Logger.ILog(`Pre-encoding ${positions.length} reference samples at CRF ${referenceCrf}...`);
-
-        for (let i = 0; i < positions.length; i++) {
-            const pos = positions[i];
-            const sampleId = Flow.NewGuid();
-            const referencePath = `${tempDir}/${sampleId}_reference.mkv`;
-
-            let activeFilters = upstreamFiltersStr;
-            let filterMode = 'upstream';
-
-            try {
-                let refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters), 600, sampleDur, 0, 100);
-
-                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
-                    Logger.WLog(`Reference sample ${i + 1} failed with QSV filters at ${Math.round(pos)}s; retrying with software-only filters`);
-                    activeFilters = softwareFilters;
-                    filterMode = 'software-fallback';
-                    refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters), 600, sampleDur, 0, 100);
-                }
-
-                if (refResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode reference sample ${i + 1} at ${Math.round(pos)}s`);
-                    continue;
-                }
-
-                results.push({ pos: pos, path: referencePath, filterMode: filterMode, activeFilters: activeFilters });
-                Logger.DLog(`Reference sample ${i + 1} encoded at ${Math.round(pos)}s (${filterMode})`);
-            } catch (err) {
-                Logger.WLog(`Error encoding reference sample ${i + 1}: ${err}`);
-            }
-        }
-
-        if (results.length === 0) {
-            Logger.ELog('Failed to encode any reference samples');
-        } else {
-            Logger.ILog(`Successfully pre-encoded ${results.length}/${positions.length} reference samples`);
-        }
-
-        return results;
-    }
-
     function measureQualityAtQualityValue(ffmpegEncode, ffmpegMetric, samples, qualityValue, videoStream, encoder, sampleDur, use10Bit, metric, upstreamFilters, referenceMode, referenceSamples, progressBase, progressSpan) {
         const tempDir = Flow.TempPath;
         const scores = [];
@@ -1782,196 +1499,6 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return scores.reduce((a, b) => a + b, 0) / scores.length;
     }
 
-    function measureQualityAtCRF(ffmpegEncode, ffmpegMetric, inputFile, crf, encoder, sampleDur, use10Bit, metric, referenceSamples) {
-        const tempDir = Flow.TempPath;
-        const scores = [];
-        const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
-
-        if (!referenceSamples || referenceSamples.length === 0) {
-            Logger.ELog('No reference samples available for quality measurement');
-            return -1;
-        }
-
-        const encSig = String(encoder || '').toLowerCase();
-        let testEncoder = 'libx265';
-        if (encSig.includes('h264') || encSig.includes('x264') || encSig.includes('avc')) testEncoder = 'libx264';
-        else if (encSig.includes('av1')) testEncoder = 'libsvtav1';
-
-        function detectNeedsQsv(filters) {
-            const s = String(filters || '').trim().toLowerCase();
-            if (!s) return false;
-            if (s.indexOf('vpp_qsv') >= 0) return true;
-            if (s.indexOf('scale_qsv') >= 0) return true;
-            if (s.indexOf('deinterlace_qsv') >= 0) return true;
-            if (s.indexOf('tonemap_qsv') >= 0) return true;
-            if (s.indexOf('hwupload') >= 0 || s.indexOf('hwdownload') >= 0) return true;
-            return /_qsv(?:=|,|:|$)/i.test(s);
-        }
-
-        function splitFilterChain(chain) {
-            const s = String(chain || '');
-            const parts = [];
-            let cur = '';
-            let escaped = false;
-            for (let i = 0; i < s.length; i++) {
-                const ch = s[i];
-                if (escaped) { cur += ch; escaped = false; continue; }
-                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
-                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
-                cur += ch;
-            }
-            const tail = cur.trim();
-            if (tail) parts.push(tail);
-            return parts;
-        }
-
-        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
-        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
-        function isQsvFilterSegment(seg) {
-            const s = String(seg || '').trim().toLowerCase();
-            if (!s) return false;
-            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
-            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
-            return false;
-        }
-
-        function buildSamplingFilterGraph(filters) {
-            let vf = String(filters || '').trim();
-            if (!vf) return '';
-            const qsvRequired = detectNeedsQsv(vf);
-            if (!qsvRequired) return vf;
-
-            const segments = splitFilterChain(vf);
-            if (segments.length === 0) return '';
-
-            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
-            let firstQsv = -1;
-            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
-            if (firstQsv < 0) firstQsv = 0;
-
-            let hasHwuploadBefore = false;
-            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
-            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
-
-            let lastQsv = -1;
-            for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
-            if (lastQsv < 0) lastQsv = segments.length - 1;
-
-            let hasHwdownloadAfter = false;
-            for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
-            if (!hasHwdownloadAfter) {
-                const downloadFmt = use10Bit ? 'p010le' : 'nv12';
-                if (downloadFmt === pixFmt) {
-                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
-                } else {
-                    segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
-                }
-            }
-            return segments.join(',');
-        }
-
-        function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
-            const qsvRequired = detectNeedsQsv(filters);
-            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
-            args.push('-ss', String(Math.floor(posSeconds)));
-            args.push('-i', inputFile);
-            args.push('-t', String(sampleDur));
-            args.push('-map', '0:v:0');
-            const vf = buildSamplingFilterGraph(filters);
-            if (vf) { args.push('-vf', vf); }
-            args.push('-c:v', testEncoder);
-            args.push('-crf', String(qualityValue));
-            args.push('-preset', Preset);
-            args.push('-pix_fmt', pixFmt);
-            if (testEncoder === 'libx265') { args.push('-tag:v', 'hvc1'); if (use10Bit) args.push('-profile:v', 'main10'); }
-            else if (testEncoder === 'libx264' && use10Bit) { args.push('-profile:v', 'high10'); }
-            args.push('-an', '-sn', outputFile);
-            return args;
-        }
-
-        for (let i = 0; i < referenceSamples.length; i++) {
-            const ref = referenceSamples[i];
-            const pos = ref.pos;
-            const referencePath = ref.path;
-            const activeFilters = ref.activeFilters;
-            const filterMode = ref.filterMode;
-
-            const sampleId = Flow.NewGuid();
-            const encodedSample = `${tempDir}/${sampleId}_encoded.mkv`;
-
-            try {
-                const encResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, crf, encodedSample, activeFilters), 600, sampleDur, 0, 100);
-
-                if (encResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode sample at CRF ${crf}, pos ${Math.round(pos)}s`);
-                    continue;
-                }
-
-                if (filterMode === 'software-fallback') {
-                    Variables.AutoQuality_FilterMode = 'software-fallback';
-                } else if (!Variables.AutoQuality_FilterMode) {
-                    Variables.AutoQuality_FilterMode = 'upstream';
-                }
-
-                let filterComplex;
-                if (metric === 'VMAF') {
-                    filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]libvmaf=n_threads=4:shortest=1:eof_action=endall`;
-                } else {
-                    filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]ssim`;
-                }
-
-                const qualityResult = executeFfmpegWithProgress(
-                    ffmpegMetric,
-                    [
-                        '-hide_banner', '-loglevel', 'info', '-progress', 'pipe:2', '-nostats', '-y',
-                        '-i', encodedSample,
-                        '-i', referencePath,
-                        '-filter_complex', filterComplex,
-                        '-f', 'null', '-'
-                    ],
-                    300,
-                    sampleDur,
-                    0,
-                    100
-                );
-
-                const output = (qualityResult.output || '') + '\n' + (qualityResult.standardOutput || '') + '\n' + (qualityResult.standardError || '');
-
-                let score = null;
-                if (metric === 'VMAF') {
-                    const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                    if (vmafMatch) {
-                        score = parseFloat(vmafMatch[1]);
-                    } else {
-                        const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                        if (jsonMatch) score = parseFloat(jsonMatch[1]);
-                    }
-                } else {
-                    const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                    if (ssimMatch) score = parseFloat(ssimMatch[1]);
-                }
-
-                if (score !== null) {
-                    scores.push(score);
-                    const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
-                    Logger.DLog(`Sample ${i + 1}: ${metric} ${scoreDisplay}`);
-                } else {
-                    Logger.WLog(`Could not parse ${metric} score for sample ${i + 1}`);
-                    const snippet = output.substring(0, 500).split('\n').join(' ');
-                    Logger.DLog(`Output snippet: ${snippet}`);
-                }
-            } catch (err) {
-                Logger.WLog(`Error processing sample ${i + 1}: ${err}`);
-            } finally {
-                cleanupFiles([encodedSample]);
-            }
-        }
-
-        if (scores.length === 0) return -1;
-        return scores.reduce((a, b) => a + b, 0) / scores.length;
-    }
-
     function cleanupFiles(files) {
         for (const file of files) {
             try {
@@ -2002,159 +1529,67 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     }
                     return result;
                 }
-            } catch (err) { }
-
-            try {
-                if (typeof list.Count === 'number') {
-                    const result = [];
-                    const count = Math.min(list.Count, limit);
-                    for (let i = 0; i < count; i++) result.push(String(list[i]));
-                    return result;
-                }
-            } catch (err) { }
-
+            } catch (e) { }
             return [];
         }
 
-        function removeAt(list, index) {
-            if (!list) return false;
-            if (Array.isArray(list)) {
-                list.splice(index, 1);
-                return true;
+        const args = toArray(ep);
+        ep.Clear();
+
+        // Rebuild args, replacing any existing CRF/Preset
+        let skipNext = false;
+        let setCRF = false;
+        let setPreset = false;
+
+        for (let i = 0; i < args.length; i++) {
+            if (skipNext) { skipNext = false; continue; }
+            const arg = args[i];
+            const lower = arg.toLowerCase();
+
+            if (lower === '-crf' || lower === '-cq' || lower === '-qp' || lower === '-qp_i' || lower === '-global_quality' || lower === '-global_quality:v') {
+                skipNext = true;
+                continue;
             }
-            try {
-                if (typeof list.RemoveAt === 'function') {
-                    list.RemoveAt(index);
-                    return true;
-                }
-            } catch (err) { }
-            return false;
-        }
+            if (lower.startsWith(crfArg)) continue; // handle -crf:v etc
 
-        function addToken(list, token) {
-            if (!list) return false;
-            if (Array.isArray(list)) {
-                list.push(token);
-                return true;
-            }
-            try {
-                if (typeof list.Add === 'function') {
-                    list.Add(token);
-                    return true;
-                }
-            } catch (err) { }
-            return false;
-        }
-
-        function hasToken(list, predicate) {
-            const arr = toArray(list, 5000);
-            for (let i = 0; i < arr.length; i++) if (predicate(arr[i], i)) return true;
-            return false;
-        }
-
-        function stripArgAndValue(list, matcher) {
-            const arr = toArray(list, 5000);
-            let removed = 0;
-
-            // Remove from end so indexes remain valid
-            for (let i = arr.length - 1; i >= 0; i--) {
-                const token = arr[i];
-                if (!matcher(token)) continue;
-
-                // Remove value (if present and looks like a value rather than an option)
-                if (i + 1 < arr.length) {
-                    const next = arr[i + 1];
-                    if (next && !String(next).startsWith('-')) {
-                        if (removeAt(list, i + 1)) removed++;
-                    }
-                }
-
-                if (removeAt(list, i)) removed++;
+            if (lower === '-preset') {
+                skipNext = true;
+                continue;
             }
 
-            return removed;
+            ep.Add(arg);
         }
 
-        // Replace any existing quality args first (so this script can override upstream defaults cleanly)
-        let removed = 0;
-        if (crfArg === '-global_quality') {
-            // FileFlows often uses stream specifiers here (eg: -global_quality:v)
-            removed += stripArgAndValue(ep, t => String(t).startsWith('-global_quality'));
-        } else if (crfArg === '-cq') {
-            removed += stripArgAndValue(ep, t => String(t) === '-cq');
-        } else if (crfArg === '-qp') {
-            removed += stripArgAndValue(ep, t => String(t) === '-qp');
-        } else {
-            removed += stripArgAndValue(ep, t => String(t) === '-crf');
+        ep.Add(crfArg);
+        ep.Add(String(crf));
+        setCRF = true;
+
+        if (preset && !encoder.includes('_qsv')) {
+            // QSV presets are often handled differently or hardcoded in the node, 
+            // but for SW encoding we enforce the preset here.
+            ep.Add('-preset');
+            ep.Add(preset);
+            setPreset = true;
         }
 
-        if (removed > 0) Logger.ILog(`Auto quality: removed ${removed} existing quality argument tokens`);
-
-        // Add (replacement) quality parameter
-        if (typeof ep.Add === 'function' || Array.isArray(ep)) {
-            if (crfArg === '-global_quality') {
-                // Prefer the same style FileFlows uses for QSV: -global_quality:v VALUE
-                addToken(ep, '-global_quality:v');
-                addToken(ep, String(crf));
-                Logger.ILog(`Applied -global_quality:v ${crf} to encoder`);
-                return;
-            }
-
-            if (crfArg === '-cq') {
-                // Only set rate control if not already present, otherwise just replace CQ value.
-                const hasRc = hasToken(ep, t => String(t) === '-rc');
-                if (!hasRc) {
-                    addToken(ep, '-rc');
-                    addToken(ep, 'vbr');
-                }
-                addToken(ep, '-cq');
-                addToken(ep, String(crf));
-                Logger.ILog(`Applied -cq ${crf} to encoder`);
-                return;
-            }
-
-            if (crfArg === '-qp') {
-                addToken(ep, '-qp');
-                addToken(ep, String(crf));
-                Logger.ILog(`Applied -qp ${crf} to encoder`);
-                return;
-            }
-
-            addToken(ep, '-crf');
-            addToken(ep, String(crf));
-            Logger.ILog(`Applied -crf ${crf} to encoder`);
-        }
-
-        // Apply preset - strip existing and add new
-        const presetRemoved = stripArgAndValue(ep, t => String(t) === '-preset');
-        if (presetRemoved > 0) Logger.ILog(`Auto quality: removed ${presetRemoved} existing preset argument tokens`);
-
-        if (typeof ep.Add === 'function' || Array.isArray(ep)) {
-            addToken(ep, '-preset');
-            addToken(ep, String(preset));
-            Logger.ILog(`Applied -preset ${preset} to encoder`);
-        }
+        Logger.ILog(`Applied settings: ${crfArg} ${crf}, preset ${preset || 'default'}`);
     }
 
-    function logResultsTable(results, winner, target, metric) {
-        if (results.length === 0) return;
+    function logResultsTable(results, bestCrf, target, metric) {
+        if (!results || results.length === 0) return;
+        results.sort((a, b) => a.crf - b.crf);
 
-        // Sort by CRF for display
-        const sorted = [...results].sort((a, b) => a.crf - b.crf);
-
-        const isSSIM = metric === 'SSIM';
-        const header = isSSIM ? '| CRF |  SSIM  | Status |' : '| CRF | VMAF  | Status |';
-        const divider = isSSIM ? '|-----|--------|--------|' : '|-----|-------|--------|';
-
-        Logger.ILog('');
-        Logger.ILog(header);
-        Logger.ILog(divider);
-        for (const r of sorted) {
-            const status = r.score >= target ? (r.crf === winner ? '* WIN' : 'OK') : 'LOW';
-            const crfStr = String(r.crf).padStart(3);
-            const scoreStr = isSSIM ? r.score.toFixed(4).padStart(6) : r.score.toFixed(2).padStart(5);
-            Logger.ILog(`| ${crfStr} | ${scoreStr} | ${status.padEnd(6)} |`);
+        const table = [];
+        table.push('CRF  | Score  | Status');
+        table.push('-----|--------|-------');
+        for (const r of results) {
+            const isBest = r.crf === bestCrf;
+            const meets = r.score >= target;
+            const scoreStr = metric === 'SSIM' ? r.score.toFixed(4) : r.score.toFixed(2);
+            let status = meets ? 'Pass' : 'Fail';
+            if (isBest) status += ' (Selected)';
+            table.push(`${String(r.crf).padEnd(4)} | ${scoreStr.padEnd(6)} | ${status}`);
         }
-        Logger.ILog('');
+        Logger.ILog('\n' + table.join('\n'));
     }
 }

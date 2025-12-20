@@ -1,3 +1,5 @@
+import { toEnumerableArray, safeString } from "Shared/ScriptHelpers";
+
 /**
  * @description Keeps only audio tracks matching the original language or specified additional languages.
  *              Unknown-language audio tracks are kept unless an original-language audio track exists (then unknown audio is removed).
@@ -5,7 +7,7 @@
  *              Tracks are reordered: original language first (preserving relative order within each language), then additional languages in provided order, then unknown.
  *              Requires "Movie Lookup"/"TV Show Lookup" node to be executed first to set Variables.OriginalLanguage.
  * @author Vincent Courcelle
- * @revision 3
+ * @revision 4
  * @minimumVersion 24.0.0.0
  * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Also accepts an array (e.g., ["eng","fra"]). Original language is always kept first.
  * @param {bool} ProcessAudio Apply to audio streams (default: true)
@@ -17,7 +19,7 @@
  * @output No original language found (lookup node not executed?)
  */
 function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIfNoneMatch, ReorderTracks) {
-    Logger.ILog('Video - Language Based Track Selection.js revision 3 loaded');
+    Logger.ILog('Video - Language Based Track Selection.js revision 4 loaded');
 
     // =========================================================================
     // CONFIGURATION DEFAULTS
@@ -31,40 +33,8 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     // HELPER FUNCTIONS
     // =========================================================================
 
-    /**
-     * Converts .NET IEnumerable / List<T> to JavaScript array.
-     */
-    function toArray(value, maxItems) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        const limit = maxItems || 500;
-
-        try {
-            if (typeof value.GetEnumerator === 'function') {
-                const result = [];
-                const enumerator = value.GetEnumerator();
-                let count = 0;
-                while (enumerator.MoveNext() && count < limit) {
-                    result.push(enumerator.Current);
-                    count++;
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        try {
-            if (typeof value.Count === 'number') {
-                const result = [];
-                const count = Math.min(value.Count, limit);
-                for (let i = 0; i < count; i++) {
-                    result.push(value[i]);
-                }
-                return result;
-            }
-        } catch (err) { }
-
-        return [value];
-    }
+    // toArray is now toEnumerableArray from Shared/ScriptHelpers
+    const toArray = toEnumerableArray;
 
     /**
      * Normalize language code to ISO 639-2/B (3-letter) using FileFlows helper.

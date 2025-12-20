@@ -315,4 +315,119 @@ export class Sonarr extends ServiceApi
             }
         );
     }
+
+    /**
+     * Refresh a series
+     * @param {int} seriesId The ID of the series to refresh
+     * @returns {object} The command response
+     */
+    refreshSeries(seriesId) {
+        let refreshBody = {
+            seriesIds: [seriesId],
+            isNewSeries: false
+        };
+        return this.sendCommand('RefreshSeries', refreshBody);
+    }
+
+    /**
+     * Manually imports a file into Sonarr
+     * @param {object} fileToImport The file object to import (from manualimport endpoint)
+     * @param {int} episodeId The ID of the episode to map to
+     * @returns {object} The command response
+     */
+    manuallyImportFile(fileToImport, episodeId) {
+        let body = {
+            files: [
+                {
+                    path: fileToImport.path,
+                    folderName: fileToImport.folderName,
+                    seriesId: fileToImport.series.id,
+                    episodeIds: [episodeId],
+                    quality: fileToImport.quality,
+                    languages: fileToImport.languages,
+                    indexerFlags: fileToImport.indexerFlags,
+                    releaseType: fileToImport.releaseType,
+                    releaseGroup: fileToImport.releaseGroup
+                }
+            ],
+            importMode: 'auto',
+        };
+
+        return this.sendCommand('manualImport', body);
+    }
+
+    /**
+     * Fetches files available for manual import
+     * @param {string} currentFileName The name of the file to look for
+     * @param {int} seriesId The series ID
+     * @param {int} seasonNumber The season number
+     * @returns {object} The file object if found, otherwise null
+     */
+    fetchManualImportFile(currentFileName, seriesId, seasonNumber) {
+        let endpoint = 'manualimport';
+        let queryParams = `seriesId=${seriesId}&filterExistingFiles=true&seasonNumber=${seasonNumber}`;
+        let response = this.fetchJson(endpoint, queryParams);
+
+        if (!response || !Array.isArray(response)) return null;
+
+        for (let file of response) {
+            // Check if path ends with filename (handling potential path separators)
+            if (file.path && (file.path.endsWith(currentFileName) || file.path.endsWith('\\' + currentFileName) || file.path.endsWith('/' + currentFileName)) && file.episodes.length === 0) {
+                return file;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetches an episode file object by path
+     * @param {string} path The path of the episode file
+     * @param {object} series The series object
+     * @returns {object} The episode file object or null
+     */
+    fetchEpisodeFile(path, series) {
+        Logger.ILog(`Searching for ${path}`);
+        let allFiles = this.getFilesInShow(series);
+
+        for (let file of allFiles) {
+            if (file.path && (file.path.endsWith(path) || file.path.endsWith('\\' + path) || file.path.endsWith('/' + path))) {
+                return file;
+            }
+        }
+        Logger.WLog(`Episode file not found in series ${series.title}`);
+        return null;
+    }
+
+    /**
+     * Fetches an episode object by its ID
+     * @param {int} episodeFileId The episode file ID
+     * @returns {object} The episode object
+     */
+    fetchEpisodeFromId(episodeFileId) {
+        let endpoint = 'episode';
+        let queryParams = `episodeFileId=${episodeFileId}`;
+        let response = this.fetchJson(endpoint, queryParams);
+
+        return (response && response.length) ? response[0] : null;
+    }
+
+    /**
+     * Helper to fetch both episode file and episode details
+     * @param {string} currentFileName The current file name/path
+     * @param {object} series The series object
+     * @returns {Array} [episodeFile, episode]
+     */
+    fetchEpisode(currentFileName, series) {
+        let episodeFile = this.fetchEpisodeFile(currentFileName, series);
+
+        if (!episodeFile) {
+            return [null, null];
+        }
+
+        let episodeFileId = episodeFile.id;
+        let episode = this.fetchEpisodeFromId(episodeFileId);
+
+        return [episodeFile, episode];
+    }
 }

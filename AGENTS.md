@@ -4,6 +4,17 @@ This file provides guidance to Agents when working with code in this repository.
 After any change, ensure this file is kept up to date.
 DRY principles should be respected: helper functions, etc. should be moved to a script in `Scripts/Shared` and properly imported (eg. `import { Radarr } from "Shared/Radarr";`).
 
+## Quality & Consistency
+
+### Linting and Formatting
+This repository uses ESLint and Prettier to maintain code quality and consistent formatting.
+- **Prettier**: Configured with a 4-space indent to match standard FileFlows community scripts.
+- **ESLint**: Configured with FileFlows-specific globals (`Logger`, `Variables`, `Flow`, `http`, `System`, etc.).
+
+**Instructions for Agents:**
+1. After editing or creating scripts, run `npm run lint:fix` to ensure code quality and apply automatic fixes.
+2. Run `npm run format` to ensure the file matches the project's formatting standards.
+3. If `lsp_diagnostics` are unavailable or incomplete, these tools are the source of truth for code standards in this repo.
 
 ## Project Overview
 
