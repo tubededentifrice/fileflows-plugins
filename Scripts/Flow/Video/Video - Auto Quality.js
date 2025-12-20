@@ -440,7 +440,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
             Flow.PartPercentageUpdate?.(progressPct);
 
-            const qualityScore = measureQualityAtCRF(ffmpegEncodePath, ffmpegPath, samples, testCRF, video, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceMode, referenceSamples);
+            const qualityScore = measureQualityAtQualityValue(ffmpegEncodePath, ffmpegPath, samples, testCRF, video, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceMode, referenceSamples);
 
             if (qualityScore < 0) {
                 Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);

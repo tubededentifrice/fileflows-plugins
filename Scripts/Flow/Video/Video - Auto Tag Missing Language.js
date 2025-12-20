@@ -421,18 +421,38 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             for (const c of changesList) {
                 if (!c || !c.iso) continue;
 
-                // Prefer matching by TypeIndex (0:a:N) when available; fall back to list index.
-                let target = null;
-                for (let i = 0; i < list.length; i++) {
-                    const s = list[i];
-                    if (!s) continue;
-                    try {
-                        if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
-                            target = s;
-                            break;
-                        }
-                    } catch (err) { }
+                // Prefer updating the exact stream instance when we still have it.
+                let target = (c.streamRef && typeof c.streamRef === 'object') ? c.streamRef : null;
+
+                // Next prefer matching by overall Index (FFmpeg stream index).
+                if (!target && c.overallIndex !== null && c.overallIndex !== undefined) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (s.Index !== undefined && s.Index !== null && Number(s.Index) === Number(c.overallIndex)) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) { }
+                    }
                 }
+
+                // Fallback: match by TypeIndex (0:a:N) when available.
+                if (!target) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) { }
+                    }
+                }
+
+                // Last resort: list position within AudioStreams.
                 if (!target) target = (c.audioIndex >= 0 && c.audioIndex < list.length) ? list[c.audioIndex] : null;
                 if (!target) continue;
 
@@ -455,30 +475,73 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             const list = toEnumerableArray(audioList, 500);
             if (!list || list.length === 0) return;
 
+            let updatedAny = false;
             for (const c of changesList) {
                 if (!c || !c.iso) continue;
 
                 let target = null;
+
+                // Per FFmpeg Builder docs, builder streams use overall Index (not TypeIndex).
                 for (let i = 0; i < list.length; i++) {
                     const s = list[i];
                     if (!s) continue;
                     try {
-                        if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                        if (c.overallIndex !== null && c.overallIndex !== undefined &&
+                            s.Index !== undefined && s.Index !== null &&
+                            Number(s.Index) === Number(c.overallIndex)) {
                             target = s;
                             break;
                         }
                     } catch (err) { }
                 }
+
+                // Some versions might expose TypeIndex; keep as fallback.
+                if (!target) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) { }
+                    }
+                }
+
+                // Some versions may expose Stream on audio builder streams; match by reference if present.
+                if (!target && c.streamRef && typeof c.streamRef === 'object') {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (s.Stream && s.Stream === c.streamRef) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) { }
+                    }
+                }
                 if (!target) continue;
 
                 try {
                     target.Language = c.iso;
+                    try {
+                        if (target.Stream && target.Stream.Language !== undefined) {
+                            target.Stream.Language = c.iso;
+                        }
+                    } catch (errS) { }
                     updatedBuilderStreams++;
+                    updatedAny = true;
+                    try { if (target.ForcedChange !== undefined) target.ForcedChange = true; } catch (err3) { }
                 } catch (err2) {
                     failedUpdates++;
                     Logger.WLog('Failed to update in-memory FFmpeg Builder audio language for 0:a:' + String(c.typeIndex) + ': ' + safeString(err2));
                 }
             }
+
+            // Ensure the executor doesn't short-circuit this as a no-op.
+            try { if (updatedAny && ffModelObj.ForceEncode !== undefined) ffModelObj.ForceEncode = true; } catch (err4) { }
         }
 
         const candidates = getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel);
@@ -489,14 +552,18 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         updateFfmpegBuilderAudioStreams(ffModel);
 
         // Expose a compact mapping for downstream nodes, even if a .NET object property is not writable.
-        // Keyed by TypeIndex (0:a:N), value is ISO-639-2/B code.
+        // Keyed by overall Index (FFmpeg stream index), value is ISO-639-2/B code.
         try {
-            const map = {};
+            const mapByIndex = {};
+            const mapByTypeIndex = {};
             for (const c of changesList) {
                 if (!c || !c.iso) continue;
-                map[String(c.typeIndex)] = String(c.iso);
+                if (c.overallIndex !== null && c.overallIndex !== undefined) mapByIndex[String(c.overallIndex)] = String(c.iso);
+                mapByTypeIndex[String(c.typeIndex)] = String(c.iso);
             }
-            Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(map);
+            Variables['AudioLangID.UpdatedAudioLanguagesByIndex'] = JSON.stringify(mapByIndex);
+            // Backwards-compatible key (if any downstream flow already started using it)
+            Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(mapByTypeIndex);
         } catch (err) { }
 
         Logger.ILog('Updated in-memory audio language metadata: VideoInfo=' + updatedAudioStreams + ', FfmpegBuilderModel=' + updatedBuilderStreams + (failedUpdates ? (', failed=' + failedUpdates) : ''));
@@ -548,6 +615,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         pending.push({
             streamRef: stream,
             audioIndex: i,
+            overallIndex: (stream && stream.Index !== undefined && stream.Index !== null) ? Number(stream.Index) : null,
             typeIndex: (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null) ? stream.TypeIndex : i,
             title: safeString(stream && stream.Title),
             codec: safeString(stream && stream.Codec),
@@ -656,6 +724,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         changes.push({
             streamRef: track.streamRef,
             audioIndex: track.audioIndex,
+            overallIndex: (track.overallIndex !== undefined && track.overallIndex !== null) ? Number(track.overallIndex) : null,
             typeIndex: track.typeIndex,
             iso: detectedIso,
             source: detectedSource,
