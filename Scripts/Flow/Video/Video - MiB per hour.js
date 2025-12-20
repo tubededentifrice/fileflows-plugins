@@ -21,17 +21,19 @@ function Script(MaxMiBPerHour) {
 
     const fileSize = Variables.file.Size;
     const duration = Variables.video?.Duration;
-    if(!duration) {
-        Logger.ILog("No duration found");
+    if (!duration) {
+        Logger.ILog('No duration found');
         return OUTPUT_UNABLE;
     }
 
-    const gb = function(bytes) {
-        return Math.round(bytes / 1024 / 1024 / 1024 * 100) / 100;
-    }
+    const gb = function (bytes) {
+        return Math.round((bytes / 1024 / 1024 / 1024) * 100) / 100;
+    };
 
-    const mibPerHour = fileSize / duration * 3600 / 1024 / 1024;
-    Logger.ILog(`File size is ${fileSize} (${gb(fileSize)} GB) and should be below: ${gb(duration * MaxMiBPerHour * 1024 * 1024 / 3600)} GB`);
+    const mibPerHour = ((fileSize / duration) * 3600) / 1024 / 1024;
+    Logger.ILog(
+        `File size is ${fileSize} (${gb(fileSize)} GB) and should be below: ${gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600)} GB`
+    );
     Logger.ILog(`Duration: ${duration} seconds`);
     Logger.ILog(`Detected mibPerHour: ${mibPerHour}`);
 
@@ -44,6 +46,6 @@ function Script(MaxMiBPerHour) {
         return OUTPUT_ABOVE;
     }
 
-    Logger.ILog("Could not compute MiB per hour");
+    Logger.ILog('Could not compute MiB per hour');
     return OUTPUT_UNABLE;
 }

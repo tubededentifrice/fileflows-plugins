@@ -1,14 +1,12 @@
-import { ServiceApi } from "Shared/ServiceApi";
+import { ServiceApi } from 'Shared/ServiceApi';
 
 /**
  * @description Class that interacts with Radarr
  * @revision 8
  * @minimumVersion 1.0.0.0
  */
-export class Radarr extends ServiceApi
-{
-    constructor(URL, ApiKey)
-    {
+export class RadarrVc extends ServiceApi {
+    constructor(URL, ApiKey) {
         super(URL, ApiKey, 'Radarr');
     }
 
@@ -17,27 +15,21 @@ export class Radarr extends ServiceApi
      * @param {string} file the file name of the movie to lookup
      * @returns {object} a movie object if found, otherwise null
      */
-    getMovieByFile(file)
-    {
-        if (!file)
-        {
+    getMovieByFile(file) {
+        if (!file) {
             Logger.WLog('No file name passed in to find movie');
             return null;
         }
         let movies = this.fetchJson('movie');
-        if (!movies?.length)
-            return null;
+        if (!movies?.length) return null;
 
         let cp = file.toLowerCase();
-        let movie = movies.filter(x =>
-        {
+        let movie = movies.filter((x) => {
             let mp = x.movieFile?.relativePath;
-            if (!mp)
-                return false;
+            if (!mp) return false;
             return mp.split('.')[0].toLowerCase().includes(cp.split('.')[0]);
         });
-        if (movie?.length)
-        {
+        if (movie?.length) {
             movie = movie[0];
             Logger.ILog('Found movie: ' + movie.title);
             return movie;
@@ -51,27 +43,21 @@ export class Radarr extends ServiceApi
      * @param {string} path the path of the movie to lookup
      * @returns {object} a movie object if found, otherwise null
      */
-    getMovieByPath(path)
-    {
-        if (!path)
-        {
+    getMovieByPath(path) {
+        if (!path) {
             Logger.WLog('No path passed in to find movie');
             return null;
         }
         let movies = this.fetchJson('movie');
-        if (!movies?.length)
-            return null;
+        if (!movies?.length) return null;
 
         let cp = path.toLowerCase();
-        let movie = movies.filter(x =>
-        {
+        let movie = movies.filter((x) => {
             let mp = x.movieFile?.path;
-            if (!mp)
-                return false;
+            if (!mp) return false;
             return mp.toLowerCase().includes(cp);
         });
-        if (movie?.length)
-        {
+        if (movie?.length) {
             movie = movie[0];
             Logger.ILog('Found movie: ' + movie.title);
             return movie;
@@ -85,13 +71,10 @@ export class Radarr extends ServiceApi
      * @param {string} path the full path of the movie to lookup
      * @returns the IMDb id if found, otherwise null
      */
-    getImdbIdFromPath(path)
-    {
-        if(!path)
-            return null;
+    getImdbIdFromPath(path) {
+        if (!path) return null;
         let movie = this.getMovieByPath(path.toString());
-        if (!movie)
-        {
+        if (!movie) {
             Logger.WLog('Unable to get IMDb ID for path: ' + path);
             return null;
         }
@@ -103,13 +86,10 @@ export class Radarr extends ServiceApi
      * @param {string} path the full path of the movie to lookup
      * @returns the TMDb id if found, otherwise null
      */
-    getTMDbIdFromPath(path)
-    {
-        if(!path)
-            return null;
+    getTMDbIdFromPath(path) {
+        if (!path) return null;
         let movie = this.getMovieByPath(path.toString());
-        if (!movie)
-        {
+        if (!movie) {
             Logger.WLog('Unable to get TMDb ID for path: ' + path);
             return null;
         }
@@ -121,13 +101,10 @@ export class Radarr extends ServiceApi
      * @param {string} path the full path of the movie to lookup
      * @returns the original language of the movie if found, otherwise null
      */
-    getOriginalLanguageFromPath(path)
-    {
-        if(!path)
-            return null;
+    getOriginalLanguageFromPath(path) {
+        if (!path) return null;
         let movie = this.getMovieByPath(path.toString());
-        if (!movie)
-        {
+        if (!movie) {
             Logger.WLog('Unable to get original language for path: ' + path);
             return null;
         }
@@ -143,7 +120,7 @@ export class Radarr extends ServiceApi
         let endpoint = 'moviefile';
         let queryParams = `movieId=${movieId}`;
         let response = this.fetchJson(endpoint, queryParams);
-    
+
         Logger.ILog(`Movie found: ${movieId}`);
         return response;
     }
@@ -153,8 +130,7 @@ export class Radarr extends ServiceApi
      * @param {int} movieId Previously determined ID of the movie
      * @returns list of radarr rename movie objects
      */
-    fetchRenamedMovies(movieId) 
-    {
+    fetchRenamedMovies(movieId) {
         let endpoint = 'rename';
         let queryParams = `movieId=${movieId}`;
         let response = this.fetchJson(endpoint, queryParams);
@@ -183,10 +159,10 @@ export class Radarr extends ServiceApi
      */
     searchInQueue(searchPattern) {
         return this.searchApi(
-            "queue", 
-            searchPattern, 
+            'queue',
+            searchPattern,
             (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
-            { includeMovie: "true" },
+            { includeMovie: 'true' },
             (item) => {
                 Logger.ILog(`Found Movie in Queue: ${item.movie.title}`);
                 return item.movie;
@@ -201,10 +177,10 @@ export class Radarr extends ServiceApi
      */
     searchInDownloadHistory(searchPattern) {
         return this.searchApi(
-            "history",
+            'history',
             searchPattern,
             (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
-            { eventType: 3, includeMovie: "true" },
+            { eventType: 3, includeMovie: 'true' },
             (item) => {
                 Logger.ILog(`Found Movie in History: ${item.movie.title}`);
                 return item.movie;

@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString } from "Shared/ScriptHelpers";
+import { toEnumerableArray, safeString } from 'Shared/ScriptHelpers';
 
 /**
  * @description Keeps only audio tracks matching the original language or specified additional languages.
@@ -93,7 +93,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
             return a.index - b.index;
         });
 
-        return decorated.map(x => x.stream);
+        return decorated.map((x) => x.stream);
     }
 
     /**
@@ -124,7 +124,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     // =========================================================================
     const originalLang = Variables.OriginalLanguage || Variables.VideoMetadata?.OriginalLanguage;
     if (!originalLang) {
-        Logger.ELog('No original language found. Ensure "Movie Lookup" or "TV Show Lookup" node runs before this script.');
+        Logger.ELog(
+            'No original language found. Ensure "Movie Lookup" or "TV Show Lookup" node runs before this script.'
+        );
         return 3;
     }
 
@@ -192,7 +194,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         const toKeep = [];
         const toDelete = [];
 
-        const hasOriginalLanguageAudio = audioStreams.some(a => a && a.Language && languagesMatch(a.Language, originalLang));
+        const hasOriginalLanguageAudio = audioStreams.some(
+            (a) => a && a.Language && languagesMatch(a.Language, originalLang)
+        );
         if (hasOriginalLanguageAudio) {
             Logger.ILog('Original-language audio track found; unknown-language audio will be removed');
         } else {
@@ -222,7 +226,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         }
 
         if (toKeep.length === 0 && KeepFirstIfNoneMatch) {
-            const firstAudio = audioStreams.find(a => !!a);
+            const firstAudio = audioStreams.find((a) => !!a);
             if (firstAudio) {
                 Logger.WLog('No audio tracks match allowed languages; keeping first audio track');
                 const idx = toDelete.indexOf(firstAudio);
@@ -231,9 +235,10 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
             }
         }
 
-        const sortedKeep = (ReorderTracks && toKeep.length > 1)
-            ? stableSortStreamsByLanguagePreference(toKeep, originalLang, additionalLangs)
-            : toKeep;
+        const sortedKeep =
+            ReorderTracks && toKeep.length > 1
+                ? stableSortStreamsByLanguagePreference(toKeep, originalLang, additionalLangs)
+                : toKeep;
 
         for (const audio of toDelete) {
             if (audio.Deleted !== true) {
@@ -280,16 +285,17 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
             Logger.ILog(`  Sub[${i}] Lang=${s.Language || 'und'} Codec=${s.Codec} Deleted=${s.Deleted}`);
         }
 
-        const subtitles = subtitleStreams.filter(s => !!s);
+        const subtitles = subtitleStreams.filter((s) => !!s);
 
         for (const sub of subtitles) {
             if (sub.Deleted === true) totalUndeleted++;
             sub.Deleted = false;
         }
 
-        const sortedSubs = (ProcessSubtitles && ReorderTracks && subtitles.length > 1)
-            ? stableSortStreamsByLanguagePreference(subtitles, originalLang, additionalLangs)
-            : subtitles;
+        const sortedSubs =
+            ProcessSubtitles && ReorderTracks && subtitles.length > 1
+                ? stableSortStreamsByLanguagePreference(subtitles, originalLang, additionalLangs)
+                : subtitles;
 
         if (ProcessSubtitles && ReorderTracks && sortedSubs.length > 1) {
             if (tryReorderNetList(ffModel.SubtitleStreams, sortedSubs)) {
@@ -328,7 +334,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     const hasChanges = totalDeleted > 0 || totalUndeleted > 0 || totalReordered > 0;
     if (hasChanges) {
         ffModel.ForceEncode = true;
-        Logger.ILog(`Track selection complete: ${totalDeleted} deleted, ${totalUndeleted} undeleted, ${totalReordered} reordered`);
+        Logger.ILog(
+            `Track selection complete: ${totalDeleted} deleted, ${totalUndeleted} undeleted, ${totalReordered} reordered`
+        );
         return 1;
     }
 
@@ -340,31 +348,31 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
  * ============================================================================
  * DOWNSTREAM VARIABLE SPECIFICATION (for future scripts)
  * ============================================================================
- * 
+ *
  * After this script runs, the following Variables are set for downstream use:
- * 
+ *
  * Variables['TrackSelection.OriginalLanguage']
  *   - ISO 639-2/B code of the original language (e.g., "fre", "eng", "deu")
- * 
+ *
  * Variables['TrackSelection.AdditionalLanguages']
  *   - Comma-separated ISO 639-2/B codes of additional languages kept (e.g., "eng,fra")
- * 
+ *
  * Variables['TrackSelection.AllowedLanguages']
  *   - Comma-separated ISO 639-2/B codes of ALL allowed languages (original + additional)
- * 
+ *
  * Variables['TrackSelection.DeletedCount']
  *   - Number of streams marked for deletion
- * 
+ *
  * Variables['TrackSelection.UndeletedCount']
  *   - Number of streams un-deleted (Deleted=true -> Deleted=false)
- * 
+ *
  * Variables['TrackSelection.ReorderedCount']
  *   - Number of streams reordered (0 if reordering not supported/disabled)
- * 
+ *
  * ============================================================================
  * TRACK ORDERING
  * ============================================================================
- * 
+ *
  * Tracks are ordered as follows (if ReorderTracks is enabled):
  *   1. Original language tracks (in original file order if multiple)
  *   2. Additional language tracks (in order specified in AdditionalLanguages)
@@ -379,22 +387,22 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
  * SUBTITLES:
  *   - Subtitle tracks are never deleted by this script.
  *   - Any existing Deleted=true flags on subtitle streams are cleared (Deleted=false).
- * 
+ *
  * Note: Reordering depends on FileFlows supporting .NET List<T>.Clear/Add operations.
  * If not supported, only deletion is applied and tracks remain in original order.
- * 
+ *
  * ============================================================================
  * FFMPEG MAPPING (Future Implementation)
  * ============================================================================
- * 
+ *
  * If you need to manually build ffmpeg -map arguments for precise ordering,
  * iterate FfmpegBuilderModel.AudioStreams / SubtitleStreams and use:
- * 
+ *
  *   stream.Deleted      - true if marked for removal
  *   stream.SourceIndex  - Original ffmpeg stream index (0:a:N, 0:s:N)
  *   stream.TypeIndex    - Type-relative index
  *   stream.Language     - ISO 639-2/B code
- * 
+ *
  * Example mapping logic:
  *   for (let i = 0; i < ffModel.AudioStreams.length; i++) {
  *       const a = ffModel.AudioStreams[i];
@@ -402,15 +410,15 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
  *           args.push('-map', `0:a:${a.SourceIndex || a.TypeIndex}`);
  *       }
  *   }
- * 
+ *
  * ============================================================================
  * BACKWARD COMPATIBILITY
  * ============================================================================
- * 
+ *
  * This script uses the same patterns as the community repository:
  *   - stream.Deleted = true/false (compatible with all FfmpegBuilder nodes)
  *   - LanguageHelper.GetIso2Code() (FileFlows built-in)
  *   - Variables.FfmpegBuilderModel (standard access)
- * 
+ *
  * Existing scripts that check stream.Deleted will work correctly.
  */

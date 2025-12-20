@@ -1,14 +1,12 @@
-import { ServiceApi } from "Shared/ServiceApi";
+import { ServiceApi } from 'Shared/ServiceApi';
 
 /**
  * @description Class that interacts with Sonarr
  * @revision 10
  * @minimumVersion 1.0.0.0
  */
-export class Sonarr extends ServiceApi
-{
-    constructor(URL, ApiKey)
-    {
+export class SonarrVc extends ServiceApi {
+    constructor(URL, ApiKey) {
         super(URL, ApiKey, 'Sonarr');
     }
 
@@ -16,10 +14,10 @@ export class Sonarr extends ServiceApi
      * Gets all shows in Sonarr
      * @returns {object[]} a list of shows in the Sonarr
      */
-    getAllShows(){
+    getAllShows() {
         let shows = this.fetchJson('series');
-        if(!shows.length){
-            Logger.WLog("No shows found");
+        if (!shows.length) {
+            Logger.WLog('No shows found');
             return [];
         }
         return shows;
@@ -30,27 +28,21 @@ export class Sonarr extends ServiceApi
      * @param {string} path the full path of the movie to lookup
      * @returns {object} a show object if found, otherwise null
      */
-    getShowByPath(path)
-    {
-        if (!path)
-        {
+    getShowByPath(path) {
+        if (!path) {
             Logger.WLog('No path passed in to find show');
             return null;
         }
         let shows = this.getAllShows();
-        if (!shows?.length)
-            return null;
+        if (!shows?.length) return null;
 
         let cp = path.toString().toLowerCase();
-        let show = shows.filter(x =>
-        {
+        let show = shows.filter((x) => {
             let sp = x.path.toLowerCase();
-            if (!sp)
-                return false;
+            if (!sp) return false;
             return sp.includes(cp);
         });
-        if (show?.length === 1)
-        {
+        if (show?.length === 1) {
             show = show[0];
             Logger.ILog('Found show: ' + show.id);
             return show;
@@ -59,11 +51,10 @@ export class Sonarr extends ServiceApi
         return null;
     }
 
-    getFilesInShow(show){
+    getFilesInShow(show) {
         let files = this.fetchJson('episodefile', 'seriesId=' + show.id);
-        if(!files.length){
-            
-            Logger.WLog("No files in show: " + show.title);
+        if (!files.length) {
+            Logger.WLog('No files in show: ' + show.title);
             return [];
         }
         return files;
@@ -73,14 +64,13 @@ export class Sonarr extends ServiceApi
      * Gets all files in Sonarr
      * @returns {object[]} all files in the Sonarr
      */
-    getAllFiles(){
+    getAllFiles() {
         let shows = this.getAllShows();
         let files = [];
-        for(let show of shows){
+        for (let show of shows) {
             let sfiles = this.getFilesInShow(show);
-            if(sfiles.length){
-                for(let sfile of sfiles)
-                    sfile.show = show;
+            if (sfiles.length) {
+                for (let sfile of sfiles) sfile.show = show;
                 files = files.concat(sfiles);
             }
         }
@@ -93,27 +83,21 @@ export class Sonarr extends ServiceApi
      * @param {string} path the full path of the movie to lookup
      * @returns {object} a show file object if found, otherwise null
      */
-    getShowFileByPath(path)
-    {
-        if (!path)
-        {
+    getShowFileByPath(path) {
+        if (!path) {
             Logger.WLog('No path passed in to find show file');
             return null;
         }
         let files = this.getAllFiles();
-        if (!files?.length)
-            return null;
+        if (!files?.length) return null;
 
         let cp = path.toString().toLowerCase();
-        let showfile = files.filter(x =>
-        {
+        let showfile = files.filter((x) => {
             let sp = x.path.toLowerCase();
-            if (!sp)
-                return false;
+            if (!sp) return false;
             return sp.includes(cp);
         });
-        if (showfile?.length)
-        {
+        if (showfile?.length) {
             showfile = showfile[0];
             Logger.ILog('Found show file: ' + showfile.id);
             return showfile;
@@ -127,13 +111,10 @@ export class Sonarr extends ServiceApi
      * @param {string} path the full path of the show to lookup
      * @returns the IMDb id if found, otherwise null
      */
-    getImdbIdFromPath(path)
-    {
-        if(!path)
-            return null;
+    getImdbIdFromPath(path) {
+        if (!path) return null;
         let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile)
-        {
+        if (!showfile) {
             Logger.WLog('Unable to get IMDb ID for path: ' + path);
             return null;
         }
@@ -145,13 +126,10 @@ export class Sonarr extends ServiceApi
      * @param {string} path the full path of the show to lookup
      * @returns the TVdb id if found, otherwise null
      */
-    getTVDbIdFromPath(path)
-    {
-        if(!path)
-            return null;
+    getTVDbIdFromPath(path) {
+        if (!path) return null;
         let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile)
-        {
+        if (!showfile) {
             Logger.WLog('Unable to get TMDb ID for path: ' + path);
             return null;
         }
@@ -163,13 +141,10 @@ export class Sonarr extends ServiceApi
      * @param {string} path the full path of the show to lookup
      * @returns the language of the show if found, otherwise null
      */
-    getOriginalLanguageFromPath(path)
-    {
-        if(!path)
-            return null;
+    getOriginalLanguageFromPath(path) {
+        if (!path) return null;
         let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile)
-        {
+        if (!showfile) {
             Logger.WLog('Unable to get language for path: ' + path);
             return null;
         }
@@ -177,15 +152,13 @@ export class Sonarr extends ServiceApi
 
         let html = this.fetchString(`https://www.imdb.com/title/${imdbId}/`);
         let languages = html.match(/title-details-languages(.*?)<\/li>/);
-        if(!languages)
-        {
+        if (!languages) {
             Logger.WLog('Failed to lookup IMDb language for ' + imdbId);
             return null;
         }
         languages = languages[1];
         let language = languages.match(/primary_language=([\w]+)&/);
-        if(!language)
-        {
+        if (!language) {
             Logger.WLog('Failed to lookup IMDb primary language for ' + imdbId);
             return null;
         }
@@ -209,33 +182,31 @@ export class Sonarr extends ServiceApi
      * @param {list} episodeIds IDs of episodes to toggle
      * @returns Response if ran successfully otherwise null
      */
-    toggleMonitored(episodeIds, monitored=true) {
+    toggleMonitored(episodeIds, monitored = true) {
         let endpoint = `${this.BaseUrl}/api/v3/episode/monitor`;
         if (this.BaseUrl.endsWith('/')) endpoint = `${this.BaseUrl}api/v3/episode/monitor`;
-        
-        let jsonData = JSON.stringify(
-            {
-                episodeIds: episodeIds,
-                monitored: monitored
-            }
-        );
-    
+
+        let jsonData = JSON.stringify({
+            episodeIds: episodeIds,
+            monitored: monitored
+        });
+
         try {
-            http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
+            http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
             let response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
-            http.DefaultRequestHeaders.Remove("X-API-Key");
-        
+            http.DefaultRequestHeaders.Remove('X-API-Key');
+
             if (response.IsSuccessStatusCode) {
                 let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
                 Logger.ILog(`Monitored toggled for ${episodeIds}`);
                 return responseData;
             } else {
                 let error = response.Content.ReadAsStringAsync().Result;
-                Logger.WLog("API error: " + error);
+                Logger.WLog('API error: ' + error);
                 return null;
             }
-        } catch(err) {
-            Logger.ELog("Exception toggling monitor: " + err);
+        } catch (err) {
+            Logger.ELog('Exception toggling monitor: ' + err);
             return null;
         }
     }
@@ -247,9 +218,9 @@ export class Sonarr extends ServiceApi
      */
     rescanSeries(seriesId) {
         let refreshBody = {
-                seriesId: seriesId
-            }
-        return this.sendCommand('RescanSeries', refreshBody)
+            seriesId: seriesId
+        };
+        return this.sendCommand('RescanSeries', refreshBody);
     }
 
     /**
@@ -261,7 +232,7 @@ export class Sonarr extends ServiceApi
         let endpoint = 'episode';
         let queryParams = `episodeFileId=${episodeFileId}`;
         let response = this.fetchJson(endpoint, queryParams);
-    
+
         return response && response.length ? response[0] : null;
     }
 
@@ -287,10 +258,10 @@ export class Sonarr extends ServiceApi
      */
     searchInQueue(searchPattern) {
         return this.searchApi(
-            "queue",
+            'queue',
             searchPattern,
             (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
-            { includeSeries: "true" },
+            { includeSeries: 'true' },
             (item) => {
                 Logger.ILog(`Found TV Show in Queue: ${item.series.title}`);
                 return item.series;
@@ -305,10 +276,10 @@ export class Sonarr extends ServiceApi
      */
     searchInDownloadHistory(searchPattern) {
         return this.searchApi(
-            "history",
+            'history',
             searchPattern,
             (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
-            { eventType: 3, includeSeries: "true" },
+            { eventType: 3, includeSeries: 'true' },
             (item) => {
                 Logger.ILog(`Found TV Show in History: ${item.series.title}`);
                 return item.series;
@@ -350,7 +321,7 @@ export class Sonarr extends ServiceApi
                     releaseGroup: fileToImport.releaseGroup
                 }
             ],
-            importMode: 'auto',
+            importMode: 'auto'
         };
 
         return this.sendCommand('manualImport', body);
@@ -372,7 +343,13 @@ export class Sonarr extends ServiceApi
 
         for (let file of response) {
             // Check if path ends with filename (handling potential path separators)
-            if (file.path && (file.path.endsWith(currentFileName) || file.path.endsWith('\\' + currentFileName) || file.path.endsWith('/' + currentFileName)) && file.episodes.length === 0) {
+            if (
+                file.path &&
+                (file.path.endsWith(currentFileName) ||
+                    file.path.endsWith('\\' + currentFileName) ||
+                    file.path.endsWith('/' + currentFileName)) &&
+                file.episodes.length === 0
+            ) {
                 return file;
             }
         }
@@ -391,7 +368,10 @@ export class Sonarr extends ServiceApi
         let allFiles = this.getFilesInShow(series);
 
         for (let file of allFiles) {
-            if (file.path && (file.path.endsWith(path) || file.path.endsWith('\\' + path) || file.path.endsWith('/' + path))) {
+            if (
+                file.path &&
+                (file.path.endsWith(path) || file.path.endsWith('\\' + path) || file.path.endsWith('/' + path))
+            ) {
                 return file;
             }
         }
@@ -409,7 +389,7 @@ export class Sonarr extends ServiceApi
         let queryParams = `episodeFileId=${episodeFileId}`;
         let response = this.fetchJson(endpoint, queryParams);
 
-        return (response && response.length) ? response[0] : null;
+        return response && response.length ? response[0] : null;
     }
 
     /**

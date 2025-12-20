@@ -1,4 +1,4 @@
-import { Sonarr } from "Shared/Sonarr";
+import { SonarrVc } from 'Shared/SonarrVc';
 
 /**
  * @description This script looks up a TV Show from Sonarr and retrieves its metadata
@@ -12,14 +12,14 @@ import { Sonarr } from "Shared/Sonarr";
  * @output TV Show NOT found or error
  */
 function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
-    URL = URL || Variables["Sonarr.Url"] || Variables["Sonarr.URI"];
-    ApiKey = ApiKey || Variables["Sonarr.ApiKey"];
+    URL = URL || Variables['Sonarr.Url'] || Variables['Sonarr.URI'];
+    ApiKey = ApiKey || Variables['Sonarr.ApiKey'];
 
-    Variables["Sonarr.Url"] = URL;
-    Variables["Sonarr.URI"] = URL;
-    Variables["Sonarr.ApiKey"] = ApiKey;
+    Variables['Sonarr.Url'] = URL;
+    Variables['Sonarr.URI'] = URL;
+    Variables['Sonarr.ApiKey'] = ApiKey;
 
-    const sonarr = new Sonarr(URL, ApiKey);
+    const sonarr = new SonarrVc(URL, ApiKey);
     const folderPath = Variables.folder.Orig.FullName;
     const searchPattern = UseFolderName
         ? getSeriesFolderName(folderPath, IgnoredFoldersRegex)
@@ -29,7 +29,7 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
     Logger.ILog(`Lookup TV Show: ${searchPattern}`);
 
     // Search for the series in Sonarr by path, queue, or download history
-    // Logic moved to Shared/Sonarr.js to enforce DRY
+    // Logic moved to Shared/SonarrVc.js to enforce DRY
     let series =
         sonarr.searchSeriesByPath(searchPattern) ||
         sonarr.searchInQueue(searchPattern) ||
@@ -51,16 +51,16 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
 function updateSeriesMetadata(series) {
     const language = LanguageHelper.GetIso1Code(series.originalLanguage.name);
 
-    Variables["movie.Title"] = series.title;
-    Variables["movie.Year"] = series.year;
-    Variables["movie.SonarrId"] = series.id;
+    Variables['movie.Title'] = series.title;
+    Variables['movie.Year'] = series.year;
+    Variables['movie.SonarrId'] = series.id;
     Variables.VideoMetadata = {
         Title: series.title,
         Description: series.overview,
         Year: series.year,
         ReleaseDate: series.firstAired,
         OriginalLanguage: language,
-        Genres: series.genres,
+        Genres: series.genres
     };
 
     Variables.TVShowInfo = series;
@@ -78,9 +78,9 @@ function updateSeriesMetadata(series) {
  * @returns {string} The folder name
  */
 function getSeriesFolderName(folderPath, ignoredFoldersRegex) {
-    ignoredFoldersRegex = ignoredFoldersRegex || "^(Season|Staffel|Saison|Specials|S[0-9]+)";
+    ignoredFoldersRegex = ignoredFoldersRegex || '^(Season|Staffel|Saison|Specials|S[0-9]+)';
 
-    const regex = new RegExp(ignoredFoldersRegex, "i");
+    const regex = new RegExp(ignoredFoldersRegex, 'i');
 
     let folder = System.IO.Path.GetFileName(folderPath);
     Logger.ILog(`If folder ${folder} matches regex ${ignoredFoldersRegex}, it will be ignored`);

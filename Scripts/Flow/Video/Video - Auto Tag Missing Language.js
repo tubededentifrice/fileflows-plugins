@@ -1,4 +1,11 @@
-import { toEnumerableArray, safeString, parseDurationSeconds, runProcess, clampNumber, truthy } from "Shared/ScriptHelpers";
+import {
+    toEnumerableArray,
+    safeString,
+    parseDurationSeconds,
+    runProcess,
+    clampNumber,
+    truthy
+} from 'Shared/ScriptHelpers';
 
 /**
  * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
@@ -19,7 +26,17 @@ import { toEnumerableArray, safeString, parseDurationSeconds, runProcess, clampN
  * @output No changes needed
  * @output Error
  */
-function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence, UseWhisperFallback, SampleStartSeconds, SampleDurationSeconds, PreferMkvPropEdit, ForceRetag) {
+function Script(
+    DryRun,
+    UseHeuristics,
+    UseSpeechBrain,
+    SpeechBrainMinConfidence,
+    UseWhisperFallback,
+    SampleStartSeconds,
+    SampleDurationSeconds,
+    PreferMkvPropEdit,
+    ForceRetag
+) {
     Logger.ILog('Audio - Auto tag missing language.js revision 12 loaded');
 
     function toInt(value, fallback) {
@@ -44,56 +61,148 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         // Prefer ISO-639-2/B for container tagging (Matroska uses ISO-639-2).
         const map = {
             // English
-            'en': 'eng', 'eng': 'eng', 'english': 'eng',
+            en: 'eng',
+            eng: 'eng',
+            english: 'eng',
             // French
-            'fr': 'fre', 'fra': 'fre', 'fre': 'fre', 'french': 'fre',
+            fr: 'fre',
+            fra: 'fre',
+            fre: 'fre',
+            french: 'fre',
             // German
-            'de': 'ger', 'deu': 'ger', 'ger': 'ger', 'german': 'ger',
+            de: 'ger',
+            deu: 'ger',
+            ger: 'ger',
+            german: 'ger',
             // Spanish
-            'es': 'spa', 'spa': 'spa', 'spanish': 'spa',
+            es: 'spa',
+            spa: 'spa',
+            spanish: 'spa',
             // Italian
-            'it': 'ita', 'ita': 'ita', 'italian': 'ita',
+            it: 'ita',
+            ita: 'ita',
+            italian: 'ita',
             // Portuguese
-            'pt': 'por', 'por': 'por', 'portuguese': 'por',
+            pt: 'por',
+            por: 'por',
+            portuguese: 'por',
             // Dutch
-            'nl': 'dut', 'nld': 'dut', 'dut': 'dut', 'dutch': 'dut',
+            nl: 'dut',
+            nld: 'dut',
+            dut: 'dut',
+            dutch: 'dut',
             // Swedish / Norwegian / Danish / Finnish
-            'sv': 'swe', 'swe': 'swe', 'swedish': 'swe',
-            'no': 'nor', 'nor': 'nor', 'norwegian': 'nor', 'nb': 'nor', 'nob': 'nor', 'nn': 'nor', 'nno': 'nor',
-            'da': 'dan', 'dan': 'dan', 'danish': 'dan',
-            'fi': 'fin', 'fin': 'fin', 'finnish': 'fin',
+            sv: 'swe',
+            swe: 'swe',
+            swedish: 'swe',
+            no: 'nor',
+            nor: 'nor',
+            norwegian: 'nor',
+            nb: 'nor',
+            nob: 'nor',
+            nn: 'nor',
+            nno: 'nor',
+            da: 'dan',
+            dan: 'dan',
+            danish: 'dan',
+            fi: 'fin',
+            fin: 'fin',
+            finnish: 'fin',
             // Slavic (common)
-            'ru': 'rus', 'rus': 'rus', 'russian': 'rus',
-            'uk': 'ukr', 'ukr': 'ukr', 'ukrainian': 'ukr',
-            'pl': 'pol', 'pol': 'pol', 'polish': 'pol',
-            'cs': 'cze', 'ces': 'cze', 'cze': 'cze', 'czech': 'cze',
-            'sk': 'slo', 'slk': 'slo', 'slo': 'slo', 'slovak': 'slo',
-            'bg': 'bul', 'bul': 'bul', 'bulgarian': 'bul',
-            'sr': 'srp', 'srp': 'srp', 'serbian': 'srp',
-            'hr': 'hrv', 'hrv': 'hrv', 'croatian': 'hrv',
-            'sl': 'slv', 'slv': 'slv', 'slovenian': 'slv',
+            ru: 'rus',
+            rus: 'rus',
+            russian: 'rus',
+            uk: 'ukr',
+            ukr: 'ukr',
+            ukrainian: 'ukr',
+            pl: 'pol',
+            pol: 'pol',
+            polish: 'pol',
+            cs: 'cze',
+            ces: 'cze',
+            cze: 'cze',
+            czech: 'cze',
+            sk: 'slo',
+            slk: 'slo',
+            slo: 'slo',
+            slovak: 'slo',
+            bg: 'bul',
+            bul: 'bul',
+            bulgarian: 'bul',
+            sr: 'srp',
+            srp: 'srp',
+            serbian: 'srp',
+            hr: 'hrv',
+            hrv: 'hrv',
+            croatian: 'hrv',
+            sl: 'slv',
+            slv: 'slv',
+            slovenian: 'slv',
             // East Asian
-            'ja': 'jpn', 'jpn': 'jpn', 'japanese': 'jpn',
-            'ko': 'kor', 'kor': 'kor', 'korean': 'kor',
-            'zh': 'chi', 'zho': 'chi', 'chi': 'chi', 'chinese': 'chi', 'mandarin': 'chi',
+            ja: 'jpn',
+            jpn: 'jpn',
+            japanese: 'jpn',
+            ko: 'kor',
+            kor: 'kor',
+            korean: 'kor',
+            zh: 'chi',
+            zho: 'chi',
+            chi: 'chi',
+            chinese: 'chi',
+            mandarin: 'chi',
             // Middle East / South Asia
-            'ar': 'ara', 'ara': 'ara', 'arabic': 'ara',
-            'he': 'heb', 'iw': 'heb', 'heb': 'heb', 'hebrew': 'heb',
-            'fa': 'per', 'fas': 'per', 'per': 'per', 'persian': 'per',
-            'hi': 'hin', 'hin': 'hin', 'hindi': 'hin',
+            ar: 'ara',
+            ara: 'ara',
+            arabic: 'ara',
+            he: 'heb',
+            iw: 'heb',
+            heb: 'heb',
+            hebrew: 'heb',
+            fa: 'per',
+            fas: 'per',
+            per: 'per',
+            persian: 'per',
+            hi: 'hin',
+            hin: 'hin',
+            hindi: 'hin',
             // SE Asia
-            'th': 'tha', 'tha': 'tha', 'thai': 'tha',
-            'vi': 'vie', 'vie': 'vie', 'vietnamese': 'vie',
-            'id': 'ind', 'ind': 'ind', 'indonesian': 'ind',
-            'ms': 'may', 'msa': 'may', 'may': 'may', 'malay': 'may',
+            th: 'tha',
+            tha: 'tha',
+            thai: 'tha',
+            vi: 'vie',
+            vie: 'vie',
+            vietnamese: 'vie',
+            id: 'ind',
+            ind: 'ind',
+            indonesian: 'ind',
+            ms: 'may',
+            msa: 'may',
+            may: 'may',
+            malay: 'may',
             // Other common
-            'el': 'gre', 'ell': 'gre', 'gre': 'gre', 'greek': 'gre',
-            'tr': 'tur', 'tur': 'tur', 'turkish': 'tur',
-            'hu': 'hun', 'hun': 'hun', 'hungarian': 'hun',
-            'et': 'est', 'est': 'est', 'estonian': 'est',
-            'lv': 'lav', 'lav': 'lav', 'latvian': 'lav',
-            'lt': 'lit', 'lit': 'lit', 'lithuanian': 'lit',
-            'ro': 'rum', 'ron': 'rum', 'rum': 'rum', 'romanian': 'rum'
+            el: 'gre',
+            ell: 'gre',
+            gre: 'gre',
+            greek: 'gre',
+            tr: 'tur',
+            tur: 'tur',
+            turkish: 'tur',
+            hu: 'hun',
+            hun: 'hun',
+            hungarian: 'hun',
+            et: 'est',
+            est: 'est',
+            estonian: 'est',
+            lv: 'lav',
+            lav: 'lav',
+            latvian: 'lav',
+            lt: 'lit',
+            lit: 'lit',
+            lithuanian: 'lit',
+            ro: 'rum',
+            ron: 'rum',
+            rum: 'rum',
+            romanian: 'rum'
         };
 
         if (map[raw]) return map[raw];
@@ -116,44 +225,44 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
 
         // Fast-path for common ISO-639-2/B -> ISO-639-1 mappings (preferred for BCP47 primary language subtag)
         const mapToIso1 = {
-            'eng': 'en',
-            'fre': 'fr',
-            'ger': 'de',
-            'spa': 'es',
-            'ita': 'it',
-            'por': 'pt',
-            'dut': 'nl',
-            'swe': 'sv',
-            'nor': 'no',
-            'dan': 'da',
-            'fin': 'fi',
-            'rus': 'ru',
-            'ukr': 'uk',
-            'pol': 'pl',
-            'cze': 'cs',
-            'slo': 'sk',
-            'bul': 'bg',
-            'srp': 'sr',
-            'hrv': 'hr',
-            'slv': 'sl',
-            'jpn': 'ja',
-            'kor': 'ko',
-            'chi': 'zh',
-            'ara': 'ar',
-            'heb': 'he',
-            'per': 'fa',
-            'hin': 'hi',
-            'tha': 'th',
-            'vie': 'vi',
-            'ind': 'id',
-            'may': 'ms',
-            'gre': 'el',
-            'tur': 'tr',
-            'hun': 'hu',
-            'est': 'et',
-            'lav': 'lv',
-            'lit': 'lt',
-            'rum': 'ro'
+            eng: 'en',
+            fre: 'fr',
+            ger: 'de',
+            spa: 'es',
+            ita: 'it',
+            por: 'pt',
+            dut: 'nl',
+            swe: 'sv',
+            nor: 'no',
+            dan: 'da',
+            fin: 'fi',
+            rus: 'ru',
+            ukr: 'uk',
+            pol: 'pl',
+            cze: 'cs',
+            slo: 'sk',
+            bul: 'bg',
+            srp: 'sr',
+            hrv: 'hr',
+            slv: 'sl',
+            jpn: 'ja',
+            kor: 'ko',
+            chi: 'zh',
+            ara: 'ar',
+            heb: 'he',
+            per: 'fa',
+            hin: 'hi',
+            tha: 'th',
+            vie: 'vi',
+            ind: 'id',
+            may: 'ms',
+            gre: 'el',
+            tur: 'tr',
+            hun: 'hu',
+            est: 'et',
+            lav: 'lv',
+            lit: 'lt',
+            rum: 'ro'
         };
         if (mapToIso1[raw]) return mapToIso1[raw];
 
@@ -164,7 +273,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                 const iso1 = LanguageHelper.GetIso1Code(name);
                 if (iso1) return String(iso1).trim().toLowerCase();
             }
-        } catch (err) { }
+        } catch (err) {}
 
         // Fallback: use 3-letter code as BCP47 primary language subtag.
         if (/^[a-z]{3}$/i.test(raw)) return raw;
@@ -205,56 +314,82 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
 
     function toolWorks(command, versionArgs) {
         const proc = runProcess(command, versionArgs || ['--version'], 15);
-        return (proc && proc.exitCode === 0);
+        return proc && proc.exitCode === 0;
     }
 
     function tryParseJson(text) {
         const s = safeString(text).trim();
         if (!s) return null;
-        try { return JSON.parse(s); } catch (err) { }
+        try {
+            return JSON.parse(s);
+        } catch (err) {}
         // Some wrappers might log extra lines; try last line.
         try {
-            const lines = s.split('\n').map(x => x.trim()).filter(x => x);
+            const lines = s
+                .split('\n')
+                .map((x) => x.trim())
+                .filter((x) => x);
             if (!lines.length) return null;
             return JSON.parse(lines[lines.length - 1]);
-        } catch (err2) { }
+        } catch (err2) {}
         return null;
     }
 
     function computeAutoStartSeconds(durationSeconds, sampleDurationSeconds) {
-        const dur = (durationSeconds && durationSeconds > 0) ? durationSeconds : 0;
+        const dur = durationSeconds && durationSeconds > 0 ? durationSeconds : 0;
         if (dur <= 0) return 0;
         if (dur <= sampleDurationSeconds + 2) return 0;
         // Avoid intros. Use ~10% in, with a minimum offset that increases for longer content.
         // This helps when movies have little/no audio for the first few minutes.
         let minStart = 0;
-        if (dur >= 3600) minStart = 300;        // 1h+ => 5 min
-        else if (dur >= 1800) minStart = 240;   // 30m+ => 4 min
-        else if (dur >= 1200) minStart = 180;   // 20m+ => 3 min
-        else if (dur >= 600) minStart = 120;    // 10m+ => 2 min
-        else if (dur >= 300) minStart = 60;     // 5m+  => 1 min
-        const preferred = Math.floor(dur * 0.10);
+        if (dur >= 3600)
+            minStart = 300; // 1h+ => 5 min
+        else if (dur >= 1800)
+            minStart = 240; // 30m+ => 4 min
+        else if (dur >= 1200)
+            minStart = 180; // 20m+ => 3 min
+        else if (dur >= 600)
+            minStart = 120; // 10m+ => 2 min
+        else if (dur >= 300) minStart = 60; // 5m+  => 1 min
+        const preferred = Math.floor(dur * 0.1);
         return clampInt(Math.max(minStart, preferred), 0, Math.max(0, dur - sampleDurationSeconds - 1));
     }
 
     function extractAudioSampleWav(ffmpegPath, inputFile, typeIndex, startSeconds, durationSeconds) {
         const outPath = System.IO.Path.Combine(Flow.TempPath, Flow.NewGuid() + '.wav');
         const args = [
-            '-hide_banner', '-nostats', '-loglevel', 'error',
+            '-hide_banner',
+            '-nostats',
+            '-loglevel',
+            'error',
             '-y',
-            '-ss', String(startSeconds),
-            '-i', inputFile,
-            '-map', '0:a:' + String(typeIndex),
-            '-vn', '-sn', '-dn',
-            '-ac', '1',
-            '-ar', '16000',
-            '-t', String(durationSeconds),
-            '-c:a', 'pcm_s16le',
+            '-ss',
+            String(startSeconds),
+            '-i',
+            inputFile,
+            '-map',
+            '0:a:' + String(typeIndex),
+            '-vn',
+            '-sn',
+            '-dn',
+            '-ac',
+            '1',
+            '-ar',
+            '16000',
+            '-t',
+            String(durationSeconds),
+            '-c:a',
+            'pcm_s16le',
             outPath
         ];
         const proc = runProcess(ffmpegPath, args, 300);
         if (!proc || proc.exitCode !== 0) {
-            Logger.WLog('ffmpeg sample extraction failed for 0:a:' + typeIndex + ': ' + safeString((proc && (proc.standardError || proc.standardOutput)) || ''));
+            Logger.WLog(
+                'ffmpeg sample extraction failed for 0:a:' +
+                    typeIndex +
+                    ': ' +
+                    safeString((proc && (proc.standardError || proc.standardOutput)) || '')
+            );
             return '';
         }
         return outPath;
@@ -264,7 +399,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         try {
             const fi = new System.IO.FileInfo(path);
             return fi && fi.Length ? Number(fi.Length) : 0;
-        } catch (err) { return 0; }
+        } catch (err) {
+            return 0;
+        }
     }
 
     function extractAudioSampleWavChecked(ffmpegPath, inputFile, typeIndex, startSeconds, durationSeconds, minBytes) {
@@ -272,7 +409,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         if (!outPath) return '';
         const size = getFileSizeBytes(outPath);
         if (size <= 0 || (minBytes && size < minBytes)) {
-            try { System.IO.File.Delete(outPath); } catch (err) { }
+            try {
+                System.IO.File.Delete(outPath);
+            } catch (err) {}
             return '';
         }
         return outPath;
@@ -291,36 +430,50 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
     }
 
     const dryRun = !!DryRun;
-    const forceRetagParam = (ForceRetag === undefined || ForceRetag === null) ? false : !!ForceRetag;
-    const useHeuristics = (UseHeuristics === undefined || UseHeuristics === null) ? true : !!UseHeuristics;
-    const useSpeechBrain = (UseSpeechBrain === undefined || UseSpeechBrain === null) ? true : !!UseSpeechBrain;
+    const forceRetagParam = ForceRetag === undefined || ForceRetag === null ? false : !!ForceRetag;
+    const useHeuristics = UseHeuristics === undefined || UseHeuristics === null ? true : !!UseHeuristics;
+    const useSpeechBrain = UseSpeechBrain === undefined || UseSpeechBrain === null ? true : !!UseSpeechBrain;
     const speechBrainMinConfidence = clampInt(toInt(SpeechBrainMinConfidence, 75), 0, 100);
-    const useWhisperFallback = (UseWhisperFallback === undefined || UseWhisperFallback === null) ? true : !!UseWhisperFallback;
+    const useWhisperFallback =
+        UseWhisperFallback === undefined || UseWhisperFallback === null ? true : !!UseWhisperFallback;
     const sampleStartSecondsParamDefault = clampInt(toInt(SampleStartSeconds, 0), 0, 24 * 3600);
     const sampleDurationSecondsDefault = clampInt(toInt(SampleDurationSeconds, 25), 6, 120);
-    const preferMkvPropEdit = (PreferMkvPropEdit === undefined || PreferMkvPropEdit === null) ? true : !!PreferMkvPropEdit;
+    const preferMkvPropEdit =
+        PreferMkvPropEdit === undefined || PreferMkvPropEdit === null ? true : !!PreferMkvPropEdit;
 
     function getVariablesKey(key) {
-        try { return (Variables && key) ? Variables[key] : null; } catch (err) { return null; }
+        try {
+            return Variables && key ? Variables[key] : null;
+        } catch (err) {
+            return null;
+        }
     }
 
     const forceRetagVar = parseBool(getVariablesKey('AudioLangID.ForceRetag'));
-    const forceRetag = (forceRetagVar === null) ? forceRetagParam : !!forceRetagVar;
+    const forceRetag = forceRetagVar === null ? forceRetagParam : !!forceRetagVar;
 
     const sampleStartSecondsOverride = toInt(getVariablesKey('AudioLangID.SampleStartSeconds'), null);
     const sampleDurationSecondsOverride = toInt(getVariablesKey('AudioLangID.SampleDurationSeconds'), null);
-    const sampleStartSecondsParam = clampInt((sampleStartSecondsOverride === null) ? sampleStartSecondsParamDefault : sampleStartSecondsOverride, 0, 24 * 3600);
-    const sampleDurationSeconds = clampInt((sampleDurationSecondsOverride === null) ? sampleDurationSecondsDefault : sampleDurationSecondsOverride, 6, 120);
+    const sampleStartSecondsParam = clampInt(
+        sampleStartSecondsOverride === null ? sampleStartSecondsParamDefault : sampleStartSecondsOverride,
+        0,
+        24 * 3600
+    );
+    const sampleDurationSeconds = clampInt(
+        sampleDurationSecondsOverride === null ? sampleDurationSecondsDefault : sampleDurationSecondsOverride,
+        6,
+        120
+    );
 
     const variablesFile = getVariablesKey('file');
-    const inputFile = (variablesFile && variablesFile.FullName) ? variablesFile.FullName : Flow.WorkingFile;
+    const inputFile = variablesFile && variablesFile.FullName ? variablesFile.FullName : Flow.WorkingFile;
     if (!inputFile) {
         Logger.ELog('No working file found (missing file metadata / working file)');
         return -1;
     }
 
-    const viVar = (typeof vi !== 'undefined' && vi) ? vi : getVariablesKey('vi');
-    const videoVar = (typeof video !== 'undefined' && video) ? video : getVariablesKey('video');
+    const viVar = typeof vi !== 'undefined' && vi ? vi : getVariablesKey('vi');
+    const videoVar = typeof video !== 'undefined' && video ? video : getVariablesKey('video');
     const ffmpegModel = getVariablesKey('FfmpegBuilderModel');
 
     function getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel) {
@@ -339,18 +492,20 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             try {
                 if (viObj['VideoInfo']) addCandidate(viObj['VideoInfo']);
                 else if (viObj['AudioStreams'] || viObj['VideoStreams']) addCandidate(viObj);
-            } catch (err) { }
+            } catch (err) {}
         }
         if (videoObj) {
             try {
                 if (videoObj['VideoInfo']) addCandidate(videoObj['VideoInfo']);
                 else if (videoObj['AudioStreams'] || videoObj['VideoStreams']) addCandidate(videoObj);
-            } catch (err) { }
+            } catch (err) {}
         }
 
         // FFmpeg Builder model may also carry a VideoInfo reference used later in the flow
         if (ffModel) {
-            try { if (ffModel['VideoInfo']) addCandidate(ffModel['VideoInfo']); } catch (err) { }
+            try {
+                if (ffModel['VideoInfo']) addCandidate(ffModel['VideoInfo']);
+            } catch (err) {}
         }
 
         return candidates;
@@ -367,7 +522,11 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             if (!videoInfoObj) return;
 
             let audioList = null;
-            try { audioList = videoInfoObj.AudioStreams; } catch (err) { audioList = null; }
+            try {
+                audioList = videoInfoObj.AudioStreams;
+            } catch (err) {
+                audioList = null;
+            }
             if (!audioList) return;
 
             const list = toEnumerableArray(audioList, 500);
@@ -377,7 +536,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                 if (!c || !c.iso) continue;
 
                 // Prefer updating the exact stream instance when we still have it.
-                let target = (c.streamRef && typeof c.streamRef === 'object') ? c.streamRef : null;
+                let target = c.streamRef && typeof c.streamRef === 'object' ? c.streamRef : null;
 
                 // Next prefer matching by overall Index (FFmpeg stream index).
                 if (!target && c.overallIndex !== null && c.overallIndex !== undefined) {
@@ -385,11 +544,15 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                         const s = list[i];
                         if (!s) continue;
                         try {
-                            if (s.Index !== undefined && s.Index !== null && Number(s.Index) === Number(c.overallIndex)) {
+                            if (
+                                s.Index !== undefined &&
+                                s.Index !== null &&
+                                Number(s.Index) === Number(c.overallIndex)
+                            ) {
                                 target = s;
                                 break;
                             }
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                 }
 
@@ -399,16 +562,20 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                         const s = list[i];
                         if (!s) continue;
                         try {
-                            if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                            if (
+                                s.TypeIndex !== undefined &&
+                                s.TypeIndex !== null &&
+                                Number(s.TypeIndex) === Number(c.typeIndex)
+                            ) {
                                 target = s;
                                 break;
                             }
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                 }
 
                 // Last resort: list position within AudioStreams.
-                if (!target) target = (c.audioIndex >= 0 && c.audioIndex < list.length) ? list[c.audioIndex] : null;
+                if (!target) target = c.audioIndex >= 0 && c.audioIndex < list.length ? list[c.audioIndex] : null;
                 if (!target) continue;
 
                 try {
@@ -416,7 +583,14 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                     updatedAudioStreams++;
                 } catch (err2) {
                     failedUpdates++;
-                    Logger.WLog('Failed to update in-memory audio language on ' + label + ' for 0:a:' + String(c.typeIndex) + ': ' + safeString(err2));
+                    Logger.WLog(
+                        'Failed to update in-memory audio language on ' +
+                            label +
+                            ' for 0:a:' +
+                            String(c.typeIndex) +
+                            ': ' +
+                            safeString(err2)
+                    );
                 }
             }
         }
@@ -424,7 +598,11 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         function updateFfmpegBuilderAudioStreams(ffModelObj) {
             if (!ffModelObj) return;
             let audioList = null;
-            try { audioList = ffModelObj.AudioStreams; } catch (err) { audioList = null; }
+            try {
+                audioList = ffModelObj.AudioStreams;
+            } catch (err) {
+                audioList = null;
+            }
             if (!audioList) return;
 
             const list = toEnumerableArray(audioList, 500);
@@ -441,13 +619,17 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                     const s = list[i];
                     if (!s) continue;
                     try {
-                        if (c.overallIndex !== null && c.overallIndex !== undefined &&
-                            s.Index !== undefined && s.Index !== null &&
-                            Number(s.Index) === Number(c.overallIndex)) {
+                        if (
+                            c.overallIndex !== null &&
+                            c.overallIndex !== undefined &&
+                            s.Index !== undefined &&
+                            s.Index !== null &&
+                            Number(s.Index) === Number(c.overallIndex)
+                        ) {
                             target = s;
                             break;
                         }
-                    } catch (err) { }
+                    } catch (err) {}
                 }
 
                 // Some versions might expose TypeIndex; keep as fallback.
@@ -456,11 +638,15 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                         const s = list[i];
                         if (!s) continue;
                         try {
-                            if (s.TypeIndex !== undefined && s.TypeIndex !== null && Number(s.TypeIndex) === Number(c.typeIndex)) {
+                            if (
+                                s.TypeIndex !== undefined &&
+                                s.TypeIndex !== null &&
+                                Number(s.TypeIndex) === Number(c.typeIndex)
+                            ) {
                                 target = s;
                                 break;
                             }
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                 }
 
@@ -474,7 +660,7 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                                 target = s;
                                 break;
                             }
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                 }
                 if (!target) continue;
@@ -485,18 +671,27 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
                         if (target.Stream && target.Stream.Language !== undefined) {
                             target.Stream.Language = c.iso;
                         }
-                    } catch (errS) { }
+                    } catch (errS) {}
                     updatedBuilderStreams++;
                     updatedAny = true;
-                    try { if (target.ForcedChange !== undefined) target.ForcedChange = true; } catch (err3) { }
+                    try {
+                        if (target.ForcedChange !== undefined) target.ForcedChange = true;
+                    } catch (err3) {}
                 } catch (err2) {
                     failedUpdates++;
-                    Logger.WLog('Failed to update in-memory FFmpeg Builder audio language for 0:a:' + String(c.typeIndex) + ': ' + safeString(err2));
+                    Logger.WLog(
+                        'Failed to update in-memory FFmpeg Builder audio language for 0:a:' +
+                            String(c.typeIndex) +
+                            ': ' +
+                            safeString(err2)
+                    );
                 }
             }
 
             // Ensure the executor doesn't short-circuit this as a no-op.
-            try { if (updatedAny && ffModelObj.ForceEncode !== undefined) ffModelObj.ForceEncode = true; } catch (err4) { }
+            try {
+                if (updatedAny && ffModelObj.ForceEncode !== undefined) ffModelObj.ForceEncode = true;
+            } catch (err4) {}
         }
 
         const candidates = getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel);
@@ -513,15 +708,22 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             const mapByTypeIndex = {};
             for (const c of changesList) {
                 if (!c || !c.iso) continue;
-                if (c.overallIndex !== null && c.overallIndex !== undefined) mapByIndex[String(c.overallIndex)] = String(c.iso);
+                if (c.overallIndex !== null && c.overallIndex !== undefined)
+                    mapByIndex[String(c.overallIndex)] = String(c.iso);
                 mapByTypeIndex[String(c.typeIndex)] = String(c.iso);
             }
             Variables['AudioLangID.UpdatedAudioLanguagesByIndex'] = JSON.stringify(mapByIndex);
             // Backwards-compatible key (if any downstream flow already started using it)
             Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(mapByTypeIndex);
-        } catch (err) { }
+        } catch (err) {}
 
-        Logger.ILog('Updated in-memory audio language metadata: VideoInfo=' + updatedAudioStreams + ', FfmpegBuilderModel=' + updatedBuilderStreams + (failedUpdates ? (', failed=' + failedUpdates) : ''));
+        Logger.ILog(
+            'Updated in-memory audio language metadata: VideoInfo=' +
+                updatedAudioStreams +
+                ', FfmpegBuilderModel=' +
+                updatedBuilderStreams +
+                (failedUpdates ? ', failed=' + failedUpdates : '')
+        );
     }
 
     const videoInfo =
@@ -542,49 +744,69 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         return 2;
     }
 
-    const overallDurationSeconds = parseDurationSeconds((videoInfo && videoInfo.Duration) ? videoInfo.Duration : 0) ||
-        parseDurationSeconds((videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0] && videoInfo.VideoStreams[0].Duration) ? videoInfo.VideoStreams[0].Duration : 0) ||
-        parseDurationSeconds((videoVar && videoVar.Duration) ? videoVar.Duration : 0) ||
+    const overallDurationSeconds =
+        parseDurationSeconds(videoInfo && videoInfo.Duration ? videoInfo.Duration : 0) ||
+        parseDurationSeconds(
+            videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0] && videoInfo.VideoStreams[0].Duration
+                ? videoInfo.VideoStreams[0].Duration
+                : 0
+        ) ||
+        parseDurationSeconds(videoVar && videoVar.Duration ? videoVar.Duration : 0) ||
         0;
 
-    const fileName = safeString((variablesFile && variablesFile.Name) ? variablesFile.Name : (Flow.WorkingFileName || System.IO.Path.GetFileName(inputFile)));
+    const fileName = safeString(
+        variablesFile && variablesFile.Name
+            ? variablesFile.Name
+            : Flow.WorkingFileName || System.IO.Path.GetFileName(inputFile)
+    );
     const fileExt = safeString(System.IO.Path.GetExtension(inputFile)).toLowerCase();
-    const isMkv = (fileExt === '.mkv' || fileExt === '.mk3d' || fileExt === '.mka');
+    const isMkv = fileExt === '.mkv' || fileExt === '.mk3d' || fileExt === '.mka';
 
     const ffmpegPath = Flow.GetToolPath('ffmpeg') || 'ffmpeg';
     const canUseMkvPropEdit = isMkv && preferMkvPropEdit && toolWorks('mkvpropedit', ['--version']);
     const canUseSpeechBrain = useSpeechBrain && toolWorks('fflangid-sb', ['--version']);
     const canUseWhisper = useWhisperFallback && toolWorks('fflangid-whisper', ['--version']);
 
-    if (useSpeechBrain && !canUseSpeechBrain) Logger.WLog('SpeechBrain detector not available (expected `fflangid-sb`).');
-    if (useWhisperFallback && !canUseWhisper) Logger.WLog('Whisper detector not available (expected `fflangid-whisper`).');
-    if (isMkv && preferMkvPropEdit && !canUseMkvPropEdit) Logger.WLog('mkvpropedit not available; will fall back to ffmpeg remux.');
+    if (useSpeechBrain && !canUseSpeechBrain)
+        Logger.WLog('SpeechBrain detector not available (expected `fflangid-sb`).');
+    if (useWhisperFallback && !canUseWhisper)
+        Logger.WLog('Whisper detector not available (expected `fflangid-whisper`).');
+    if (isMkv && preferMkvPropEdit && !canUseMkvPropEdit)
+        Logger.WLog('mkvpropedit not available; will fall back to ffmpeg remux.');
 
     const pending = [];
     for (let i = 0; i < audioStreams.length; i++) {
         const stream = audioStreams[i];
-        const lang = safeString(stream && stream.Language).trim().toLowerCase();
+        const lang = safeString(stream && stream.Language)
+            .trim()
+            .toLowerCase();
         const hasLang = !!lang && lang !== 'und';
         if (!forceRetag && hasLang) continue;
 
         pending.push({
             streamRef: stream,
             audioIndex: i,
-            overallIndex: (stream && stream.Index !== undefined && stream.Index !== null) ? Number(stream.Index) : null,
-            typeIndex: (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null) ? stream.TypeIndex : i,
+            overallIndex: stream && stream.Index !== undefined && stream.Index !== null ? Number(stream.Index) : null,
+            typeIndex: stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null ? stream.TypeIndex : i,
             title: safeString(stream && stream.Title),
             codec: safeString(stream && stream.Codec),
-            duration: parseDurationSeconds((stream && stream.Duration) ? stream.Duration : 0) || 0,
+            duration: parseDurationSeconds(stream && stream.Duration ? stream.Duration : 0) || 0,
             existingLang: safeString(stream && stream.Language)
         });
     }
 
     if (!pending.length) {
-        Logger.ILog('All audio tracks already have language tags.' + (forceRetag ? ' (ForceRetag enabled but no audio tracks found?)' : ''));
+        Logger.ILog(
+            'All audio tracks already have language tags.' +
+                (forceRetag ? ' (ForceRetag enabled but no audio tracks found?)' : '')
+        );
         return 2;
     }
 
-    Logger.ILog((forceRetag ? 'Audio tracks selected for (re)tagging: ' : 'Audio tracks missing language tags: ') + pending.length);
+    Logger.ILog(
+        (forceRetag ? 'Audio tracks selected for (re)tagging: ' : 'Audio tracks missing language tags: ') +
+            pending.length
+    );
 
     const changes = [];
     let detectedCount = 0;
@@ -608,39 +830,67 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
 
         let sampleWav = '';
         if (!detectedIso && (canUseSpeechBrain || canUseWhisper)) {
-            const trackDurationSeconds = (track.duration && track.duration > 0) ? track.duration : overallDurationSeconds;
+            const trackDurationSeconds = track.duration && track.duration > 0 ? track.duration : overallDurationSeconds;
 
             // If we can't determine the real duration, avoid always sampling t=0 (intros/silence).
             // Try a few offsets; if extraction yields an empty/tiny wav, fall back to later/earlier offsets.
-            const minBytes = Math.max(80000, Math.floor(sampleDurationSeconds * 16000 * 2 * 0.10)); // ~>2.5s or 10% of expected PCM size
+            const minBytes = Math.max(80000, Math.floor(sampleDurationSeconds * 16000 * 2 * 0.1)); // ~>2.5s or 10% of expected PCM size
             const starts = [];
             if (sampleStartSecondsParam > 0) {
                 starts.push(sampleStartSecondsParam);
             } else if (trackDurationSeconds && trackDurationSeconds > 0) {
                 const maxStart = Math.max(0, Math.floor(trackDurationSeconds - sampleDurationSeconds - 1));
-                starts.push(clampInt(computeAutoStartSeconds(trackDurationSeconds, sampleDurationSeconds), 0, maxStart));
+                starts.push(
+                    clampInt(computeAutoStartSeconds(trackDurationSeconds, sampleDurationSeconds), 0, maxStart)
+                );
             } else {
                 starts.push(300, 180, 120, 60, 0);
             }
 
             for (let si = 0; si < starts.length && !sampleWav; si++) {
                 const startSeconds = Math.max(0, Math.floor(starts[si]));
-                Logger.DLog('Sampling ' + trackLabel + ' from t=' + startSeconds + 's for ' + sampleDurationSeconds + 's' +
-                    ((sampleStartSecondsParam > 0) ? ' (manual)' : ' (auto)') +
-                    ((trackDurationSeconds && trackDurationSeconds > 0) ? (' duration=' + Math.floor(trackDurationSeconds) + 's') : ''));
-                sampleWav = extractAudioSampleWavChecked(ffmpegPath, inputFile, track.typeIndex, startSeconds, sampleDurationSeconds, minBytes);
+                Logger.DLog(
+                    'Sampling ' +
+                        trackLabel +
+                        ' from t=' +
+                        startSeconds +
+                        's for ' +
+                        sampleDurationSeconds +
+                        's' +
+                        (sampleStartSecondsParam > 0 ? ' (manual)' : ' (auto)') +
+                        (trackDurationSeconds && trackDurationSeconds > 0
+                            ? ' duration=' + Math.floor(trackDurationSeconds) + 's'
+                            : '')
+                );
+                sampleWav = extractAudioSampleWavChecked(
+                    ffmpegPath,
+                    inputFile,
+                    track.typeIndex,
+                    startSeconds,
+                    sampleDurationSeconds,
+                    minBytes
+                );
             }
 
             if (!sampleWav) {
-                Logger.WLog('Failed to extract a usable audio sample for ' + trackLabel + ' (tried ' + starts.length + ' start positions).');
+                Logger.WLog(
+                    'Failed to extract a usable audio sample for ' +
+                        trackLabel +
+                        ' (tried ' +
+                        starts.length +
+                        ' start positions).'
+                );
             }
         }
 
         if (!detectedIso && canUseSpeechBrain && sampleWav) {
             const result = detectLanguageSpeechBrain(sampleWav);
-            const lang = normalizeLangToIso6392b((result && (result.lang || result.language || result.code || result.label)) || '');
-            const conf = (result && (result.confidence !== undefined && result.confidence !== null)) ? Number(result.confidence) : 0;
-            const confPct = (conf <= 1.0 && conf > 0) ? Math.round(conf * 100) : Math.round(conf);
+            const lang = normalizeLangToIso6392b(
+                (result && (result.lang || result.language || result.code || result.label)) || ''
+            );
+            const conf =
+                result && result.confidence !== undefined && result.confidence !== null ? Number(result.confidence) : 0;
+            const confPct = conf <= 1.0 && conf > 0 ? Math.round(conf * 100) : Math.round(conf);
             if (lang && confPct >= speechBrainMinConfidence) {
                 detectedIso = lang;
                 detectedSource = 'speechbrain';
@@ -652,7 +902,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
 
         if (!detectedIso && canUseWhisper && sampleWav) {
             const result = detectLanguageWhisper(sampleWav);
-            const lang = normalizeLangToIso6392b((result && (result.lang || result.language || result.code || result.label)) || '');
+            const lang = normalizeLangToIso6392b(
+                (result && (result.lang || result.language || result.code || result.label)) || ''
+            );
             if (lang) {
                 detectedIso = lang;
                 detectedSource = 'whisper';
@@ -661,11 +913,15 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         }
 
         if (sampleWav) {
-            try { System.IO.File.Delete(sampleWav); } catch (err) { }
+            try {
+                System.IO.File.Delete(sampleWav);
+            } catch (err) {}
         }
 
         if (!detectedIso) {
-            Logger.WLog('Could not detect language for ' + trackLabel + ' title="' + track.title + '" codec=' + track.codec);
+            Logger.WLog(
+                'Could not detect language for ' + trackLabel + ' title="' + track.title + '" codec=' + track.codec
+            );
             continue;
         }
 
@@ -679,7 +935,8 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         changes.push({
             streamRef: track.streamRef,
             audioIndex: track.audioIndex,
-            overallIndex: (track.overallIndex !== undefined && track.overallIndex !== null) ? Number(track.overallIndex) : null,
+            overallIndex:
+                track.overallIndex !== undefined && track.overallIndex !== null ? Number(track.overallIndex) : null,
             typeIndex: track.typeIndex,
             iso: detectedIso,
             source: detectedSource,
@@ -687,7 +944,15 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
             title: track.title
         });
 
-        Logger.ILog('Detected ' + detectedIso + ' for ' + trackLabel + ' via ' + detectedSource + (detectedConfidence ? (' @ ' + detectedConfidence + '%') : ''));
+        Logger.ILog(
+            'Detected ' +
+                detectedIso +
+                ' for ' +
+                trackLabel +
+                ' via ' +
+                detectedSource +
+                (detectedConfidence ? ' @ ' + detectedConfidence + '%' : '')
+        );
     }
 
     if (!changes.length) {
@@ -729,12 +994,16 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
         let proc = runProcess('mkvpropedit', buildMkvPropEditArgs(true), 300);
         if (!proc || proc.exitCode !== 0) {
             // Fallback for older mkvpropedit versions that might not support `language-ietf`.
-            Logger.WLog('mkvpropedit failed when setting language-ietf; retrying with legacy language only. Error: ' +
-                safeString((proc && (proc.standardError || proc.standardOutput)) || ''));
+            Logger.WLog(
+                'mkvpropedit failed when setting language-ietf; retrying with legacy language only. Error: ' +
+                    safeString((proc && (proc.standardError || proc.standardOutput)) || '')
+            );
 
             proc = runProcess('mkvpropedit', buildMkvPropEditArgs(false), 300);
             if (!proc || proc.exitCode !== 0) {
-                Logger.ELog('mkvpropedit failed: ' + safeString((proc && (proc.standardError || proc.standardOutput)) || ''));
+                Logger.ELog(
+                    'mkvpropedit failed: ' + safeString((proc && (proc.standardError || proc.standardOutput)) || '')
+                );
                 return -1;
             }
         }
@@ -763,7 +1032,9 @@ function Script(DryRun, UseHeuristics, UseSpeechBrain, SpeechBrainMinConfidence,
 
     const remux = runProcess(ffmpegPath, ffArgs, 3600);
     if (!remux || remux.exitCode !== 0) {
-        Logger.ELog('ffmpeg remux tagging failed: ' + safeString((remux && (remux.standardError || remux.standardOutput)) || ''));
+        Logger.ELog(
+            'ffmpeg remux tagging failed: ' + safeString((remux && (remux.standardError || remux.standardOutput)) || '')
+        );
         return -1;
     }
 

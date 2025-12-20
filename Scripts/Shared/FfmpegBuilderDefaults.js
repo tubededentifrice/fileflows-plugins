@@ -5,7 +5,11 @@
  */
 
 function lower(s) {
-    try { return String(s || '').toLowerCase(); } catch (e) { return ''; }
+    try {
+        return String(s || '').toLowerCase();
+    } catch (e) {
+        return '';
+    }
 }
 
 function hasArg(args, tokenLower) {

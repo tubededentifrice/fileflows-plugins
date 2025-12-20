@@ -16,7 +16,7 @@ function Script() {
     const height = Variables.video?.Height;
 
     if (!width || !height) {
-        Logger.ELog("No video info found, run the Video File flow element first.");
+        Logger.ELog('No video info found, run the Video File flow element first.');
         return -1;
     }
 

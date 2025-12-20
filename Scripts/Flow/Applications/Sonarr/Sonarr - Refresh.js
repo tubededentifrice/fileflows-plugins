@@ -1,4 +1,4 @@
-import { Sonarr } from 'Shared/Sonarr';
+import { SonarrVc } from 'Shared/SonarrVc';
 
 /**
  * @description This script will refresh the show through Sonarr
@@ -12,15 +12,15 @@ import { Sonarr } from 'Shared/Sonarr';
 function Script(URI, ApiKey) {
     // Remove trailing / from URI
     URI = URI.replace(/\/$/, '');
-    let sonarr = new Sonarr(URI, ApiKey);
+    let sonarr = new SonarrVc(URI, ApiKey);
     // const folderPath = Variables.folder.Orig.FullName;
     const ogFileName = Variables.file.Orig.FileName;
     const ogFullName = Variables.file.Orig.FullName;
     // let currentFileName = Variables.file.FullName;
     // let newFilePath = null;
 
-    const series = Variables["TVShowInfo"];
-    let seriesId = Variables["movie.SonarrId"];
+    const series = Variables['TVShowInfo'];
+    let seriesId = Variables['movie.SonarrId'];
     if (!seriesId) {
         Logger.WLog(`This script requires the Radarr - Movie search script to be run first`);
         return 2;
@@ -29,10 +29,10 @@ function Script(URI, ApiKey) {
     Logger.ILog(`Refreshing serie ${seriesId}`);
 
     // Fetch the episode of the serie before touching anything
-    // Logic moved to Shared/Sonarr.js
+    // Logic moved to Shared/SonarrVc.js
     let [ogEpisodeFile, episode] = sonarr.fetchEpisode(ogFullName, series);
     if (episode?.id !== undefined) {
-        Logger.ILog(`Original episode found: Season ${episode.seasonNumber} Episode: ${episode.episodeNumber}`)
+        Logger.ILog(`Original episode found: Season ${episode.seasonNumber} Episode: ${episode.episodeNumber}`);
     } else {
         Logger.WLog(`Episode could not be extracted from series`);
     }
@@ -49,7 +49,7 @@ function Script(URI, ApiKey) {
         // Sometimes sonarr doesn't autodetect the transcoded files so we need to manually import it for Sonarr to rename it
         let manualImport = sonarr.fetchManualImportFile(ogFileName, seriesId, episode.seasonNumber);
         if (manualImport) {
-            Logger.ILog('Updated file not auto-detected by Sonarr. Manually importing')
+            Logger.ILog('Updated file not auto-detected by Sonarr. Manually importing');
 
             let importCommand = sonarr.manuallyImportFile(manualImport, episode.id);
             let importCompleted = sonarr.waitForCompletion(importCommand.id, 30000);

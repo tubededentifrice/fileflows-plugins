@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString, truthy } from "Shared/ScriptHelpers";
+import { toEnumerableArray, safeString, truthy } from 'Shared/ScriptHelpers';
 
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
@@ -12,14 +12,22 @@ import { toEnumerableArray, safeString, truthy } from "Shared/ScriptHelpers";
  * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
  * @output Cleaned video
  */
-function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
+function Script(
+    SkipDenoise,
+    AggressiveCompression,
+    UseCPUFilters,
+    AllowCpuFiltersWithHardwareEncode,
+    AutoDeinterlace,
+    MpDecimateAnimation
+) {
     Logger.ILog('Cleaning filters.js revision 40 loaded');
-    
+
     // Parameter normalization
     SkipDenoise = truthy(SkipDenoise) || truthy(Variables.SkipDenoise);
     AggressiveCompression = truthy(AggressiveCompression) || truthy(Variables.AggressiveCompression);
     UseCPUFilters = truthy(UseCPUFilters) || truthy(Variables.UseCPUFilters);
-    AllowCpuFiltersWithHardwareEncode = truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
+    AllowCpuFiltersWithHardwareEncode =
+        truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
     AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
     MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
 
@@ -34,7 +42,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
     function asJoinedString(value) {
         if (!value) return '';
-        const tokens = toEnumerableArray(value, 500).map(safeTokenString).filter(x => x);
+        const tokens = toEnumerableArray(value, 500)
+            .map(safeTokenString)
+            .filter((x) => x);
         if (tokens.length) return tokens.join(' ');
         return safeTokenString(value);
     }
@@ -50,7 +60,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 list.Add(item);
                 return true;
             }
-        } catch (err) { }
+        } catch (err) {}
         return false;
     }
 
@@ -59,7 +69,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         try {
             const existing = toEnumerableArray(list, 2000).map(safeTokenString);
             if (existing.indexOf(item) >= 0) return true;
-        } catch (err) { }
+        } catch (err) {}
         return listAdd(list, item);
     }
 
@@ -69,14 +79,14 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             // JS array or .NET indexer
             list[index] = value;
             return true;
-        } catch (err) { }
+        } catch (err) {}
         try {
             if (typeof list.RemoveAt === 'function' && typeof list.Insert === 'function') {
                 list.RemoveAt(index);
                 list.Insert(index, value);
                 return true;
             }
-        } catch (err) { }
+        } catch (err) {}
         return false;
     }
 
@@ -87,13 +97,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 list.splice(index, 1);
                 return true;
             }
-        } catch (err) { }
+        } catch (err) {}
         try {
             if (typeof list.RemoveAt === 'function') {
                 list.RemoveAt(index);
                 return true;
             }
-        } catch (err) { }
+        } catch (err) {}
         return false;
     }
 
@@ -102,7 +112,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         if (Array.isArray(list)) return list.length;
         try {
             if (typeof list.Count === 'number') return list.Count;
-        } catch (err) { }
+        } catch (err) {}
         return null;
     }
 
@@ -127,8 +137,11 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         let i = 0;
         while (i < listCount(list)) {
             const t = String(safeTokenString(list[i]) || '').trim();
-            if (!predicate(t, i)) { i++; continue; }
-            if (i < (listCount(list) - 1)) {
+            if (!predicate(t, i)) {
+                i++;
+                continue;
+            }
+            if (i < listCount(list) - 1) {
                 if (listRemoveAt(list, i + 1)) removedCount++;
             }
             if (listRemoveAt(list, i)) removedCount++;
@@ -152,7 +165,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         for (let i = 0; i < (filters || []).length; i++) {
             const f = String(filters[i] || '').trim();
             if (!f) continue;
-            const split = f.split(',').map(x => x.trim()).filter(x => x);
+            const split = f
+                .split(',')
+                .map((x) => x.trim())
+                .filter((x) => x);
             for (let j = 0; j < split.length; j++) parts.push(split[j]);
         }
         return parts;
@@ -165,9 +181,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             if (!s) return result;
             const t = String(s).trim();
             const eq = t.indexOf('=');
-            if (eq < 0) { result.name = t; return result; }
+            if (eq < 0) {
+                result.name = t;
+                return result;
+            }
             result.name = t.substring(0, eq);
-            const opts = t.substring(eq + 1).split(':').map(x => x.trim()).filter(x => x);
+            const opts = t
+                .substring(eq + 1)
+                .split(':')
+                .map((x) => x.trim())
+                .filter((x) => x);
             for (let i = 0; i < opts.length; i++) {
                 const o = opts[i];
                 const p = o.indexOf('=');
@@ -217,7 +240,11 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     function tryAppendFilterToBuilderList(videoStream, propName, filter) {
         if (!videoStream || !propName || !filter) return false;
         let current = null;
-        try { current = videoStream[propName]; } catch (err) { return false; }
+        try {
+            current = videoStream[propName];
+        } catch (err) {
+            return false;
+        }
 
         // Some runner versions expose Filter as a single string (one filtergraph).
         try {
@@ -227,40 +254,47 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     videoStream[propName] = filter;
                     return true;
                 }
-                const parts = existing.split(',').map(x => x.trim()).filter(x => x);
+                const parts = existing
+                    .split(',')
+                    .map((x) => x.trim())
+                    .filter((x) => x);
                 if (parts.indexOf(filter) >= 0) return true;
                 videoStream[propName] = existing + ',' + filter;
                 return true;
             }
-        } catch (err) { }
+        } catch (err) {}
 
         // If it's already a mutable JS/.NET list, use it.
         if (listAddUnique(current, filter)) return true;
 
         // Try replacing fixed-size arrays (eg: System.String[]) with a new array that includes the filter.
         try {
-            const existing = toEnumerableArray(current, 2000).map(safeTokenString).filter(x => x);
+            const existing = toEnumerableArray(current, 2000)
+                .map(safeTokenString)
+                .filter((x) => x);
             if (existing.indexOf(filter) >= 0) return true;
             const newArr = System.Array.CreateInstance(System.String, existing.length + 1);
             for (let i = 0; i < existing.length; i++) newArr.SetValue(existing[i], i);
             newArr.SetValue(filter, existing.length);
             videoStream[propName] = newArr;
             return true;
-        } catch (err) { }
+        } catch (err) {}
 
         // Last resort: assign a JS array and hope the runner can enumerate it.
         try {
-            const existing = toEnumerableArray(current, 2000).map(safeTokenString).filter(x => x);
+            const existing = toEnumerableArray(current, 2000)
+                .map(safeTokenString)
+                .filter((x) => x);
             if (existing.indexOf(filter) >= 0) return true;
             videoStream[propName] = existing.concat([filter]);
             return true;
-        } catch (err) { }
+        } catch (err) {}
 
         return false;
     }
 
     function ensureSingleVideoFilterArgAcrossParams(videoStream, filtersToApply, addIfMissing) {
-        const rawFilters = (filtersToApply || []).map(x => String(x || '').trim()).filter(x => x);
+        const rawFilters = (filtersToApply || []).map((x) => String(x || '').trim()).filter((x) => x);
         if (rawFilters.length === 0) return { changed: false, reason: 'no-filters' };
 
         const ep = videoStream ? videoStream.EncodingParameters : null;
@@ -291,9 +325,12 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             if (count0 === null) return false;
             let removed = false;
             let i = 0;
-            while (i < (listCount(list) - 1)) {
+            while (i < listCount(list) - 1) {
                 const t = safeTokenString(list[i]);
-                if (!isVideoFilterFlag(t)) { i++; continue; }
+                if (!isVideoFilterFlag(t)) {
+                    i++;
+                    continue;
+                }
                 if (listRemoveAt(list, i + 1)) removed = true;
                 if (listRemoveAt(list, i)) removed = true;
                 continue;
@@ -301,10 +338,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             return removed;
         };
 
-        const existingChains = [
-            ...collectFilterChains(ep),
-            ...collectFilterChains(ap)
-        ].filter(x => x);
+        const existingChains = [...collectFilterChains(ep), ...collectFilterChains(ap)].filter((x) => x);
 
         if (!addIfMissing && existingChains.length === 0) {
             return { changed: false, reason: 'no-existing-filter-args', before: '', after: '' };
@@ -314,7 +348,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         // If our desired chain contains hwdownload/hwupload, we must preserve ordering and duplicates
         // (eg: format=p010le may be needed before and after CPU filters). Avoid splitting/deduping in this case.
-        const preserveOrderAndDuplicates = rawFilters.some(f => f.indexOf('hwdownload') >= 0 || f.indexOf('hwupload') >= 0);
+        const preserveOrderAndDuplicates = rawFilters.some(
+            (f) => f.indexOf('hwdownload') >= 0 || f.indexOf('hwupload') >= 0
+        );
         if (preserveOrderAndDuplicates) {
             const after = rawFilters.join(',');
             const removedEp = removeAllVideoFilterArgs(ep);
@@ -326,7 +362,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             listAdd(target, '-filter:v:0');
             listAdd(target, after);
 
-            const changed = removedEp || removedAp || (String(before || '').trim() !== String(after || '').trim());
+            const changed = removedEp || removedAp || String(before || '').trim() !== String(after || '').trim();
             return { changed, reason: 'replaced-preserve-order', before, after };
         }
 
@@ -345,19 +381,19 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         }
 
         const isFormatOnlyScaleQsv = (p) => p === 'scale_qsv=format=p010le' || p === 'scale_qsv=format=nv12';
-        const desiredHasVpp = partsToApply.some(p => p.startsWith('vpp_qsv='));
+        const desiredHasVpp = partsToApply.some((p) => p.startsWith('vpp_qsv='));
 
         for (let i = 0; i < partsToApply.length; i++) {
             const desired = partsToApply[i];
             if (!desired) continue;
 
             if (desired.startsWith('vpp_qsv=')) {
-                const vppIndex = mergedParts.findIndex(p => p.startsWith('vpp_qsv='));
+                const vppIndex = mergedParts.findIndex((p) => p.startsWith('vpp_qsv='));
                 if (vppIndex >= 0) {
                     mergedParts[vppIndex] = mergeVppQsv(mergedParts[vppIndex], desired);
                     continue;
                 }
-                const scaleIndex = mergedParts.findIndex(p => isFormatOnlyScaleQsv(p));
+                const scaleIndex = mergedParts.findIndex((p) => isFormatOnlyScaleQsv(p));
                 if (scaleIndex >= 0) {
                     mergedParts[scaleIndex] = desired;
                     continue;
@@ -369,8 +405,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         // If we have vpp_qsv with an explicit format, drop redundant format-only scale_qsv.
         if (desiredHasVpp) {
-            const hasFormatInVpp = mergedParts.some(p => p.startsWith('vpp_qsv=') && p.indexOf('format=') >= 0);
-            if (hasFormatInVpp) mergedParts = mergedParts.filter(p => !isFormatOnlyScaleQsv(p));
+            const hasFormatInVpp = mergedParts.some((p) => p.startsWith('vpp_qsv=') && p.indexOf('format=') >= 0);
+            if (hasFormatInVpp) mergedParts = mergedParts.filter((p) => !isFormatOnlyScaleQsv(p));
         }
 
         const after = mergedParts.join(',');
@@ -384,12 +420,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         listAdd(target, '-filter:v:0');
         listAdd(target, after);
 
-        const changed = removedEp || removedAp || (String(before || '').trim() !== String(after || '').trim());
+        const changed = removedEp || removedAp || String(before || '').trim() !== String(after || '').trim();
         return { changed, reason: existingChains.length ? 'merged-and-deduped' : 'added-filter-arg', before, after };
     }
 
     function preventQsvPixFmtDoubleFilter(videoStream, hwEncoder, targetBitDepth, filtersToApply) {
-        if (!videoStream || hwEncoder !== 'qsv' || !(targetBitDepth >= 10)) return { changed: false, reason: 'not-qsv-10bit' };
+        if (!videoStream || hwEncoder !== 'qsv' || !(targetBitDepth >= 10))
+            return { changed: false, reason: 'not-qsv-10bit' };
 
         // Only remove -pix_fmt if our computed filters already force p010le (so we still get 10-bit surfaces).
         const filterSig = flattenFilterExpressions(filtersToApply).join(',').toLowerCase();
@@ -404,11 +441,17 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
             if (changed) {
                 Variables.removed_pix_fmt_for_qsv = true;
-                Logger.WLog('Removed -pix_fmt from QSV encoder args; filters already force p010le so this prevents Builder injecting a second -filter:v:0 scale_qsv=format=p010le');
+                Logger.WLog(
+                    'Removed -pix_fmt from QSV encoder args; filters already force p010le so this prevents Builder injecting a second -filter:v:0 scale_qsv=format=p010le'
+                );
             }
 
             // Ensure we still request a 10-bit HEVC profile when targeting 10-bit output.
-            const encSig = (asJoinedString(videoStream.EncodingParameters) + ' ' + asJoinedString(videoStream.Codec)).toLowerCase();
+            const encSig = (
+                asJoinedString(videoStream.EncodingParameters) +
+                ' ' +
+                asJoinedString(videoStream.Codec)
+            ).toLowerCase();
             const isHevcQsv = encSig.indexOf('hevc_qsv') >= 0;
             if (isHevcQsv) {
                 const ep = videoStream.EncodingParameters;
@@ -446,7 +489,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         // filter properties when 10-bit output is selected. This causes a duplicate `-filter:v:0` argument
         // when we also add our vpp_qsv filter. Remove any format-only scale_qsv filters so ours takes precedence.
         const isFormatOnlyScaleQsv = (s) => {
-            const t = String(s || '').trim().toLowerCase();
+            const t = String(s || '')
+                .trim()
+                .toLowerCase();
             return t === 'scale_qsv=format=p010le' || t === 'scale_qsv=format=nv12';
         };
 
@@ -460,7 +505,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
                 // Handle string property (single filter chain)
                 if (typeof current === 'string') {
-                    const parts = current.split(',').map(x => x.trim()).filter(x => x && !isFormatOnlyScaleQsv(x));
+                    const parts = current
+                        .split(',')
+                        .map((x) => x.trim())
+                        .filter((x) => x && !isFormatOnlyScaleQsv(x));
                     const newValue = parts.join(',');
                     if (newValue !== current) {
                         videoStream[propName] = newValue || null;
@@ -499,7 +547,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             asJoinedString(videoStream.EncodingParameters),
             asJoinedString(videoStream.AdditionalParameters),
             asJoinedString(videoStream.Codec)
-        ].join(' ').toLowerCase();
+        ]
+            .join(' ')
+            .toLowerCase();
 
         if (signature.includes('_qsv') || signature.includes(' qsv')) return 'qsv';
         if (signature.includes('_vaapi') || signature.includes(' vaapi')) return 'vaapi';
@@ -516,11 +566,20 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             asJoinedString(videoStream.Filters),
             asJoinedString(videoStream.OptionalFilter),
             safeTokenString(videoStream.Codec)
-        ].join(' ').toLowerCase();
+        ]
+            .join(' ')
+            .toLowerCase();
 
         // Many FileFlows "10-bit" presets express the target bit depth via scale_qsv/vpp_qsv filters (format=p010le),
         // not via explicit -pix_fmt/-profile args. Detect these too so we don't accidentally fall back to nv12.
-        if (signature.includes('p010') || signature.includes('format=p010le') || signature.includes('main10') || signature.includes('10bit') || signature.includes('10-bit')) return 10;
+        if (
+            signature.includes('p010') ||
+            signature.includes('format=p010le') ||
+            signature.includes('main10') ||
+            signature.includes('10bit') ||
+            signature.includes('10-bit')
+        )
+            return 10;
         return 8;
     }
 
@@ -534,8 +593,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         if (near(fps, 23.976, 0.06) || near(fps, 23.98, 0.06) || near(fps, 24.0, 0.06)) return '24000/1001';
         if (near(fps, 25.0, 0.06)) return '25';
         if (near(fps, 29.97, 0.08) || near(fps, 30.0, 0.08)) return '30000/1001';
-        if (near(fps, 50.0, 0.10)) return '50';
-        if (near(fps, 59.94, 0.10) || near(fps, 60.0, 0.10)) return '60000/1001';
+        if (near(fps, 50.0, 0.1)) return '50';
+        if (near(fps, 59.94, 0.1) || near(fps, 60.0, 0.1)) return '60000/1001';
 
         // Default for animation workflows.
         return '24000/1001';
@@ -548,15 +607,21 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             if (!ep && !ap) return { changed: false, reason: 'no-param-lists' };
 
             const isVsyncFlag = (t) => {
-                const s = String(t || '').trim().toLowerCase();
+                const s = String(t || '')
+                    .trim()
+                    .toLowerCase();
                 return s === '-vsync' || s.startsWith('-vsync:');
             };
             const isFpsModeFlag = (t) => {
-                const s = String(t || '').trim().toLowerCase();
+                const s = String(t || '')
+                    .trim()
+                    .toLowerCase();
                 return s === '-fps_mode' || s.startsWith('-fps_mode:');
             };
             const isRFlag = (t) => {
-                const s = String(t || '').trim().toLowerCase();
+                const s = String(t || '')
+                    .trim()
+                    .toLowerCase();
                 return s === '-r' || s.startsWith('-r:');
             };
 
@@ -578,7 +643,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 listAdd(target, String(outputRate));
             }
 
-            const removedAny = (r1.removed || r2.removed || r3.removed || r4.removed || r5.removed || r6.removed);
+            const removedAny = r1.removed || r2.removed || r3.removed || r4.removed || r5.removed || r6.removed;
             const changed = removedAny || true; // always adds fps_mode cfr (+ optional -r)
             return { changed, reason: removedAny ? 'replaced-existing' : 'added' };
         } catch (err) {
@@ -591,18 +656,27 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             const tokens = [
                 ...toEnumerableArray(videoStream.EncodingParameters, 5000).map(safeTokenString),
                 ...toEnumerableArray(videoStream.AdditionalParameters, 5000).map(safeTokenString)
-            ].map(x => String(x || '').trim()).filter(x => x);
+            ]
+                .map((x) => String(x || '').trim())
+                .filter((x) => x);
 
             for (let i = 0; i < tokens.length - 1; i++) {
                 const t = tokens[i].toLowerCase();
                 const n = (tokens[i + 1] || '').toLowerCase();
-                if (t === '-hwaccel_output_format' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
+                if (t === '-hwaccel_output_format' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va'))
+                    return true;
                 if (t === '-hwaccel' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
             }
 
             const sig = tokens.join(' ').toLowerCase();
-            if (sig.includes('init_hw_device') || sig.includes('filter_hw_device') || sig.includes('hwupload') || sig.includes('hwmap')) return true;
-        } catch (err) { }
+            if (
+                sig.includes('init_hw_device') ||
+                sig.includes('filter_hw_device') ||
+                sig.includes('hwupload') ||
+                sig.includes('hwmap')
+            )
+                return true;
+        } catch (err) {}
         return false;
     }
 
@@ -616,7 +690,22 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     function measureFramesForSegment(ffmpegPath, inputFile, ssSeconds, sampleSeconds, vf) {
-        const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-progress', 'pipe:1', '-ss', String(ssSeconds), '-i', inputFile, '-an', '-sn', '-t', String(sampleSeconds)];
+        const args = [
+            '-nostdin',
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-progress',
+            'pipe:1',
+            '-ss',
+            String(ssSeconds),
+            '-i',
+            inputFile,
+            '-an',
+            '-sn',
+            '-t',
+            String(sampleSeconds)
+        ];
         if (vf) {
             args.push('-vf');
             args.push(vf);
@@ -649,7 +738,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         const sampleSeconds = 12;
         let ss = 0;
-        if (durationSeconds && durationSeconds > (sampleSeconds + 40)) {
+        if (durationSeconds && durationSeconds > sampleSeconds + 40) {
             ss = Math.min(300, Math.max(30, Math.floor(durationSeconds * 0.25)));
         }
 
@@ -657,7 +746,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         const decFrames = measureFramesForSegment(ffmpegPath, inputFile, ss, sampleSeconds, mpDecimateFilter);
         if (!baseFrames || !decFrames) return { enable: false, reason: 'probe-failed' };
 
-        const dropRatio = 1 - (decFrames / baseFrames);
+        const dropRatio = 1 - decFrames / baseFrames;
         Variables.mpdecimate_probe_ss = ss;
         Variables.mpdecimate_probe_seconds = sampleSeconds;
         Variables.mpdecimate_probe_base_frames = baseFrames;
@@ -666,12 +755,15 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         // Enable when we save a meaningful number of frames (helps compression) without forcing VFR for negligible gains.
         const threshold = year <= 2010 ? 0.05 : 0.08;
-        return dropRatio >= threshold ? { enable: true, reason: `probe-drop>=${threshold}` } : { enable: false, reason: `probe-drop<${threshold}` };
+        return dropRatio >= threshold
+            ? { enable: true, reason: `probe-drop>=${threshold}` }
+            : { enable: false, reason: `probe-drop<${threshold}` };
     }
 
     function buildMpDecimateFilter(force) {
         if (force === null || force === undefined) return 'mpdecimate';
-        if (force === true || force === 1 || force === '1' || String(force).toLowerCase() === 'true') return 'mpdecimate';
+        if (force === true || force === 1 || force === '1' || String(force).toLowerCase() === 'true')
+            return 'mpdecimate';
 
         const s = String(force).trim();
         if (!s) return 'mpdecimate';
@@ -703,9 +795,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         // Insert right before the first hwupload occurrence.
         // Works for both '...,hwupload' and '...,hwupload=...'
-        return s
-            .replace(',hwupload=', `,${fmt},hwupload=`)
-            .replace(',hwupload', `,${fmt},hwupload`);
+        return s.replace(',hwupload=', `,${fmt},hwupload=`).replace(',hwupload', `,${fmt},hwupload`);
     }
 
     function getVppQsvFormat(bitDepth) {
@@ -778,12 +868,30 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
             const process = Flow.Execute({
                 command: ffmpegPath,
-                argumentList: ['-hide_banner', '-nostats', '-ss', String(ss), '-i', inputFile, '-an', '-sn', '-vf', 'idet', '-frames:v', String(framesPerSample), '-f', 'null', '-'],
+                argumentList: [
+                    '-hide_banner',
+                    '-nostats',
+                    '-ss',
+                    String(ss),
+                    '-i',
+                    inputFile,
+                    '-an',
+                    '-sn',
+                    '-vf',
+                    'idet',
+                    '-frames:v',
+                    String(framesPerSample),
+                    '-f',
+                    'null',
+                    '-'
+                ],
                 timeout: 300
             });
 
             const output = (process.standardError || '') + '\n' + (process.standardOutput || '');
-            const match = output.match(/Multi frame detection:\\s*TFF:\\s*(\\d+)\\s*BFF:\\s*(\\d+)\\s*Progressive:\\s*(\\d+)\\s*Undetermined:\\s*(\\d+)/i);
+            const match = output.match(
+                /Multi frame detection:\\s*TFF:\\s*(\\d+)\\s*BFF:\\s*(\\d+)\\s*Progressive:\\s*(\\d+)\\s*Undetermined:\\s*(\\d+)/i
+            );
             if (match) {
                 tff += parseInt(match[1]) || 0;
                 bff += parseInt(match[2]) || 0;
@@ -797,7 +905,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         const interlacedFrames = tff + bff;
         // Conservative: require at least 50 interlaced frames and at least 15% of samples.
-        const interlaced = interlacedFrames >= 50 && (interlacedFrames / total) >= 0.15;
+        const interlaced = interlacedFrames >= 50 && interlacedFrames / total >= 0.15;
         return { interlaced, reason: 'idet', tff, bff, progressive, undetermined };
     }
 
@@ -810,9 +918,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const genres = Variables.VideoMetadata?.Genres || [];
 
     // Override variables (set these in upstream nodes to force specific filter values)
-    const forceVppQsv = Variables.vpp_qsv;          // e.g., "50" (Intel QSV vpp denoise, 0-64)
-    const forceHqdn3d = Variables.hqdn3d;           // e.g., "2:2:6:6" (CPU)
-    const forceMpDecimateValue = Variables.mpdecimate;  // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
+    const forceVppQsv = Variables.vpp_qsv; // e.g., "50" (Intel QSV vpp denoise, 0-64)
+    const forceHqdn3d = Variables.hqdn3d; // e.g., "2:2:6:6" (CPU)
+    const forceMpDecimateValue = Variables.mpdecimate; // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
     const mpDecimateFilter = buildMpDecimateFilter(forceMpDecimateValue);
 
     const ffmpeg = Variables.FfmpegBuilderModel;
@@ -843,9 +951,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const isRestoredContent = year <= 2000 && (isHighBitrate || isVeryHighBitrate);
 
     // Content type detection
-    const isAnimation = genres !== null && (genres.includes("Animation") || genres.includes("Anime"));
-    const isDocumentary = genres !== null && genres.includes("Documentary");
-    const isHorror = genres !== null && (genres.includes("Horror") || genres.includes("Thriller"));
+    const isAnimation = genres !== null && (genres.includes('Animation') || genres.includes('Anime'));
+    const isDocumentary = genres !== null && genres.includes('Documentary');
+    const isHorror = genres !== null && (genres.includes('Horror') || genres.includes('Thriller'));
     const isOldCelAnimation = isAnimation && year <= 1995; // Cel animation era (hand-drawn on film)
 
     // Detect encoder type (best-effort) so we can avoid breaking hardware pipelines
@@ -866,7 +974,12 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             const isHevcQsv = encSig.indexOf('hevc_qsv') >= 0;
             if (isHevcQsv && listCount(video.EncodingParameters) !== null) {
                 const profilePred = (t) => t === '-profile' || t.startsWith('-profile:') || t.startsWith('-profile:v');
-                const addedProfile = ensureArgWithValue(video.EncodingParameters, '-profile:v:0', 'main10', profilePred);
+                const addedProfile = ensureArgWithValue(
+                    video.EncodingParameters,
+                    '-profile:v:0',
+                    'main10',
+                    profilePred
+                );
                 if (addedProfile) {
                     Variables.applied_qsv_profile = 'main10';
                     Logger.ILog('Ensured QSV profile: -profile:v:0 main10');
@@ -892,17 +1005,23 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             asJoinedString(video.EncodingParameters),
             asJoinedString(video.AdditionalParameters),
             asJoinedString(video.Codec)
-        ].join(' ').trim();
+        ]
+            .join(' ')
+            .trim();
         if (sig) Logger.DLog(`Hardware encoder detection signature (first 200 chars): ${sig.substring(0, 200)}`);
     }
 
     if (isHardwareEncode && UseCPUFilters && !AllowCpuFiltersWithHardwareEncode) {
-        Logger.WLog(`Hardware encoder detected (${hwEncoder}); ignoring UseCPUFilters to avoid filter pipeline failures.`);
+        Logger.WLog(
+            `Hardware encoder detected (${hwEncoder}); ignoring UseCPUFilters to avoid filter pipeline failures.`
+        );
         UseCPUFilters = false;
     }
 
     // Log detection results
-    Logger.ILog(`Content: ${year}, genres: ${genres.join(', ')}, bitrate=${Math.round(bitrateKbps / 1000)}Mbps, encoder=${hwEncoder || 'cpu'}, sourceBits=${sourceBits || 'unk'}, HDR=${isHDR}, DoVi=${isDolbyVision}`);
+    Logger.ILog(
+        `Content: ${year}, genres: ${genres.join(', ')}, bitrate=${Math.round(bitrateKbps / 1000)}Mbps, encoder=${hwEncoder || 'cpu'}, sourceBits=${sourceBits || 'unk'}, HDR=${isHDR}, DoVi=${isDolbyVision}`
+    );
     if (isRestoredContent) {
         Logger.ILog(`Detected restored content (high bitrate old content)`);
     }
@@ -1020,7 +1139,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         mpDecimateReason = 'not-animation';
     } else if (hwEncoder && (hwEncoder !== 'qsv' || !AllowCpuFiltersWithHardwareEncode)) {
         enableMpDecimate = false;
-        mpDecimateReason = hwEncoder !== 'qsv' ? `unsupported-hw-encoder:${hwEncoder}` : 'skipped (hardware-encode-no-cpu-allowed)';
+        mpDecimateReason =
+            hwEncoder !== 'qsv' ? `unsupported-hw-encoder:${hwEncoder}` : 'skipped (hardware-encode-no-cpu-allowed)';
     } else {
         if (forceMpDecimate) {
             enableMpDecimate = true;
@@ -1029,7 +1149,14 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             try {
                 const ffmpegPath = Flow.GetToolPath('FFmpeg') || Flow.GetToolPath('ffmpeg') || Variables.ffmpeg;
                 const inputFile = Variables.file?.Orig?.FullName || Variables.file?.FullName || Flow.WorkingFile;
-                const decision = shouldEnableMpDecimateAuto(ffmpegPath, inputFile, duration, sourceFps, year, isAnimation);
+                const decision = shouldEnableMpDecimateAuto(
+                    ffmpegPath,
+                    inputFile,
+                    duration,
+                    sourceFps,
+                    year,
+                    isAnimation
+                );
                 enableMpDecimate = decision.enable;
                 mpDecimateReason = decision.reason;
             } catch (err) {
@@ -1070,7 +1197,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Variables.interlace_undetermined = idet.undetermined;
                 Variables.detected_interlaced = idet.interlaced;
 
-                Logger.ILog(`Interlace detect: interlaced=${idet.interlaced} (TFF=${idet.tff}, BFF=${idet.bff}, P=${idet.progressive}, U=${idet.undetermined})`);
+                Logger.ILog(
+                    `Interlace detect: interlaced=${idet.interlaced} (TFF=${idet.tff}, BFF=${idet.bff}, P=${idet.progressive}, U=${idet.undetermined})`
+                );
 
                 if (idet.interlaced) {
                     const addedVia = addVideoFilter(video, 'deinterlace_qsv');
@@ -1083,7 +1212,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     addedHardwareOnlyFilters = true;
                 }
             } else {
-                Logger.WLog('AutoDeinterlace enabled but ffmpeg path or input file missing; skipping interlace detection');
+                Logger.WLog(
+                    'AutoDeinterlace enabled but ffmpeg path or input file missing; skipping interlace detection'
+                );
             }
         } catch (err) {
             Logger.WLog(`AutoDeinterlace failed: ${err}`);
@@ -1101,14 +1232,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Logger.ILog(`Forced CPU denoise: hqdn3d=${hqdn3dValue}`);
             } else {
                 // Convert level to hqdn3d params: spatial 0-8, temporal 0-16
-                const spatial = (denoiseLevel * 8 / 100).toFixed(1);
-                const temporal = (denoiseLevel * 16 / 100).toFixed(1);
+                const spatial = ((denoiseLevel * 8) / 100).toFixed(1);
+                const temporal = ((denoiseLevel * 16) / 100).toFixed(1);
                 hqdn3dValue = `${spatial}:${spatial}:${temporal}:${temporal}`;
                 Logger.ILog(`Auto CPU denoise for ${year}: hqdn3d=${hqdn3dValue} (level ${denoiseLevel}%)`);
             }
             const addedVia = addVideoFilter(video, `hqdn3d=${hqdn3dValue}`);
             if (!addedVia) {
-                Logger.ELog(`Unable to attach CPU denoise filter; no compatible filter collection found on video stream.`);
+                Logger.ELog(
+                    `Unable to attach CPU denoise filter; no compatible filter collection found on video stream.`
+                );
                 return -1;
             }
             Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
@@ -1132,7 +1265,6 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 appliedFiltersSummary.push(`deband=${debandParams}`);
                 appliedFiltersForExecutor.push(`deband=${debandParams}`);
             }
-
         } else if (UseCPUFilters && !isHardwareEncode && cpuFiltersNeedHwBridge()) {
             // ===== CPU FILTERS WITH HW FRAMES: download to system memory, apply CPU filters, (no upload needed for CPU encoders) =====
             let hqdn3dValue;
@@ -1140,10 +1272,12 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 hqdn3dValue = forceHqdn3d;
                 Logger.ILog(`Forced CPU denoise (hwdownload path): hqdn3d=${hqdn3dValue}`);
             } else {
-                const spatial = (denoiseLevel * 8 / 100).toFixed(1);
-                const temporal = (denoiseLevel * 16 / 100).toFixed(1);
+                const spatial = ((denoiseLevel * 8) / 100).toFixed(1);
+                const temporal = ((denoiseLevel * 16) / 100).toFixed(1);
                 hqdn3dValue = `${spatial}:${spatial}:${temporal}:${temporal}`;
-                Logger.ILog(`Auto CPU denoise (hwdownload path) for ${year}: hqdn3d=${hqdn3dValue} (level ${denoiseLevel}%)`);
+                Logger.ILog(
+                    `Auto CPU denoise (hwdownload path) for ${year}: hqdn3d=${hqdn3dValue} (level ${denoiseLevel}%)`
+                );
             }
             hybridCpuFilters.push(`hqdn3d=${hqdn3dValue}`);
             Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
@@ -1173,8 +1307,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     qsvDenoiseValue = Math.max(0, Math.min(64, parseInt(forceVppQsv) || 32));
                     Logger.ILog(`Forced QSV denoise: vpp_qsv=denoise=${qsvDenoiseValue}`);
                 } else {
-                    qsvDenoiseValue = Math.max(0, Math.min(64, Math.round(denoiseLevel * 64 / 100)));
-                    Logger.ILog(`Auto QSV denoise for ${year}: vpp_qsv=denoise=${qsvDenoiseValue} (level ${denoiseLevel}%)`);
+                    qsvDenoiseValue = Math.max(0, Math.min(64, Math.round((denoiseLevel * 64) / 100)));
+                    Logger.ILog(
+                        `Auto QSV denoise for ${year}: vpp_qsv=denoise=${qsvDenoiseValue} (level ${denoiseLevel}%)`
+                    );
                 }
 
                 const vppFormat = getVppQsvFormat(targetBitDepth);
@@ -1183,8 +1319,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 // To ensure denoise is actually applied, take over the crop and generate a single vpp_qsv filter with denoise+crop+format.
                 let vppFilter;
                 if (hasCrop(video)) {
-                    vppFilter = buildVppQsvFilterWithExistingCrop(video, [`denoise=${qsvDenoiseValue}`, `format=${vppFormat}`]);
-                    try { video.Crop = null; } catch (err) { }
+                    vppFilter = buildVppQsvFilterWithExistingCrop(video, [
+                        `denoise=${qsvDenoiseValue}`,
+                        `format=${vppFormat}`
+                    ]);
+                    try {
+                        video.Crop = null;
+                    } catch (err) {}
                 } else {
                     vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
                 }
@@ -1195,7 +1336,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 // to prevent duplicate -filter:v:0 arguments in the final command.
                 const removedScaleQsv = removeScaleQsvFormatFilters(video);
                 if (removedScaleQsv > 0) {
-                    Logger.ILog(`Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`);
+                    Logger.ILog(
+                        `Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`
+                    );
                 }
 
                 // Debug: Deep dump of FfmpegBuilderModel and Video stream to JSON
@@ -1216,7 +1359,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                             }
                             return items;
                         }
-                    } catch (e) { }
+                    } catch (e) {}
 
                     // Check for IEnumerable
                     try {
@@ -1225,19 +1368,24 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                             const enumerator = val.GetEnumerator();
                             let count = 0;
                             while (enumerator.MoveNext() && count < 20) {
-                                items.push(dumpValue(enumerator.Current, depth + 1, maxDepth, path + '[' + count + ']'));
+                                items.push(
+                                    dumpValue(enumerator.Current, depth + 1, maxDepth, path + '[' + count + ']')
+                                );
                                 count++;
                             }
                             if (items.length > 0) return items;
                         }
-                    } catch (e) { }
+                    } catch (e) {}
 
                     // Regular object - enumerate properties
                     if (typeof val === 'object') {
                         const result = {};
                         let propCount = 0;
                         for (const key in val) {
-                            if (propCount > 30) { result['...'] = 'truncated'; break; }
+                            if (propCount > 30) {
+                                result['...'] = 'truncated';
+                                break;
+                            }
                             try {
                                 const propVal = val[key];
                                 if (typeof propVal !== 'function') {
@@ -1343,7 +1491,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                     }
                 }
             } else {
-                Logger.WLog(`Hardware encoder detected (${hwEncoder}), but no safe hardware denoise is configured in this script; skipping denoise.`);
+                Logger.WLog(
+                    `Hardware encoder detected (${hwEncoder}), but no safe hardware denoise is configured in this script; skipping denoise.`
+                );
                 Variables.applied_denoise = 'none (hardware)';
             }
         }
@@ -1366,7 +1516,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         } else {
             // CPU frames path: attach directly, even if encoding is QSV (FFmpeg will upload frames for the encoder).
             const mp = shouldAddSetPtsAfterMpDecimate(mpDecimateFilter)
-                ? (mpDecimateFilter + ',setpts=N/FRAME_RATE/TB')
+                ? mpDecimateFilter + ',setpts=N/FRAME_RATE/TB'
                 : mpDecimateFilter;
             const addedVia = addVideoFilter(video, mp);
             if (!addedVia) {
@@ -1384,9 +1534,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // Banding can be introduced by the source (8-bit / heavy compression) or made more visible by HDR and some displays.
     // We keep this conservative: apply mild gradfun for HDR/DoVi, and stronger deband mainly for animation/8-bit sources.
     if (!skipBandingFix) {
-        const wantGradfun = (isHDR || isDolbyVision) || (!isAnimation && year <= 2005);
+        const wantGradfun = isHDR || isDolbyVision || (!isAnimation && year <= 2005);
         if (wantGradfun) {
-            const gradfun = (isHDR || isDolbyVision) ? 'gradfun=strength=0.9:radius=16' : 'gradfun=strength=1.2:radius=16';
+            const gradfun =
+                isHDR || isDolbyVision ? 'gradfun=strength=0.9:radius=16' : 'gradfun=strength=1.2:radius=16';
             if (isHardwareEncode && !AllowCpuFiltersWithHardwareEncode) {
                 Logger.ILog('Skipping gradfun due to hardware encoder (CPU filter)');
             } else if (cpuFiltersNeedHwBridge()) {
@@ -1405,7 +1556,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
         // Deband is more aggressive; keep it mostly to animation and 8-bit sources where banding is common.
         const likely8bitSource = sourceBits === 8 || (sourceBits === 0 && targetBitDepth >= 10);
-        const wantDeband = forceDeband || (isAnimation && year <= 2015) || (likely8bitSource && (isHDR || isDolbyVision));
+        const wantDeband =
+            forceDeband || (isAnimation && year <= 2015) || (likely8bitSource && (isHDR || isDolbyVision));
         if (wantDeband && !Variables.applied_deband) {
             let debandParams;
             if (isHDR || isDolbyVision) {
@@ -1455,12 +1607,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         }
         const addedVia = addVideoFilter(video, hybrid);
         if (!addedVia) {
-            Logger.ELog(`Unable to attach hybrid CPU filter chain; no compatible filter collection found on video stream.`);
+            Logger.ELog(
+                `Unable to attach hybrid CPU filter chain; no compatible filter collection found on video stream.`
+            );
             return -1;
         }
         Variables.applied_hybrid_cpu_filters = hybridCpuFilters.join(',');
         Variables.applied_hybrid_cpu_filters_mode = needUploadBackToHw ? 'hwdownload+hwupload' : 'hwdownload-only';
-        Logger.ILog(`Attached hybrid CPU filter chain (${Variables.applied_hybrid_cpu_filters_mode}) via ${addedVia}: ${hybrid}`);
+        Logger.ILog(
+            `Attached hybrid CPU filter chain (${Variables.applied_hybrid_cpu_filters_mode}) via ${addedVia}: ${hybrid}`
+        );
         appliedFiltersForExecutor.push(hybrid);
     }
 
@@ -1486,8 +1642,13 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // are present in the encoding filter argument.
     try {
         const hasFiltersToApply = appliedFiltersForExecutor.length > 0;
-        const forceEncodingParamFilter = hasFiltersToApply || truthy(Variables['CleaningFilters.ForceEncodingParamFilter']);
-        const ensured = ensureSingleVideoFilterArgAcrossParams(video, appliedFiltersForExecutor, forceEncodingParamFilter);
+        const forceEncodingParamFilter =
+            hasFiltersToApply || truthy(Variables['CleaningFilters.ForceEncodingParamFilter']);
+        const ensured = ensureSingleVideoFilterArgAcrossParams(
+            video,
+            appliedFiltersForExecutor,
+            forceEncodingParamFilter
+        );
         if (ensured.changed) {
             const b = ensured.before ? ensured.before.substring(0, 220) : '';
             const a = ensured.after ? ensured.after.substring(0, 220) : '';
@@ -1522,7 +1683,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
      * OPTIONAL (manual use / not implemented here):
      *   - nlmeans: High quality denoiser (very slow, use for archival)
      *   - unsharp: Sharpening after denoise (can hurt compression)
-    */
+     */
 
     // Apply QSV tuning (only add if missing).
     if (hwEncoder === 'qsv') {
@@ -1531,7 +1692,14 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             if (listCount(ep) === null) {
                 Logger.WLog('Unable to apply QSV tuning params: EncodingParameters is not a mutable list');
             } else {
-                const fps = parseFloat(Variables.video?.FramesPerSecond || Variables.vi?.FramesPerSecond || Variables.vi?.FPS || Variables.video?.FPS || 24) || 24;
+                const fps =
+                    parseFloat(
+                        Variables.video?.FramesPerSecond ||
+                            Variables.vi?.FramesPerSecond ||
+                            Variables.vi?.FPS ||
+                            Variables.video?.FPS ||
+                            24
+                    ) || 24;
                 const gop = Math.max(48, Math.min(300, Math.round(fps * 5))); // ~5 seconds keyframe interval
 
                 const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
@@ -1541,7 +1709,8 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
                 // B-frames / refs (mostly impacts compression at same quality).
                 if (ensureArgWithValue(ep, '-bf', '7', isFlag('-bf'))) added.push('-bf 7');
-                const desiredRefs = (isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent)) ? '6' : '4';
+                const desiredRefs =
+                    isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent) ? '6' : '4';
                 if (ensureArgWithValue(ep, '-refs', desiredRefs, isFlag('-refs'))) added.push(`-refs ${desiredRefs}`);
 
                 // Adaptive frame decisions.
@@ -1568,11 +1737,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     // These FFmpeg-level options work with any encoder (QSV, NVENC, libx265, etc.) and ensure
     // HDR10/Dolby Vision color signaling is preserved in the output stream.
     if (isHDR || isDolbyVision) {
-        const hdrColorParams = [
-            '-color_primaries', 'bt2020',
-            '-color_trc', 'smpte2084',
-            '-colorspace', 'bt2020nc'
-        ];
+        const hdrColorParams = ['-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc'];
 
         try {
             const ep = video.EncodingParameters;
@@ -1592,12 +1757,20 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
 
     // Log the stream filter state (do not mutate the builder model here).
     try {
-        const filterList = toEnumerableArray(video.Filter, 2000).map(safeTokenString).filter(x => x);
-        const filtersList = toEnumerableArray(video.Filters, 2000).map(safeTokenString).filter(x => x);
-        const optionalList = toEnumerableArray(video.OptionalFilter, 2000).map(safeTokenString).filter(x => x);
+        const filterList = toEnumerableArray(video.Filter, 2000)
+            .map(safeTokenString)
+            .filter((x) => x);
+        const filtersList = toEnumerableArray(video.Filters, 2000)
+            .map(safeTokenString)
+            .filter((x) => x);
+        const optionalList = toEnumerableArray(video.OptionalFilter, 2000)
+            .map(safeTokenString)
+            .filter((x) => x);
         Logger.ILog(`ffmpeg.VideoStreams[0].Filter: ${filterList.length ? filterList.join(',') : '(empty)'}`);
         Logger.ILog(`ffmpeg.VideoStreams[0].Filters: ${filtersList.length ? filtersList.join(',') : '(empty)'}`);
-        Logger.ILog(`ffmpeg.VideoStreams[0].OptionalFilter: ${optionalList.length ? optionalList.join(',') : '(empty)'}`);
+        Logger.ILog(
+            `ffmpeg.VideoStreams[0].OptionalFilter: ${optionalList.length ? optionalList.join(',') : '(empty)'}`
+        );
     } catch (err) {
         Logger.WLog(`Unable to enumerate ffmpeg.VideoStreams[0] filter properties: ${err}`);
     }

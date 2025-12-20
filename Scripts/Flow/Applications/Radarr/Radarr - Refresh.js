@@ -1,4 +1,4 @@
-import { Radarr } from 'Shared/Radarr';
+import { RadarrVc } from 'Shared/RadarrVc';
 
 /**
  * @description This script will send a refresh command to Radarr
@@ -12,13 +12,13 @@ import { Radarr } from 'Shared/Radarr';
 function Script(URI, ApiKey) {
     // Remove trailing / from URI
     URI = URI.replace(/\/$/, '');
-    let radarr = new Radarr(URI, ApiKey);
+    let radarr = new RadarrVc(URI, ApiKey);
     // let folderPath = Variables.folder.FullName;
     // let currentFileName = Variables.file.Name;
     // let newFilePath = null;
 
     // Find movie name from radarr
-    let movieId = Variables["movie.RadarrId"];
+    let movieId = Variables['movie.RadarrId'];
     if (!movieId) {
         Logger.WLog(`This script requires the Radarr - Movie search script to be run first`);
         return 2;
@@ -46,12 +46,11 @@ function Script(URI, ApiKey) {
         let refreshBody = {
             movieIds: [movieId],
             isNewMovie: false
-        }
-        let refreshData = radarr.sendCommand('RefreshMovie', refreshBody)
+        };
+        let refreshData = radarr.sendCommand('RefreshMovie', refreshBody);
         Logger.ILog(`Movie refreshed: ${JSON.stringify(refreshData)}`);
 
         return 1;
-
     } catch (error) {
         Logger.WLog('Error: ' + error.message);
     }

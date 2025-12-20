@@ -1,5 +1,12 @@
-import { FfmpegBuilderDefaults } from "Shared/FfmpegBuilderDefaults";
-import { toEnumerableArray, safeString, clampNumber, truthy, parseDurationSeconds, secondsToClock } from "Shared/ScriptHelpers";
+import { FfmpegBuilderDefaults } from 'Shared/FfmpegBuilderDefaults';
+import {
+    toEnumerableArray,
+    safeString,
+    clampNumber,
+    truthy,
+    parseDurationSeconds,
+    secondsToClock
+} from 'Shared/ScriptHelpers';
 
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
@@ -28,14 +35,20 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 try {
                     const o = JSON.parse(s);
                     if (o && o.FileName) return String(o.FileName).trim();
-                } catch (err) { }
+                } catch (err) {}
             }
             return s;
         }
         if (typeof value === 'object') {
-            try { if (value.FileName) return String(value.FileName).trim(); } catch (err) { }
-            try { if (value.FullName) return String(value.FullName).trim(); } catch (err) { }
-            try { if (value.Path) return String(value.Path).trim(); } catch (err) { }
+            try {
+                if (value.FileName) return String(value.FileName).trim();
+            } catch (err) {}
+            try {
+                if (value.FullName) return String(value.FullName).trim();
+            } catch (err) {}
+            try {
+                if (value.Path) return String(value.Path).trim();
+            } catch (err) {}
         }
         // Fallback: avoid JSON-stringifying objects into -i
         return '';
@@ -49,11 +62,24 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         let escape = false;
         for (let i = 0; i < input.length; i++) {
             const ch = input[i];
-            if (escape) { cur += ch; escape = false; continue; }
-            if (ch === '\\\\') { escape = true; continue; }
-            if (ch === '"') { inQuotes = !inQuotes; continue; }
+            if (escape) {
+                cur += ch;
+                escape = false;
+                continue;
+            }
+            if (ch === '\\\\') {
+                escape = true;
+                continue;
+            }
+            if (ch === '"') {
+                inQuotes = !inQuotes;
+                continue;
+            }
             if (!inQuotes && (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n')) {
-                if (cur.length) { out.push(cur); cur = ''; }
+                if (cur.length) {
+                    out.push(cur);
+                    cur = '';
+                }
                 continue;
             }
             cur += ch;
@@ -63,7 +89,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     function flattenTokenList(value) {
-        const items = toEnumerableArray(value, 5000).map(safeTokenString).map(x => String(x || '').trim()).filter(x => x);
+        const items = toEnumerableArray(value, 5000)
+            .map(safeTokenString)
+            .map((x) => String(x || '').trim())
+            .filter((x) => x);
         const out = [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
@@ -79,7 +108,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     function quoteForAudit(arg) {
-        const s = String((arg === undefined || arg === null) ? '' : arg);
+        const s = String(arg === undefined || arg === null ? '' : arg);
         if (s.length === 0) return '""';
         if (!/[\\s\"]/g.test(s)) return s;
         return '"' + s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"') + '"';
@@ -98,8 +127,16 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         let escaped = false;
         for (let i = 0; i < s.length; i++) {
             const ch = s[i];
-            if (escaped) { cur += ch; escaped = false; continue; }
-            if (ch === '\\\\') { cur += ch; escaped = true; continue; }
+            if (escaped) {
+                cur += ch;
+                escaped = false;
+                continue;
+            }
+            if (ch === '\\\\') {
+                cur += ch;
+                escaped = true;
+                continue;
+            }
             if (ch === ',') {
                 const t = cur.trim();
                 if (t) parts.push(t);
@@ -137,8 +174,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
         // Common FileFlows/FFmpeg Builder artifact: injected `scale_qsv=format=p010le` for 10-bit output.
         // If the chain already forces the same format (eg via vpp_qsv=...:format=p010le), drop the redundant segment.
-        const lowered = flat.map(x => x.toLowerCase());
-        const hasP010 = lowered.some(x => x.indexOf('format=p010le') >= 0 || x.indexOf('p010le') >= 0);
+        const lowered = flat.map((x) => x.toLowerCase());
+        const hasP010 = lowered.some((x) => x.indexOf('format=p010le') >= 0 || x.indexOf('p010le') >= 0);
         if (hasP010) {
             for (let i = flat.length - 1; i >= 0; i--) {
                 const seg = lowered[i];
@@ -168,7 +205,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 out.push(t);
                 continue;
             }
-            const val = (i + 1 < tokens.length) ? String(tokens[i + 1] || '').trim() : '';
+            const val = i + 1 < tokens.length ? String(tokens[i + 1] || '').trim() : '';
             if (val) filters.push(val);
             i++; // skip value token
         }
@@ -193,7 +230,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     function extractCodecFromArgs(tokens) {
         // Extracts codec from patterns like: -c:v:0 hevc_qsv, -c:v hevc_qsv, -c copy
         for (let i = 0; i < (tokens || []).length - 1; i++) {
-            const t = String(tokens[i] || '').trim().toLowerCase();
+            const t = String(tokens[i] || '')
+                .trim()
+                .toLowerCase();
             if (t === '-c' || t.indexOf('-c:') === 0) {
                 const codec = String(tokens[i + 1] || '').trim();
                 if (codec) return codec;
@@ -208,22 +247,32 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             const t = String(tokens[i] || '').trim();
             if (!t) continue;
             const lower = t.toLowerCase();
-            if (lower === '-c' || lower.indexOf('-c:') === 0) { i++; continue; }
+            if (lower === '-c' || lower.indexOf('-c:') === 0) {
+                i++;
+                continue;
+            }
             out.push(t);
         }
         return out;
     }
 
     function stripBareCodecToken(tokens, codec) {
-        const c = String(codec || '').trim().toLowerCase();
+        const c = String(codec || '')
+            .trim()
+            .toLowerCase();
         if (!c) return tokens || [];
         const out = [];
         for (let i = 0; i < (tokens || []).length; i++) {
             const t = String(tokens[i] || '').trim();
             if (!t) continue;
             if (t.toLowerCase() === c) {
-                const prev = (i > 0) ? String(tokens[i - 1] || '').trim().toLowerCase() : '';
-                const prevIsCodecFlag = (prev === '-c' || prev.indexOf('-c:') === 0);
+                const prev =
+                    i > 0
+                        ? String(tokens[i - 1] || '')
+                              .trim()
+                              .toLowerCase()
+                        : '';
+                const prevIsCodecFlag = prev === '-c' || prev.indexOf('-c:') === 0;
                 if (!prevIsCodecFlag) continue; // drop stray codec token
             }
             out.push(t);
@@ -256,12 +305,13 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     function getSourceTypeIndex(stream) {
         try {
-            if (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null) return parseInt(stream.TypeIndex);
-        } catch (err) { }
+            if (stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null)
+                return parseInt(stream.TypeIndex);
+        } catch (err) {}
         try {
-            const s = (stream && stream.Stream) ? stream.Stream : null;
+            const s = stream && stream.Stream ? stream.Stream : null;
             if (s && s.TypeIndex !== undefined && s.TypeIndex !== null) return parseInt(s.TypeIndex);
-        } catch (err) { }
+        } catch (err) {}
         return -1;
     }
 
@@ -283,7 +333,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         for (let i = 0; i < (tokens || []).length; i++) {
             const t = String(tokens[i] || '').trim();
             const lower = t.toLowerCase();
-            if (lower === '-map') { i++; continue; }
+            if (lower === '-map') {
+                i++;
+                continue;
+            }
             out.push(t);
         }
         return out;
@@ -302,7 +355,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         }
 
         try {
-            const vs = toEnumerableArray((model && model.VideoStreams) ? model.VideoStreams : null, 20);
+            const vs = toEnumerableArray(model && model.VideoStreams ? model.VideoStreams : null, 20);
             for (let i = 0; i < vs.length; i++) {
                 const v = vs[i];
                 if (!v || v.Deleted) continue;
@@ -318,14 +371,18 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 ].join(' ');
                 if (containsQsvFilterExpr(sig)) return true;
             }
-        } catch (err) { }
+        } catch (err) {}
 
         return false;
     }
 
     function getToolPath() {
-        try { return Flow.GetToolPath('ffmpeg'); } catch (e) { }
-        try { return Flow.GetToolPath('FFmpeg'); } catch (e) { }
+        try {
+            return Flow.GetToolPath('ffmpeg');
+        } catch (e) {}
+        try {
+            return Flow.GetToolPath('FFmpeg');
+        } catch (e) {}
         // fallback to common variables
         return Variables['ffmpeg'] || Variables['FFmpeg'] || Variables.ffmpeg || Variables.FFmpeg || '';
     }
@@ -347,7 +404,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         // Treat "-low_power" and "-low_power:v" as global for all video streams.
         const target = `-low_power:v:${outIndex}`;
         for (let i = 0; i < (tokens || []).length; i++) {
-            const t = String(tokens[i] || '').trim().toLowerCase();
+            const t = String(tokens[i] || '')
+                .trim()
+                .toLowerCase();
             if (!t) continue;
             if (t === '-low_power' || t === '-low_power:v' || t === target) return true;
         }
@@ -359,44 +418,60 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const out = [];
         for (let i = 0; i < (tokens || []).length; i++) {
             const t = String(tokens[i] || '').trim();
-            if (t.toLowerCase() !== '-metadata') { out.push(t); continue; }
-            const val = (i + 1 < tokens.length) ? String(tokens[i + 1] || '') : '';
-            if (/^comment=/i.test(val || '')) { i++; continue; }
+            if (t.toLowerCase() !== '-metadata') {
+                out.push(t);
+                continue;
+            }
+            const val = i + 1 < tokens.length ? String(tokens[i + 1] || '') : '';
+            if (/^comment=/i.test(val || '')) {
+                i++;
+                continue;
+            }
             out.push(t);
-            if (i + 1 < tokens.length) { out.push(tokens[i + 1]); i++; }
+            if (i + 1 < tokens.length) {
+                out.push(tokens[i + 1]);
+                i++;
+            }
         }
         return out;
     }
 
     function getOutputExtension(model) {
-        const ext = String((model && model.Extension) ? model.Extension : '').trim();
+        const ext = String(model && model.Extension ? model.Extension : '').trim();
         if (ext) return ext.replace(/^\\./, '');
         // fallback to current file extension
         try {
-            const varFile = (Variables && Variables.file) ? Variables.file : null;
+            const varFile = Variables && Variables.file ? Variables.file : null;
             const fn = String(Flow.WorkingFileName || (varFile ? varFile.Name : '') || '');
             const idx = fn.lastIndexOf('.');
             if (idx > 0) return fn.substring(idx + 1);
-        } catch (err) { }
+        } catch (err) {}
         return 'mkv';
     }
 
     function getStreamIndexString(stream) {
         try {
-            const s = (stream && stream.Stream) ? stream.Stream : null;
+            const s = stream && stream.Stream ? stream.Stream : null;
             if (s && s.IndexString) return String(s.IndexString);
-        } catch (err) { }
+        } catch (err) {}
         // fallback: inputFileIndex:type:typeIndex
         try {
-            const s = (stream && stream.Stream) ? stream.Stream : null;
-            if (s && s.InputFileIndex !== undefined && s.InputFileIndex !== null && s.TypeIndex !== undefined && s.TypeIndex !== null && s.Type) {
+            const s = stream && stream.Stream ? stream.Stream : null;
+            if (
+                s &&
+                s.InputFileIndex !== undefined &&
+                s.InputFileIndex !== null &&
+                s.TypeIndex !== undefined &&
+                s.TypeIndex !== null &&
+                s.Type
+            ) {
                 const type = String(s.Type || '').toLowerCase();
                 let typeChar = 'v';
                 if (type.indexOf('audio') >= 0) typeChar = 'a';
                 else if (type.indexOf('subtitle') >= 0) typeChar = 's';
                 return `${s.InputFileIndex}:${typeChar}:${s.TypeIndex}`;
             }
-        } catch (err) { }
+        } catch (err) {}
         return '';
     }
 
@@ -436,25 +511,36 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             return parseDurationSeconds(value);
         }
         try {
-            const d = Variables.video && Variables.video.Duration !== undefined ? tryParseDurationSeconds(Variables.video.Duration) : NaN;
+            const d =
+                Variables.video && Variables.video.Duration !== undefined
+                    ? tryParseDurationSeconds(Variables.video.Duration)
+                    : NaN;
             if (!isNaN(d) && d > 0) return d;
-        } catch (err) { }
+        } catch (err) {}
         try {
-            const d = Variables.vi && Variables.vi.Duration !== undefined ? tryParseDurationSeconds(Variables.vi.Duration) : NaN;
+            const d =
+                Variables.vi && Variables.vi.Duration !== undefined
+                    ? tryParseDurationSeconds(Variables.vi.Duration)
+                    : NaN;
             if (!isNaN(d) && d > 0) return d;
-        } catch (err) { }
+        } catch (err) {}
         try {
-            const d = model && model.VideoInfo && model.VideoInfo.VideoStreams && model.VideoInfo.VideoStreams.length
-                ? tryParseDurationSeconds(model.VideoInfo.VideoStreams[0].Duration)
-                : NaN;
+            const d =
+                model && model.VideoInfo && model.VideoInfo.VideoStreams && model.VideoInfo.VideoStreams.length
+                    ? tryParseDurationSeconds(model.VideoInfo.VideoStreams[0].Duration)
+                    : NaN;
             if (!isNaN(d) && d > 0) return d;
-        } catch (err) { }
+        } catch (err) {}
         try {
-            const d = Variables.vi && Variables.vi.VideoInfo && Variables.vi.VideoInfo.VideoStreams && Variables.vi.VideoInfo.VideoStreams.length
-                ? tryParseDurationSeconds(Variables.vi.VideoInfo.VideoStreams[0].Duration)
-                : NaN;
+            const d =
+                Variables.vi &&
+                Variables.vi.VideoInfo &&
+                Variables.vi.VideoInfo.VideoStreams &&
+                Variables.vi.VideoInfo.VideoStreams.length
+                    ? tryParseDurationSeconds(Variables.vi.VideoInfo.VideoStreams[0].Duration)
+                    : NaN;
             if (!isNaN(d) && d > 0) return d;
-        } catch (err) { }
+        } catch (err) {}
         return 0;
     }
 
@@ -463,7 +549,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     function quoteProcessArg(arg) {
-        const s = String((arg === undefined || arg === null) ? '' : arg);
+        const s = String(arg === undefined || arg === null ? '' : arg);
         if (s.length === 0) return '""';
         if (!/[\\s\"]/g.test(s)) return s;
         return '"' + s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"') + '"';
@@ -487,7 +573,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                     for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
                     usedArgumentList = true;
                 }
-            } catch (e) { }
+            } catch (e) {}
             if (!usedArgumentList) {
                 psi.Arguments = args.map(quoteProcessArg).join(' ');
             }
@@ -499,20 +585,30 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
             // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
             let exited = true;
-            try { exited = p.WaitForExit(15000); } catch (err) { exited = true; }
+            try {
+                exited = p.WaitForExit(15000);
+            } catch (err) {
+                exited = true;
+            }
             if (exited === false) {
-                try { p.Kill(); } catch (err) { }
+                try {
+                    p.Kill();
+                } catch (err) {}
                 return 0;
             }
 
             let text = '';
-            try { text += String(p.StandardError.ReadToEnd() || ''); } catch (err) { }
-            try { text += '\n' + String(p.StandardOutput.ReadToEnd() || ''); } catch (err) { }
+            try {
+                text += String(p.StandardError.ReadToEnd() || '');
+            } catch (err) {}
+            try {
+                text += '\n' + String(p.StandardOutput.ReadToEnd() || '');
+            } catch (err) {}
 
             const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
             if (!m) return 0;
             const d = humanTimeToSeconds(m[1]);
-            return (d > 0) ? d : 0;
+            return d > 0 ? d : 0;
         } catch (err) {
             return 0;
         }
@@ -530,11 +626,13 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         function updatePercent(percent, force) {
             const p = clampNumber(percent, 0, 100);
             const now = Date.now();
-            const shouldUpdate = force || (p !== lastPercent && (now - lastUpdateMs) >= 750);
+            const shouldUpdate = force || (p !== lastPercent && now - lastUpdateMs >= 750);
             if (!shouldUpdate) return;
             lastPercent = p;
             lastUpdateMs = now;
-            try { Flow.PartPercentageUpdate(p); } catch (err) { }
+            try {
+                Flow.PartPercentageUpdate(p);
+            } catch (err) {}
         }
 
         function tryUpdateFromSeconds(seconds) {
@@ -548,7 +646,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
         function maybeUpdateAdditionalInfo(force) {
             const now = Date.now();
-            const throttleOk = force || ((now - lastInfoUpdateMs) >= 1000);
+            const throttleOk = force || now - lastInfoUpdateMs >= 1000;
             if (!throttleOk) return;
             lastInfoUpdateMs = now;
 
@@ -557,13 +655,17 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             if (!isNaN(lastSpeed) && lastSpeed > 0) speedParts.push(`(${lastSpeed.toFixed(2)}x)`);
 
             if (speedParts.length > 0) {
-                try { Flow.AdditionalInfoRecorder?.('Speed', speedParts.join(' '), 1); } catch (err) { }
+                try {
+                    Flow.AdditionalInfoRecorder?.('Speed', speedParts.join(' '), 1);
+                } catch (err) {}
             }
 
             if (duration > 0 && lastOutSeconds >= 0 && !isNaN(lastSpeed) && lastSpeed > 0) {
                 const remaining = Math.max(0, duration - lastOutSeconds);
                 const etaSeconds = remaining / lastSpeed;
-                try { Flow.AdditionalInfoRecorder?.('Time Left', secondsToClock(etaSeconds), 2); } catch (err) { }
+                try {
+                    Flow.AdditionalInfoRecorder?.('Time Left', secondsToClock(etaSeconds), 2);
+                } catch (err) {}
             }
         }
 
@@ -650,10 +752,18 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     function tryClearModel(keep) {
         if (keep) return;
-        try { Variables.FfmpegBuilderModel = null; } catch (err) { }
-        try { delete Variables.FfmpegBuilderModel; } catch (err) { }
-        try { if (typeof Variables.Remove === 'function') Variables.Remove('FfmpegBuilderModel'); } catch (err) { }
-        try { if (typeof Variables.Remove === 'function') Variables.Remove('FFmpegBuilderModel'); } catch (err) { }
+        try {
+            Variables.FfmpegBuilderModel = null;
+        } catch (err) {}
+        try {
+            delete Variables.FfmpegBuilderModel;
+        } catch (err) {}
+        try {
+            if (typeof Variables.Remove === 'function') Variables.Remove('FfmpegBuilderModel');
+        } catch (err) {}
+        try {
+            if (typeof Variables.Remove === 'function') Variables.Remove('FFmpegBuilderModel');
+        } catch (err) {}
     }
 
     // ===== VALIDATE MODEL =====
@@ -679,14 +789,22 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     HardwareDecoding = String(HardwareDecoding || 'Automatic');
     KeepModel = truthy(KeepModel);
-    WriteFullArgumentsToComment = (WriteFullArgumentsToComment === undefined || WriteFullArgumentsToComment === null) ? true : truthy(WriteFullArgumentsToComment);
+    WriteFullArgumentsToComment =
+        WriteFullArgumentsToComment === undefined || WriteFullArgumentsToComment === null
+            ? true
+            : truthy(WriteFullArgumentsToComment);
     MaxCommentLength = parseInt(MaxCommentLength || 32000);
     if (isNaN(MaxCommentLength) || MaxCommentLength < 0) MaxCommentLength = 32000;
 
     // ===== INPUT FILES =====
-    let inputFiles = toEnumerableArray(model.InputFiles, 20).map(normalizeInputFile).filter(x => x);
+    let inputFiles = toEnumerableArray(model.InputFiles, 20)
+        .map(normalizeInputFile)
+        .filter((x) => x);
     if (inputFiles.length === 0) {
-        const current = (Variables.file && Variables.file.FullName) ? String(Variables.file.FullName) : String(Flow.WorkingFile || '');
+        const current =
+            Variables.file && Variables.file.FullName
+                ? String(Variables.file.FullName)
+                : String(Flow.WorkingFile || '');
         if (!current) {
             Logger.ELog('No input file found');
             return -1;
@@ -711,8 +829,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const needQsv = detectNeedsQsv(model);
     const hwMode = (HardwareDecoding || 'Automatic').toLowerCase();
     const hwAllowed = hwMode !== 'off' && (hwMode === 'on' || (hwMode === 'automatic' && needQsv));
-    const hasHwaccelAlready = args.some(t => String(t || '').toLowerCase() === '-hwaccel');
-    const hasInitHw = args.some(t => String(t || '').toLowerCase() === '-init_hw_device');
+    const hasHwaccelAlready = args.some((t) => String(t || '').toLowerCase() === '-hwaccel');
+    const hasInitHw = args.some((t) => String(t || '').toLowerCase() === '-init_hw_device');
 
     if (hwAllowed && needQsv) {
         if (!hasInitHw) args = args.concat(['-init_hw_device', 'qsv=gpu', '-filter_hw_device', 'gpu']);
@@ -757,12 +875,14 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const codecFromArgs = extractCodecFromArgs(tokens);
         const bare = extractBareCodecToken(tokens);
         tokens = bare.tokens;
-        const streamCodec = (stream && stream.Codec) ? String(stream.Codec).trim() : '';
+        const streamCodec = stream && stream.Codec ? String(stream.Codec).trim() : '';
         const acceptStreamCodec = streamCodec && streamCodec.indexOf('-') === -1;
         const codec = String(codecFromArgs || bare.codec || (acceptStreamCodec ? streamCodec : '') || 'copy').trim();
 
         if (filterChain && codec.toLowerCase() === 'copy') {
-            Logger.ELog(`Filters are present for ${typeChar}:${outIndex} but codec is copy; cannot filter with stream copy.`);
+            Logger.ELog(
+                `Filters are present for ${typeChar}:${outIndex} but codec is copy; cannot filter with stream copy.`
+            );
             return { ok: false, reason: 'copy-with-filters' };
         }
 
@@ -773,15 +893,17 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     function addStreamMetadata(typeChar, stream, outIndex) {
         try {
-            if (stream.Language) args = args.concat([`-metadata:s:${typeChar}:${outIndex}`, `language=${String(stream.Language)}`]);
-        } catch (err) { }
+            if (stream.Language)
+                args = args.concat([`-metadata:s:${typeChar}:${outIndex}`, `language=${String(stream.Language)}`]);
+        } catch (err) {}
         try {
-            if (stream.Title) args = args.concat([`-metadata:s:${typeChar}:${outIndex}`, `title=${String(stream.Title)}`]);
-        } catch (err) { }
+            if (stream.Title)
+                args = args.concat([`-metadata:s:${typeChar}:${outIndex}`, `title=${String(stream.Title)}`]);
+        } catch (err) {}
         try {
             if (stream.IsDefault === true) args = args.concat([`-disposition:${typeChar}:${outIndex}`, 'default']);
             else if (stream.IsDefault === false) args = args.concat([`-disposition:${typeChar}:${outIndex}`, '0']);
-        } catch (err) { }
+        } catch (err) {}
     }
 
     // Video streams
@@ -885,11 +1007,15 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     Logger.ILog('FFmpeg.Arguments:\n' + argsLine);
 
-    const timeout = (model.TimeoutSeconds && model.TimeoutSeconds > 0) ? model.TimeoutSeconds : 0;
+    const timeout = model.TimeoutSeconds && model.TimeoutSeconds > 0 ? model.TimeoutSeconds : 0;
 
     // Use ExecuteArgs to stream stderr and update UI progress like the built-in FFmpeg Builder Executor.
     let executeArgs;
-    try { executeArgs = new ExecuteArgs(); } catch (err) { executeArgs = null; }
+    try {
+        executeArgs = new ExecuteArgs();
+    } catch (err) {
+        executeArgs = null;
+    }
 
     let durationSeconds = tryGetDurationSeconds(model);
     if (!durationSeconds || durationSeconds <= 0) {
@@ -898,22 +1024,34 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         durationSeconds = probeDurationSeconds(ffmpegPath, inputFiles.length ? inputFiles[0] : '');
     }
     const progress = createFfmpegProgressHandler(durationSeconds);
-    try { Flow.PartPercentageUpdate(0); } catch (err) { }
+    try {
+        Flow.PartPercentageUpdate(0);
+    } catch (err) {}
 
     let result;
     if (executeArgs) {
         executeArgs.command = ffmpegPath;
         executeArgs.argumentList = args;
-        try { if (timeout > 0) executeArgs.timeout = timeout; } catch (err) { }
-        try { if (timeout > 0) executeArgs.Timeout = timeout; } catch (err) { }
-        try { if (timeout > 0) executeArgs.TimeoutSeconds = timeout; } catch (err) { }
+        try {
+            if (timeout > 0) executeArgs.timeout = timeout;
+        } catch (err) {}
+        try {
+            if (timeout > 0) executeArgs.Timeout = timeout;
+        } catch (err) {}
+        try {
+            if (timeout > 0) executeArgs.TimeoutSeconds = timeout;
+        } catch (err) {}
 
         try {
-            executeArgs.add_Error((line) => { progress.handleLine(line); });
-        } catch (err) { }
+            executeArgs.add_Error((line) => {
+                progress.handleLine(line);
+            });
+        } catch (err) {}
         try {
-            executeArgs.add_Output((line) => { progress.handleLine(line); });
-        } catch (err) { }
+            executeArgs.add_Output((line) => {
+                progress.handleLine(line);
+            });
+        } catch (err) {}
 
         result = Flow.Execute(executeArgs);
     } else {

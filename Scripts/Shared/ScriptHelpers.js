@@ -28,7 +28,7 @@ export function toEnumerableArray(value, maxItems) {
             }
             return result;
         }
-    } catch (err) { }
+    } catch (err) {}
 
     // .NET List<T> style (Count + indexer)
     try {
@@ -41,7 +41,7 @@ export function toEnumerableArray(value, maxItems) {
             }
             return result;
         }
-    } catch (err) { }
+    } catch (err) {}
 
     return [value];
 }
@@ -57,7 +57,7 @@ export function safeString(token) {
     try {
         const json = JSON.stringify(token);
         if (json && json !== '{}' && json !== '[]') return json;
-    } catch (err) { }
+    } catch (err) {}
     return String(token);
 }
 
@@ -68,13 +68,17 @@ export function safeString(token) {
  */
 export function parseDurationSeconds(value) {
     if (value === null || value === undefined) return 0;
-    if (typeof value === 'number') return (isFinite(value) && value > 0) ? value : 0;
+    if (typeof value === 'number') return isFinite(value) && value > 0 ? value : 0;
 
     let s = '';
     if (typeof value === 'string') {
         s = value;
     } else {
-        try { s = String(value); } catch (err) { s = safeString(value); }
+        try {
+            s = String(value);
+        } catch (err) {
+            s = safeString(value);
+        }
     }
     s = (s || '').trim();
     if (!s) return 0;
@@ -87,10 +91,12 @@ export function parseDurationSeconds(value) {
     // Plain number
     if (/^\d+(\.\d+)?$/.test(s)) {
         const n = parseFloat(s);
-        return (isFinite(n) && n > 0) ? n : 0;
+        return isFinite(n) && n > 0 ? n : 0;
     }
 
-    function toInt(v) { return parseInt(v, 10) || 0; }
+    function toInt(v) {
+        return parseInt(v, 10) || 0;
+    }
 
     // .NET TimeSpan: "d.hh:mm:ss.fffffff"
     let m = s.match(/^(\d+)\.(\d+):(\d{2}):(\d{2})(\.\d+)?$/);
@@ -100,7 +106,7 @@ export function parseDurationSeconds(value) {
         const minutes = toInt(m[3]);
         const seconds = toInt(m[4]);
         const frac = m[5] ? parseFloat(m[5]) : 0;
-        return Math.max(0, (days * 86400) + (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        return Math.max(0, days * 86400 + hours * 3600 + minutes * 60 + seconds + (isFinite(frac) ? frac : 0));
     }
 
     // "hh:mm:ss"
@@ -110,7 +116,7 @@ export function parseDurationSeconds(value) {
         const minutes = toInt(m[2]);
         const seconds = toInt(m[3]);
         const frac = m[4] ? parseFloat(m[4]) : 0;
-        return Math.max(0, (hours * 3600) + (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        return Math.max(0, hours * 3600 + minutes * 60 + seconds + (isFinite(frac) ? frac : 0));
     }
 
     // "mm:ss"
@@ -119,16 +125,16 @@ export function parseDurationSeconds(value) {
         const minutes = toInt(m[1]);
         const seconds = toInt(m[2]);
         const frac = m[3] ? parseFloat(m[3]) : 0;
-        return Math.max(0, (minutes * 60) + seconds + (isFinite(frac) ? frac : 0));
+        return Math.max(0, minutes * 60 + seconds + (isFinite(frac) ? frac : 0));
     }
 
     const n = parseFloat(s);
-    return (isFinite(n) && n > 0) ? n : 0;
+    return isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
  * Formats seconds into HH:MM:SS
- * @param {number} seconds 
+ * @param {number} seconds
  * @returns {string} HH:MM:SS
  */
 export function secondsToClock(seconds) {
@@ -143,12 +149,14 @@ export function secondsToClock(seconds) {
 
 /**
  * Checks if a value is "truthy" (true, 'true', 1, '1', 'yes', 'on')
- * @param {any} value 
+ * @param {any} value
  * @returns {boolean}
  */
 export function truthy(value) {
     if (value === true || value === 1) return true;
-    const s = String(value || '').trim().toLowerCase();
+    const s = String(value || '')
+        .trim()
+        .toLowerCase();
     return s === 'true' || s === '1' || s === 'yes' || s === 'on';
 }
 
@@ -176,17 +184,17 @@ export function clampNumber(value, min, max) {
  */
 export function runProcess(command, args, timeoutSeconds) {
     try {
-        return Flow.Execute({ 
-            command: command, 
-            argumentList: args || [], 
-            timeout: timeoutSeconds || 60 
+        return Flow.Execute({
+            command: command,
+            argumentList: args || [],
+            timeout: timeoutSeconds || 60
         });
     } catch (err) {
-        return { 
-            exitCode: -1, 
-            standardOutput: '', 
-            standardError: String(err), 
-            completed: false 
+        return {
+            exitCode: -1,
+            standardOutput: '',
+            standardError: String(err),
+            completed: false
         };
     }
 }

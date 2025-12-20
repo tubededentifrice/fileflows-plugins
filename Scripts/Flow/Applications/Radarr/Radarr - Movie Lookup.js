@@ -1,4 +1,4 @@
-import { Radarr } from "Shared/Radarr";
+import { RadarrVc } from 'Shared/RadarrVc';
 
 /**
  * @description This script looks up a Movie from Radarr and retrieves its metadata
@@ -11,24 +11,22 @@ import { Radarr } from "Shared/Radarr";
  * @output Movie NOT found or error
  */
 function Script(URL, ApiKey, UseFolderName) {
-    URL = URL || Variables["Radarr.Url"] || Variables["Radarr.URI"];
-    ApiKey = ApiKey || Variables["Radarr.ApiKey"];
+    URL = URL || Variables['Radarr.Url'] || Variables['Radarr.URI'];
+    ApiKey = ApiKey || Variables['Radarr.ApiKey'];
 
-    Variables["Radarr.Url"] = URL;
-    Variables["Radarr.URI"] = URL;
-    Variables["Radarr.ApiKey"] = ApiKey;
+    Variables['Radarr.Url'] = URL;
+    Variables['Radarr.URI'] = URL;
+    Variables['Radarr.ApiKey'] = ApiKey;
 
-    const radarr = new Radarr(URL, ApiKey);
+    const radarr = new RadarrVc(URL, ApiKey);
     const folderPath = Variables.folder.Orig.FullName;
-    const searchPattern = UseFolderName
-        ? getMovieFolderName(folderPath)
-        : Variables.file.Orig.FileNameNoExtension;
+    const searchPattern = UseFolderName ? getMovieFolderName(folderPath) : Variables.file.Orig.FileNameNoExtension;
 
     Logger.ILog(`Radarr URL: ${URL}`);
     Logger.ILog(`Lookup name: ${searchPattern}`);
 
     // Search for the movie in Radarr by path, queue, or download history
-    // Logic moved to Shared/Radarr.js to enforce DRY
+    // Logic moved to Shared/RadarrVc.js to enforce DRY
     let movie =
         radarr.searchMovieByPath(searchPattern) ||
         radarr.searchInQueue(searchPattern) ||
@@ -50,16 +48,16 @@ function Script(URL, ApiKey, UseFolderName) {
 function updateMovieMetadata(movie) {
     const language = LanguageHelper.GetIso1Code(movie.originalLanguage.name);
 
-    Variables["movie.Title"] = movie.title;
-    Variables["movie.Year"] = movie.year;
-    Variables["movie.RadarrId"] = movie.id;
+    Variables['movie.Title'] = movie.title;
+    Variables['movie.Year'] = movie.year;
+    Variables['movie.RadarrId'] = movie.id;
     Variables.VideoMetadata = {
         Title: movie.title,
         Description: movie.overview,
         Year: movie.year,
         ReleaseDate: movie.firstAired,
         OriginalLanguage: language,
-        Genres: movie.genres,
+        Genres: movie.genres
     };
 
     Variables.MovieInfo = movie;

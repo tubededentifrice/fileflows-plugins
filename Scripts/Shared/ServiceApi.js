@@ -65,14 +65,14 @@ export class ServiceApi {
     sendCommand(commandName, commandBody) {
         let endpoint = `${this.BaseUrl}/api/v3/command`;
         if (this.BaseUrl.endsWith('/')) endpoint = `${this.BaseUrl}api/v3/command`; // avoid double slash if needed, or use robust join
-        
+
         commandBody['name'] = commandName;
         let jsonData = JSON.stringify(commandBody);
 
         try {
-            http.DefaultRequestHeaders.Add("X-API-Key", this.ApiKey);
+            http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
             let response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
-            http.DefaultRequestHeaders.Remove("X-API-Key");
+            http.DefaultRequestHeaders.Remove('X-API-Key');
 
             if (response.IsSuccessStatusCode) {
                 let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
@@ -88,7 +88,7 @@ export class ServiceApi {
             return null;
         }
     }
-    
+
     waitForCompletion(commandId, timeoutMs) {
         const startTime = new Date().getTime();
         const timeout = timeoutMs || 30000;
@@ -114,8 +114,8 @@ export class ServiceApi {
 
     buildQueryParams(params) {
         return Object.keys(params)
-            .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
-            .join("&");
+            .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+            .join('&');
     }
 
     /**
@@ -123,7 +123,7 @@ export class ServiceApi {
      * @param {string} endpoint "queue" or "history"
      * @param {string} searchPattern Pattern to match
      * @param {Function} matchFunction (item, pattern) => bool
-     * @param {Object} extraParams 
+     * @param {Object} extraParams
      * @param {Function} resultMapper (item) => result object
      */
     searchApi(endpoint, searchPattern, matchFunction, extraParams, resultMapper) {
@@ -143,22 +143,22 @@ export class ServiceApi {
                     pageSize,
                     ...extraParams
                 });
-                
+
                 const json = this.fetchJson(endpoint, queryParams);
                 if (!json || !json.records) break;
-                
+
                 const items = json.records;
                 if (items.length === 0) {
                     Logger.WLog(`Reached the end of ${endpoint} with no match.`);
                     break;
                 }
 
-                const matchingItem = items.find(item => matchFunction(item, sp));
+                const matchingItem = items.find((item) => matchFunction(item, sp));
                 if (matchingItem) {
                     return resultMapper(matchingItem);
                 }
 
-                if (endpoint === "queue") {
+                if (endpoint === 'queue') {
                     Logger.WLog(`Reached the end of ${endpoint} with no match.`);
                     break;
                 }
