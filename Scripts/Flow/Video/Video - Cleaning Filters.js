@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 21
+ * @revision 32
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,7 +11,7 @@
  * @output Cleaned video
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
-    Logger.ILog('Cleaning filters.js revision 21 loaded');
+    Logger.ILog('Cleaning filters.js revision 32 loaded');
     MpDecimateAnimation = MpDecimateAnimation === true || MpDecimateAnimation === 'true' || MpDecimateAnimation === 1 || MpDecimateAnimation === '1';
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     function normalizeBitrateToKbps(value) {
@@ -142,6 +142,47 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return null;
     }
 
+    function findArgIndex(list, predicate) {
+        const count = listCount(list);
+        if (count === null) return -1;
+        for (let i = 0; i < count; i++) {
+            const t = String(safeTokenString(list[i]) || '').trim();
+            if (predicate(t, i)) return i;
+        }
+        return -1;
+    }
+
+    function hasArg(list, predicate) {
+        return findArgIndex(list, predicate) >= 0;
+    }
+
+    function removeArgWithValue(list, predicate) {
+        const count0 = listCount(list);
+        if (count0 === null) return { removed: false, removedCount: 0 };
+        let removedCount = 0;
+        let i = 0;
+        while (i < listCount(list)) {
+            const t = String(safeTokenString(list[i]) || '').trim();
+            if (!predicate(t, i)) { i++; continue; }
+            if (i < (listCount(list) - 1)) {
+                if (listRemoveAt(list, i + 1)) removedCount++;
+            }
+            if (listRemoveAt(list, i)) removedCount++;
+            continue;
+        }
+        return { removed: removedCount > 0, removedCount };
+    }
+
+    function ensureArgWithValue(list, flag, value, predicate) {
+        const count0 = listCount(list);
+        if (count0 === null) return false;
+        const pred = predicate || ((t) => t === flag);
+        if (hasArg(list, pred)) return false;
+        listAdd(list, flag);
+        listAdd(list, value);
+        return true;
+    }
+
     function flattenFilterExpressions(filters) {
         const parts = [];
         for (let i = 0; i < (filters || []).length; i++) {
@@ -254,7 +295,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return false;
     }
 
-    function ensureSingleVideoFilterArgAcrossParams(videoStream, filtersToApply) {
+    function ensureSingleVideoFilterArgAcrossParams(videoStream, filtersToApply, addIfMissing) {
         const partsToApply = flattenFilterExpressions(filtersToApply);
         if (partsToApply.length === 0) return { changed: false, reason: 'no-filters' };
 
@@ -300,6 +341,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
             ...collectFilterChains(ep),
             ...collectFilterChains(ap)
         ].filter(x => x);
+
+        if (!addIfMissing && existingChains.length === 0) {
+            return { changed: false, reason: 'no-existing-filter-args', before: '', after: '' };
+        }
 
         const existingParts = flattenFilterExpressions(existingChains);
 
@@ -359,15 +404,110 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return { changed, reason: existingChains.length ? 'merged-and-deduped' : 'added-filter-arg', before, after };
     }
 
+    function preventQsvPixFmtDoubleFilter(videoStream, hwEncoder, targetBitDepth, filtersToApply) {
+        if (!videoStream || hwEncoder !== 'qsv' || !(targetBitDepth >= 10)) return { changed: false, reason: 'not-qsv-10bit' };
+
+        // Only remove -pix_fmt if our computed filters already force p010le (so we still get 10-bit surfaces).
+        const filterSig = flattenFilterExpressions(filtersToApply).join(',').toLowerCase();
+        if (filterSig.indexOf('p010le') < 0) return { changed: false, reason: 'filters-not-forcing-p010le' };
+
+        try {
+            const pixFmtPred = (t) => t === '-pix_fmt' || t.startsWith('-pix_fmt:') || t.startsWith('-pix_fmt:v');
+            const r1 = removeArgWithValue(videoStream.EncodingParameters, pixFmtPred);
+            const r2 = removeArgWithValue(videoStream.AdditionalParameters, pixFmtPred);
+
+            let changed = r1.removed || r2.removed;
+
+            if (changed) {
+                Variables.removed_pix_fmt_for_qsv = true;
+                Logger.WLog('Removed -pix_fmt from QSV encoder args; filters already force p010le so this prevents Builder injecting a second -filter:v:0 scale_qsv=format=p010le');
+            }
+
+            // Ensure we still request a 10-bit HEVC profile when targeting 10-bit output.
+            const encSig = (asJoinedString(videoStream.EncodingParameters) + ' ' + asJoinedString(videoStream.Codec)).toLowerCase();
+            const isHevcQsv = encSig.indexOf('hevc_qsv') >= 0;
+            if (isHevcQsv) {
+                const ep = videoStream.EncodingParameters;
+                const profilePred = (t) => t === '-profile' || t.startsWith('-profile:') || t.startsWith('-profile:v');
+                if (listCount(ep) !== null) {
+                    const addedProfile = ensureArgWithValue(ep, '-profile:v:0', 'main10', profilePred);
+                    if (addedProfile) {
+                        Variables.applied_qsv_profile = 'main10';
+                        Logger.ILog('Applied QSV profile: -profile:v:0 main10');
+                        changed = true;
+                    }
+                }
+            }
+
+            return { changed, reason: changed ? 'removed-pix_fmt' : 'no-change' };
+        } catch (err) {
+            return { changed: false, reason: 'error', error: String(err) };
+        }
+    }
+
     function addVideoFilter(videoStream, filter) {
         if (!filter) return null;
-        // Prefer Filters in FFmpeg Builder "New mode".
-        if (tryAppendFilterToBuilderList(videoStream, 'Filters', filter)) return 'Filters';
-        // Some versions expose a singular 'Filter' list/array.
+        // Prefer Filter (singular) - this is what the Builder checks for pixel format conversion.
+        // If Filter has content, the Builder may skip adding its own scale_qsv filter.
         if (tryAppendFilterToBuilderList(videoStream, 'Filter', filter)) return 'Filter';
+        // Filters (plural) is often null in FFmpeg Builder; try it second.
+        if (tryAppendFilterToBuilderList(videoStream, 'Filters', filter)) return 'Filters';
         // OptionalFilter is not reliably applied in all builder modes; prefer it last.
         if (tryAppendFilterToBuilderList(videoStream, 'OptionalFilter', filter)) return 'OptionalFilter';
         return null;
+    }
+
+    function removeScaleQsvFormatFilters(videoStream) {
+        // The Video Encode Advanced node adds `scale_qsv=format=p010le` (or nv12) to the video stream's
+        // filter properties when 10-bit output is selected. This causes a duplicate `-filter:v:0` argument
+        // when we also add our vpp_qsv filter. Remove any format-only scale_qsv filters so ours takes precedence.
+        const isFormatOnlyScaleQsv = (s) => {
+            const t = String(s || '').trim().toLowerCase();
+            return t === 'scale_qsv=format=p010le' || t === 'scale_qsv=format=nv12';
+        };
+
+        let removed = 0;
+        const propNames = ['Filter', 'Filters', 'OptionalFilter'];
+
+        for (const propName of propNames) {
+            try {
+                const current = videoStream[propName];
+                if (!current) continue;
+
+                // Handle string property (single filter chain)
+                if (typeof current === 'string') {
+                    const parts = current.split(',').map(x => x.trim()).filter(x => x && !isFormatOnlyScaleQsv(x));
+                    const newValue = parts.join(',');
+                    if (newValue !== current) {
+                        videoStream[propName] = newValue || null;
+                        removed++;
+                        Logger.ILog(`Removed scale_qsv format filter from video.${propName}`);
+                    }
+                    continue;
+                }
+
+                // Handle list/array property
+                const count = listCount(current);
+                if (count === null) continue;
+
+                let i = 0;
+                while (i < listCount(current)) {
+                    const item = safeTokenString(current[i]);
+                    if (isFormatOnlyScaleQsv(item)) {
+                        if (listRemoveAt(current, i)) {
+                            removed++;
+                            Logger.ILog(`Removed scale_qsv format filter from video.${propName}[${i}]`);
+                            continue;
+                        }
+                    }
+                    i++;
+                }
+            } catch (err) {
+                Logger.DLog(`Error checking video.${propName} for scale_qsv: ${err}`);
+            }
+        }
+
+        return removed;
     }
 
     function detectHardwareEncoder(videoStream) {
@@ -384,136 +524,136 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         return null;
     }
 
-	    function detectTargetBitDepth(videoStream) {
-	        const signature = [
-	            asJoinedString(videoStream.EncodingParameters),
-	            asJoinedString(videoStream.AdditionalParameters)
-	        ].join(' ').toLowerCase();
+    function detectTargetBitDepth(videoStream) {
+        const signature = [
+            asJoinedString(videoStream.EncodingParameters),
+            asJoinedString(videoStream.AdditionalParameters)
+        ].join(' ').toLowerCase();
 
-	        if (signature.includes('p010') || signature.includes('main10') || signature.includes('10bit') || signature.includes('10-bit')) return 10;
-	        return 8;
-	    }
+        if (signature.includes('p010') || signature.includes('main10') || signature.includes('10bit') || signature.includes('10-bit')) return 10;
+        return 8;
+    }
 
-	    function ensureVsyncVfrInEncodingParameters(videoStream) {
-	        try {
-	            const ep = videoStream ? videoStream.EncodingParameters : null;
-	            if (!ep) return { changed: false, reason: 'no-encoding-params' };
+    function ensureVsyncVfrInEncodingParameters(videoStream) {
+        try {
+            const ep = videoStream ? videoStream.EncodingParameters : null;
+            if (!ep) return { changed: false, reason: 'no-encoding-params' };
 
-	            const tokens = toEnumerableArray(ep, 5000).map(safeTokenString).filter(x => x);
-	            for (let i = 0; i < tokens.length; i++) {
-	                const t = String(tokens[i] || '').trim().toLowerCase();
-	                if (t === '-vsync' || t.startsWith('-vsync:') || t.startsWith('-fps_mode')) {
-	                    return { changed: false, reason: 'already-present' };
-	                }
-	            }
+            const tokens = toEnumerableArray(ep, 5000).map(safeTokenString).filter(x => x);
+            for (let i = 0; i < tokens.length; i++) {
+                const t = String(tokens[i] || '').trim().toLowerCase();
+                if (t === '-vsync' || t.startsWith('-vsync:') || t.startsWith('-fps_mode')) {
+                    return { changed: false, reason: 'already-present' };
+                }
+            }
 
-	            listAdd(ep, '-vsync');
-	            listAdd(ep, 'vfr');
-	            return { changed: true, reason: 'added' };
-	        } catch (err) {
-	            return { changed: false, reason: 'error', error: String(err) };
-	        }
-	    }
+            listAdd(ep, '-vsync');
+            listAdd(ep, 'vfr');
+            return { changed: true, reason: 'added' };
+        } catch (err) {
+            return { changed: false, reason: 'error', error: String(err) };
+        }
+    }
 
-	    function detectHardwareFramesLikely(videoStream) {
-	        try {
-	            const tokens = [
-	                ...toEnumerableArray(videoStream.EncodingParameters, 5000).map(safeTokenString),
-	                ...toEnumerableArray(videoStream.AdditionalParameters, 5000).map(safeTokenString)
-	            ].map(x => String(x || '').trim()).filter(x => x);
+    function detectHardwareFramesLikely(videoStream) {
+        try {
+            const tokens = [
+                ...toEnumerableArray(videoStream.EncodingParameters, 5000).map(safeTokenString),
+                ...toEnumerableArray(videoStream.AdditionalParameters, 5000).map(safeTokenString)
+            ].map(x => String(x || '').trim()).filter(x => x);
 
-	            for (let i = 0; i < tokens.length - 1; i++) {
-	                const t = tokens[i].toLowerCase();
-	                const n = (tokens[i + 1] || '').toLowerCase();
-	                if (t === '-hwaccel_output_format' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
-	                if (t === '-hwaccel' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
-	            }
+            for (let i = 0; i < tokens.length - 1; i++) {
+                const t = tokens[i].toLowerCase();
+                const n = (tokens[i + 1] || '').toLowerCase();
+                if (t === '-hwaccel_output_format' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
+                if (t === '-hwaccel' && (n === 'qsv' || n === 'vaapi' || n === 'cuda' || n === 'd3d11va')) return true;
+            }
 
-	            const sig = tokens.join(' ').toLowerCase();
-	            if (sig.includes('init_hw_device') || sig.includes('filter_hw_device') || sig.includes('hwupload') || sig.includes('hwmap')) return true;
-	        } catch (err) { }
-	        return false;
-	    }
+            const sig = tokens.join(' ').toLowerCase();
+            if (sig.includes('init_hw_device') || sig.includes('filter_hw_device') || sig.includes('hwupload') || sig.includes('hwmap')) return true;
+        } catch (err) { }
+        return false;
+    }
 
-	    function parseProgressFrameCount(outputText) {
-	        const text = String(outputText || '');
-	        const re = /(?:^|\n)frame=(\d+)(?:\n|$)/g;
-	        let m;
-	        let last = null;
-	        while ((m = re.exec(text)) !== null) last = parseInt(m[1]) || 0;
-	        return last;
-	    }
+    function parseProgressFrameCount(outputText) {
+        const text = String(outputText || '');
+        const re = /(?:^|\n)frame=(\d+)(?:\n|$)/g;
+        let m;
+        let last = null;
+        while ((m = re.exec(text)) !== null) last = parseInt(m[1]) || 0;
+        return last;
+    }
 
-	    function measureFramesForSegment(ffmpegPath, inputFile, ssSeconds, sampleSeconds, vf) {
-	        const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-progress', 'pipe:1', '-ss', String(ssSeconds), '-i', inputFile, '-an', '-sn', '-t', String(sampleSeconds)];
-	        if (vf) {
-	            args.push('-vf');
-	            args.push(vf);
-	        }
-	        args.push('-f');
-	        args.push('null');
-	        args.push('-');
+    function measureFramesForSegment(ffmpegPath, inputFile, ssSeconds, sampleSeconds, vf) {
+        const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-progress', 'pipe:1', '-ss', String(ssSeconds), '-i', inputFile, '-an', '-sn', '-t', String(sampleSeconds)];
+        if (vf) {
+            args.push('-vf');
+            args.push(vf);
+        }
+        args.push('-f');
+        args.push('null');
+        args.push('-');
 
-	        const process = Flow.Execute({
-	            command: ffmpegPath,
-	            argumentList: args,
-	            timeout: 180
-	        });
+        const process = Flow.Execute({
+            command: ffmpegPath,
+            argumentList: args,
+            timeout: 180
+        });
 
-	        if (!process || process.exitCode !== 0) return null;
-	        const combined = (process.standardOutput || '') + '\n' + (process.standardError || '');
-	        const frames = parseProgressFrameCount(combined);
-	        if (!frames || frames <= 0) return null;
-	        return frames;
-	    }
+        if (!process || process.exitCode !== 0) return null;
+        const combined = (process.standardOutput || '') + '\n' + (process.standardError || '');
+        const frames = parseProgressFrameCount(combined);
+        if (!frames || frames <= 0) return null;
+        return frames;
+    }
 
-	    function shouldEnableMpDecimateAuto(ffmpegPath, inputFile, durationSeconds, sourceFps, year, isAnimation) {
-	        if (!isAnimation) return { enable: false, reason: 'not-animation' };
+    function shouldEnableMpDecimateAuto(ffmpegPath, inputFile, durationSeconds, sourceFps, year, isAnimation) {
+        if (!isAnimation) return { enable: false, reason: 'not-animation' };
 
-	        // High-FPS anime encodes (59.94/60) are common and often contain lots of duplicates (24p content in a 60p stream).
-	        if (sourceFps && sourceFps >= 48) return { enable: true, reason: 'high-fps' };
+        // High-FPS anime encodes (59.94/60) are common and often contain lots of duplicates (24p content in a 60p stream).
+        if (sourceFps && sourceFps >= 48) return { enable: true, reason: 'high-fps' };
 
-	        // Older animation tends to have more repeats/holds; probe to avoid unnecessary VFR outputs.
-	        if (!ffmpegPath || !inputFile) return { enable: false, reason: 'no-probe' };
+        // Older animation tends to have more repeats/holds; probe to avoid unnecessary VFR outputs.
+        if (!ffmpegPath || !inputFile) return { enable: false, reason: 'no-probe' };
 
-	        const sampleSeconds = 12;
-	        let ss = 0;
-	        if (durationSeconds && durationSeconds > (sampleSeconds + 40)) {
-	            ss = Math.min(300, Math.max(30, Math.floor(durationSeconds * 0.25)));
-	        }
+        const sampleSeconds = 12;
+        let ss = 0;
+        if (durationSeconds && durationSeconds > (sampleSeconds + 40)) {
+            ss = Math.min(300, Math.max(30, Math.floor(durationSeconds * 0.25)));
+        }
 
-	        const baseFrames = measureFramesForSegment(ffmpegPath, inputFile, ss, sampleSeconds, null);
-	        const decFrames = measureFramesForSegment(ffmpegPath, inputFile, ss, sampleSeconds, mpDecimateFilter);
-	        if (!baseFrames || !decFrames) return { enable: false, reason: 'probe-failed' };
+        const baseFrames = measureFramesForSegment(ffmpegPath, inputFile, ss, sampleSeconds, null);
+        const decFrames = measureFramesForSegment(ffmpegPath, inputFile, ss, sampleSeconds, mpDecimateFilter);
+        if (!baseFrames || !decFrames) return { enable: false, reason: 'probe-failed' };
 
-	        const dropRatio = 1 - (decFrames / baseFrames);
-	        Variables.mpdecimate_probe_ss = ss;
-	        Variables.mpdecimate_probe_seconds = sampleSeconds;
-	        Variables.mpdecimate_probe_base_frames = baseFrames;
-	        Variables.mpdecimate_probe_dec_frames = decFrames;
-	        Variables.mpdecimate_probe_drop_ratio = Math.round(dropRatio * 1000) / 1000;
+        const dropRatio = 1 - (decFrames / baseFrames);
+        Variables.mpdecimate_probe_ss = ss;
+        Variables.mpdecimate_probe_seconds = sampleSeconds;
+        Variables.mpdecimate_probe_base_frames = baseFrames;
+        Variables.mpdecimate_probe_dec_frames = decFrames;
+        Variables.mpdecimate_probe_drop_ratio = Math.round(dropRatio * 1000) / 1000;
 
-	        // Enable when we save a meaningful number of frames (helps compression) without forcing VFR for negligible gains.
-	        const threshold = year <= 2010 ? 0.05 : 0.08;
-	        return dropRatio >= threshold ? { enable: true, reason: `probe-drop>=${threshold}` } : { enable: false, reason: `probe-drop<${threshold}` };
-	    }
+        // Enable when we save a meaningful number of frames (helps compression) without forcing VFR for negligible gains.
+        const threshold = year <= 2010 ? 0.05 : 0.08;
+        return dropRatio >= threshold ? { enable: true, reason: `probe-drop>=${threshold}` } : { enable: false, reason: `probe-drop<${threshold}` };
+    }
 
-	    function buildMpDecimateFilter(force) {
-	        if (force === null || force === undefined) return 'mpdecimate';
-	        if (force === true || force === 1 || force === '1' || String(force).toLowerCase() === 'true') return 'mpdecimate';
+    function buildMpDecimateFilter(force) {
+        if (force === null || force === undefined) return 'mpdecimate';
+        if (force === true || force === 1 || force === '1' || String(force).toLowerCase() === 'true') return 'mpdecimate';
 
-	        const s = String(force).trim();
-	        if (!s) return 'mpdecimate';
-	        const lower = s.toLowerCase();
-	        if (lower === 'mpdecimate') return 'mpdecimate';
-	        if (lower.startsWith('mpdecimate=')) return s;
-	        if (lower.startsWith('mpdecimate:')) return s;
-	        return 'mpdecimate=' + s;
-	    }
+        const s = String(force).trim();
+        if (!s) return 'mpdecimate';
+        const lower = s.toLowerCase();
+        if (lower === 'mpdecimate') return 'mpdecimate';
+        if (lower.startsWith('mpdecimate=')) return s;
+        if (lower.startsWith('mpdecimate:')) return s;
+        return 'mpdecimate=' + s;
+    }
 
-	    function getVppQsvFormat(bitDepth) {
-	        return bitDepth >= 10 ? 'p010le' : 'nv12';
-	    }
+    function getVppQsvFormat(bitDepth) {
+        return bitDepth >= 10 ? 'p010le' : 'nv12';
+    }
 
     function hasCrop(videoStream) {
         try {
@@ -612,16 +752,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
     const genres = Variables.VideoMetadata?.Genres || [];
 
-	    // Override variables (set these in upstream nodes to force specific filter values)
-	    const forceVppQsv = Variables.vpp_qsv;          // e.g., "50" (Intel QSV vpp denoise, 0-64)
-	    const forceHqdn3d = Variables.hqdn3d;           // e.g., "2:2:6:6" (CPU)
-	    const forceMpDecimateValue = Variables.mpdecimate;  // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
-	    const mpDecimateFilter = buildMpDecimateFilter(forceMpDecimateValue);
+    // Override variables (set these in upstream nodes to force specific filter values)
+    const forceVppQsv = Variables.vpp_qsv;          // e.g., "50" (Intel QSV vpp denoise, 0-64)
+    const forceHqdn3d = Variables.hqdn3d;           // e.g., "2:2:6:6" (CPU)
+    const forceMpDecimateValue = Variables.mpdecimate;  // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
+    const mpDecimateFilter = buildMpDecimateFilter(forceMpDecimateValue);
 
-	    const ffmpeg = Variables.FfmpegBuilderModel;
-	    if (!ffmpeg) {
-	        Logger.ELog('FFMPEG Builder variable not found');
-	        return -1;
+    const ffmpeg = Variables.FfmpegBuilderModel;
+    if (!ffmpeg) {
+        Logger.ELog('FFMPEG Builder variable not found');
+        return -1;
     }
 
     const video = ffmpeg.VideoStreams[0];
@@ -631,11 +771,11 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     // Get video info for bitrate detection
-	    const videoInfo = Variables.vi?.VideoInfo || ffmpeg.VideoInfo;
-	    const sourceBitrateKbps = normalizeBitrateToKbps(videoInfo?.Bitrate || 0);
-	    const duration = Variables.video?.Duration || videoInfo?.VideoStreams?.[0]?.Duration || 0;
-	    const sourceFps = videoInfo?.VideoStreams?.[0]?.FramesPerSecond || 0;
-	    const fileSizeMB = Variables.file?.Orig?.Size ? Variables.file.Orig.Size / (1024 * 1024) : 0;
+    const videoInfo = Variables.vi?.VideoInfo || ffmpeg.VideoInfo;
+    const sourceBitrateKbps = normalizeBitrateToKbps(videoInfo?.Bitrate || 0);
+    const duration = Variables.video?.Duration || videoInfo?.VideoStreams?.[0]?.Duration || 0;
+    const sourceFps = videoInfo?.VideoStreams?.[0]?.FramesPerSecond || 0;
+    const fileSizeMB = Variables.file?.Orig?.Size ? Variables.file.Orig.Size / (1024 * 1024) : 0;
 
     // Detect if content is likely a modern restoration/remaster of old content
     // High bitrate (>15 Mbps) + old year (pre-2000) = probably restored from film
@@ -933,12 +1073,106 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 }
                 Variables.applied_vpp_qsv_filter = vppFilter;
 
-                const addedVia = addVideoFilter(video, vppFilter);
-                if (!addedVia) {
-                    Logger.ELog(`Unable to attach QSV denoise filter; no compatible filter collection found on video stream.`);
+                // Remove any scale_qsv format filters added by Video Encode Advanced node
+                // to prevent duplicate -filter:v:0 arguments in the final command.
+                const removedScaleQsv = removeScaleQsvFormatFilters(video);
+                if (removedScaleQsv > 0) {
+                    Logger.ILog(`Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`);
+                }
+
+                // Debug: Deep dump of FfmpegBuilderModel and Video stream to JSON
+                function dumpValue(val, depth, maxDepth, path) {
+                    if (depth > maxDepth) return '[depth limit]';
+                    if (val === null) return null;
+                    if (val === undefined) return null;
+                    if (typeof val === 'function') return '[fn]';
+                    if (typeof val === 'string') return val;
+                    if (typeof val === 'number' || typeof val === 'boolean') return val;
+
+                    // Check for .NET List with Count property
+                    try {
+                        if (typeof val.Count === 'number' && typeof val.get_Item === 'function') {
+                            const items = [];
+                            for (let i = 0; i < Math.min(val.Count, 20); i++) {
+                                items.push(dumpValue(val.get_Item(i), depth + 1, maxDepth, path + '[' + i + ']'));
+                            }
+                            return items;
+                        }
+                    } catch (e) {}
+
+                    // Check for IEnumerable
+                    try {
+                        if (typeof val.GetEnumerator === 'function') {
+                            const items = [];
+                            const enumerator = val.GetEnumerator();
+                            let count = 0;
+                            while (enumerator.MoveNext() && count < 20) {
+                                items.push(dumpValue(enumerator.Current, depth + 1, maxDepth, path + '[' + count + ']'));
+                                count++;
+                            }
+                            if (items.length > 0) return items;
+                        }
+                    } catch (e) {}
+
+                    // Regular object - enumerate properties
+                    if (typeof val === 'object') {
+                        const result = {};
+                        let propCount = 0;
+                        for (const key in val) {
+                            if (propCount > 30) { result['...'] = 'truncated'; break; }
+                            try {
+                                const propVal = val[key];
+                                if (typeof propVal !== 'function') {
+                                    result[key] = dumpValue(propVal, depth + 1, maxDepth, path + '.' + key);
+                                    propCount++;
+                                }
+                            } catch (e) {
+                                result[key] = '[err]';
+                            }
+                        }
+                        return result;
+                    }
+                    return String(val).substring(0, 100);
+                }
+
+                try {
+                    const videoDump = {
+                        Stream: video.Stream ? String(video.Stream) : null,
+                        Codec: video.Codec,
+                        Index: video.Index,
+                        HasChange: video.HasChange,
+                        ForcedChange: video.ForcedChange,
+                        Deleted: video.Deleted,
+                        Filter: dumpValue(video.Filter, 0, 2, 'Filter'),
+                        Filters: dumpValue(video.Filters, 0, 2, 'Filters'),
+                        OptionalFilter: dumpValue(video.OptionalFilter, 0, 2, 'OptionalFilter'),
+                        FilterComplex: dumpValue(video.FilterComplex, 0, 2, 'FilterComplex'),
+                        EncodingParameters: dumpValue(video.EncodingParameters, 0, 2, 'EncodingParameters'),
+                        AdditionalParameters: dumpValue(video.AdditionalParameters, 0, 2, 'AdditionalParameters'),
+                        Crop: video.Crop,
+                        Scaling: video.Scaling,
+                        Deinterlace: video.Deinterlace,
+                        Denoise: video.Denoise,
+                        ConvertToSdr: video.ConvertToSdr,
+                        Fps: video.Fps,
+                        Tag: video.Tag,
+                        Metadata: dumpValue(video.Metadata, 0, 2, 'Metadata')
+                    };
+                    Logger.ILog(`VIDEO STREAM JSON:\n${JSON.stringify(videoDump, null, 2)}`);
+                } catch (err) {
+                    Logger.WLog(`Could not dump video stream: ${err}`);
+                }
+
+                // Use the simple approach from community scripts: video.Filter.Add()
+                // This is a .NET List<string> that the FFmpeg Builder processes.
+                try {
+                    video.Filter.Add(vppFilter);
+                    Logger.ILog(`Added QSV filter via video.Filter.Add(): ${vppFilter}`);
+                } catch (err) {
+                    Logger.ELog(`Failed to add filter via video.Filter.Add(): ${err}`);
                     return -1;
                 }
-                Logger.ILog(`Attached QSV filter via ${addedVia}: ${vppFilter}`);
+
                 appliedFiltersForExecutor.push(vppFilter);
 
                 Variables.applied_denoise = `vpp_qsv=denoise=${qsvDenoiseValue}`;
@@ -976,38 +1210,38 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 Variables.applied_denoise = 'none (hardware)';
             }
         }
-	    } else {
-	        Logger.ILog(`No denoising needed for ${year} content`);
-	        Variables.applied_denoise = 'none';
-	    }
+    } else {
+        Logger.ILog(`No denoising needed for ${year} content`);
+        Variables.applied_denoise = 'none';
+    }
 
-	    // ===== OPTIONAL DUPLICATE FRAME REMOVAL (mpdecimate) =====
-	    // mpdecimate drops near-duplicate frames and typically produces VFR output. Force -vsync vfr so ffmpeg
-	    // doesn't re-duplicate frames to match a CFR output, and so audio stays in sync.
-	    if (enableMpDecimate) {
-	        if (isHardwareEncode && detectHardwareFramesLikely(video)) {
-	            // Hardware decode/filters path: use the hybrid chain (hwdownload -> CPU filter -> hwupload).
-	            hybridCpuFilters.push(mpDecimateFilter);
-	            Variables.applied_mpdecimate = `${mpDecimateFilter} (hybrid)`;
-	            appliedFiltersSummary.push(mpDecimateFilter);
-	            Logger.ILog(`mpdecimate enabled (hybrid): ${mpDecimateFilter}`);
-	        } else {
-	            // CPU frames path: attach directly, even if encoding is QSV (FFmpeg will upload frames for the encoder).
-	            const addedVia = addVideoFilter(video, mpDecimateFilter);
-	            if (!addedVia) {
-	                Logger.ELog('Unable to attach mpdecimate filter');
-	                return -1;
-	            }
-	            Variables.applied_mpdecimate = mpDecimateFilter;
-	            appliedFiltersSummary.push(mpDecimateFilter);
-	            appliedFiltersForExecutor.push(mpDecimateFilter);
-	            Logger.ILog(`Applied mpdecimate via ${addedVia}: ${mpDecimateFilter}`);
-	        }
-	    }
+    // ===== OPTIONAL DUPLICATE FRAME REMOVAL (mpdecimate) =====
+    // mpdecimate drops near-duplicate frames and typically produces VFR output. Force -vsync vfr so ffmpeg
+    // doesn't re-duplicate frames to match a CFR output, and so audio stays in sync.
+    if (enableMpDecimate) {
+        if (isHardwareEncode && detectHardwareFramesLikely(video)) {
+            // Hardware decode/filters path: use the hybrid chain (hwdownload -> CPU filter -> hwupload).
+            hybridCpuFilters.push(mpDecimateFilter);
+            Variables.applied_mpdecimate = `${mpDecimateFilter} (hybrid)`;
+            appliedFiltersSummary.push(mpDecimateFilter);
+            Logger.ILog(`mpdecimate enabled (hybrid): ${mpDecimateFilter}`);
+        } else {
+            // CPU frames path: attach directly, even if encoding is QSV (FFmpeg will upload frames for the encoder).
+            const addedVia = addVideoFilter(video, mpDecimateFilter);
+            if (!addedVia) {
+                Logger.ELog('Unable to attach mpdecimate filter');
+                return -1;
+            }
+            Variables.applied_mpdecimate = mpDecimateFilter;
+            appliedFiltersSummary.push(mpDecimateFilter);
+            appliedFiltersForExecutor.push(mpDecimateFilter);
+            Logger.ILog(`Applied mpdecimate via ${addedVia}: ${mpDecimateFilter}`);
+        }
+    }
 
-	    // ===== BANDING FIXES (heuristics) =====
-	    // Banding can be introduced by the source (8-bit / heavy compression) or made more visible by HDR and some displays.
-	    // We keep this conservative: apply mild gradfun for HDR/DoVi, and stronger deband mainly for animation/8-bit sources.
+    // ===== BANDING FIXES (heuristics) =====
+    // Banding can be introduced by the source (8-bit / heavy compression) or made more visible by HDR and some displays.
+    // We keep this conservative: apply mild gradfun for HDR/DoVi, and stronger deband mainly for animation/8-bit sources.
     if (!skipBandingFix) {
         const wantGradfun = (isHDR || isDolbyVision) || (!isAnimation && year <= 2005);
         if (wantGradfun) {
@@ -1084,11 +1318,28 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const filters = appliedFiltersForExecutor.slice();
     Variables.filters = filters.join(',');
 
+    // Prevent FFmpeg Builder from emitting a second `-filter:v:0 scale_qsv=format=p010le` when using QSV 10-bit,
+    // which would override our computed filter chain.
+    try {
+        const p = preventQsvPixFmtDoubleFilter(video, hwEncoder, targetBitDepth, appliedFiltersForExecutor);
+        if (p.changed) {
+            Logger.ILog(`QSV pix_fmt/scale workaround applied (${p.reason})`);
+        } else {
+            Logger.DLog(`QSV pix_fmt/scale workaround skipped (${p.reason})`);
+        }
+    } catch (err) {
+        Logger.WLog(`Failed applying QSV pix_fmt/scale workaround: ${err}`);
+    }
+
     // Some FileFlows runner/builder versions (especially FFmpeg Builder "New mode") primarily apply video filters from
     // EncodingParameters (-filter:v:0), and can ignore script-added Filter/Filters collections. Ensure our computed filters
     // are present in the encoding filter argument.
+    // IMPORTANT: When we have filters to apply, ALWAYS inject them into EncodingParameters to ensure they're used,
+    // since the Video Encode Advanced node adds its own `-filter:v:0 scale_qsv=format=p010le` which would override ours.
     try {
-        const ensured = ensureSingleVideoFilterArgAcrossParams(video, appliedFiltersForExecutor);
+        const hasFiltersToApply = appliedFiltersForExecutor.length > 0;
+        const forceEncodingParamFilter = hasFiltersToApply || truthyVar(Variables['CleaningFilters.ForceEncodingParamFilter']);
+        const ensured = ensureSingleVideoFilterArgAcrossParams(video, appliedFiltersForExecutor, forceEncodingParamFilter);
         if (ensured.changed) {
             const b = ensured.before ? ensured.before.substring(0, 220) : '';
             const a = ensured.after ? ensured.after.substring(0, 220) : '';
@@ -1113,25 +1364,27 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
      *   - Removes color banding common in older animation
      *   - Strength varies by age and restoration status
      *
-	     * GRADFUN (live action <= 2005):
-	     *   - Light gradient debanding for older live action
-	     *
-	     * MPDECIMATE (heuristic for Animation/Anime):
-	     *   - Drops near-duplicate frames and forces VFR output via -vsync vfr
-	     *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
-	     *
-	     * OPTIONAL (manual use / not implemented here):
-	     *   - nlmeans: High quality denoiser (very slow, use for archival)
-	     *   - unsharp: Sharpening after denoise (can hurt compression)
-	     */
+         * GRADFUN (live action <= 2005):
+         *   - Light gradient debanding for older live action
+         *
+         * MPDECIMATE (heuristic for Animation/Anime):
+         *   - Drops near-duplicate frames and forces VFR output via -vsync vfr
+         *   - Auto-enabled when it meaningfully reduces frame count (or forced via param/Variables)
+         *
+         * OPTIONAL (manual use / not implemented here):
+         *   - nlmeans: High quality denoiser (very slow, use for archival)
+         *   - unsharp: Sharpening after denoise (can hurt compression)
+         */
 
     /**
      * ENCODER PARAMETERS
      * ==================
-     * This script does not modify encoder parameters; keep those in FFmpeg Builder nodes to avoid corrupting
-     * parameter formats (especially x265-params) and to keep hardware/CPU settings separated.
+     * For QSV encodes, FileFlows may omit some useful quality options depending on runner/build/version.
+     * Apply a small, safe set of QSV tuning options (only if they are not already present).
      *
-     * These values are stored in Variables for reference:
+     * Notes:
+     * - Auto Quality controls `-global_quality:v` downstream; this script does not touch it.
+     * - These are intentionally conservative for local-network playback (good quality + reasonable seekability).
      */
     if (isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent)) {
         Variables.recommended_qsv_params = '-bf 7 -refs 6 -g 256 -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1';
@@ -1142,6 +1395,50 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     }
 
     Logger.ILog(`Recommended QSV params: ${Variables.recommended_qsv_params}`);
+
+    // Apply QSV tuning (only add if missing).
+    if (hwEncoder === 'qsv') {
+        try {
+            const ep = video.EncodingParameters;
+            if (listCount(ep) === null) {
+                Logger.WLog('Unable to apply QSV tuning params: EncodingParameters is not a mutable list');
+            } else {
+                const fps = parseFloat(Variables.video?.FramesPerSecond || Variables.vi?.FramesPerSecond || Variables.vi?.FPS || Variables.video?.FPS || 24) || 24;
+                const gop = Math.max(48, Math.min(300, Math.round(fps * 5))); // ~5 seconds keyframe interval
+
+                const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
+                const added = [];
+
+                if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead'))) added.push('-look_ahead 1');
+                if (ensureArgWithValue(ep, '-look_ahead_depth', (isAnimation ? '40' : '20'), isFlag('-look_ahead_depth'))) {
+                    added.push(`-look_ahead_depth ${isAnimation ? '40' : '20'}`);
+                }
+                if (ensureArgWithValue(ep, '-extbrc', '1', isFlag('-extbrc'))) added.push('-extbrc 1');
+
+                // B-frames / refs (mostly impacts compression at same quality).
+                if (ensureArgWithValue(ep, '-bf', '7', isFlag('-bf'))) added.push('-bf 7');
+                const desiredRefs = (isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent)) ? '6' : '4';
+                if (ensureArgWithValue(ep, '-refs', desiredRefs, isFlag('-refs'))) added.push(`-refs ${desiredRefs}`);
+
+                // Adaptive frame decisions.
+                if (ensureArgWithValue(ep, '-adaptive_i', '1', isFlag('-adaptive_i'))) added.push('-adaptive_i 1');
+                if (ensureArgWithValue(ep, '-adaptive_b', '1', isFlag('-adaptive_b'))) added.push('-adaptive_b 1');
+
+                // GOP (seekability + compression tradeoff). Do not override if the node already set one.
+                const gopPred = (t) => t === '-g' || t === '-g:v' || t.startsWith('-g:') || t.startsWith('-g:v');
+                if (ensureArgWithValue(ep, '-g:v', String(gop), gopPred)) added.push(`-g:v ${gop}`);
+
+                if (added.length > 0) {
+                    Variables.applied_qsv_tuning = added.join(' ');
+                    Logger.ILog(`Applied QSV tuning params: ${Variables.applied_qsv_tuning}`);
+                } else {
+                    Logger.DLog('QSV tuning params already present; no changes made');
+                }
+            }
+        } catch (err) {
+            Logger.WLog(`Failed applying QSV tuning params: ${err}`);
+        }
+    }
 
     // ===== HDR COLOR METADATA PRESERVATION =====
     // These FFmpeg-level options work with any encoder (QSV, NVENC, libx265, etc.) and ensure
@@ -1169,15 +1466,16 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
         }
     }
 
-    // "Prove" the filters are present on the stream in Filter.
+    // Log the stream filter state (do not mutate the builder model here).
     try {
-        for (let i = 0; i < filters.length; i++) {
-            listAddUnique(video.Filter, filters[i]);
-        }
         const filterList = toEnumerableArray(video.Filter, 2000).map(safeTokenString).filter(x => x);
+        const filtersList = toEnumerableArray(video.Filters, 2000).map(safeTokenString).filter(x => x);
+        const optionalList = toEnumerableArray(video.OptionalFilter, 2000).map(safeTokenString).filter(x => x);
         Logger.ILog(`ffmpeg.VideoStreams[0].Filter: ${filterList.length ? filterList.join(',') : '(empty)'}`);
+        Logger.ILog(`ffmpeg.VideoStreams[0].Filters: ${filtersList.length ? filtersList.join(',') : '(empty)'}`);
+        Logger.ILog(`ffmpeg.VideoStreams[0].OptionalFilter: ${optionalList.length ? optionalList.join(',') : '(empty)'}`);
     } catch (err) {
-        Logger.WLog(`Unable to enumerate ffmpeg.VideoStreams[0].Filter: ${err}`);
+        Logger.WLog(`Unable to enumerate ffmpeg.VideoStreams[0] filter properties: ${err}`);
     }
 
     return 1;

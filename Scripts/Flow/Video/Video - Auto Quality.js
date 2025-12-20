@@ -17,9 +17,11 @@ HOW IT WORKS:
 5. Finds the highest CRF (smallest file) that meets the target quality
 6. Applies the found CRF to the FFmpeg Builder encoder
 
-FILTER-AWARE TESTING (revision 11+):
-- The quality tests apply any upstream video filters already configured on the FFmpeg Builder model (crop/scale/denoise/etc).
-- Scores are computed against an extra high quality "reference transcode" that uses the same filters, so intentional filtering isn't penalized.
+APPLES-TO-APPLES COMPARISON (revision 22+):
+- Both reference and test samples go through the EXACT same encoding pipeline (same encoder, same filters, same settings).
+- The only difference is the quality level: reference uses a very high quality, test uses the quality being evaluated.
+- This ensures the VMAF/SSIM score reflects only the quality setting difference, not encoder-introduced artifacts
+  (colorspace conversion, chroma subsampling, etc.) that would unfairly lower scores.
 
 DARK SCENE DETECTION:
 - Analyzes average luminance (Y) of samples
@@ -40,8 +42,15 @@ VARIABLE OVERRIDES:
 - Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
 - Variables['ffmpeg_vmaf']: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
 - Variables.Preset: Override encoder preset (ultrafast to veryslow)
-- Variables.AutoQuality_ReferenceMode: 'auto' | 'encoded' | 'source' | 'filtered-in-metric' (default: auto)
+- Variables.AutoQuality_ReferenceMode: 'auto' | 'encoded' | 'source' | 'filtered-in-metric' (default: auto → encoded)
 - Variables.AutoQuality_VmafFps: VMAF scoring FPS hint (eg 12); mapped to libvmaf n_subsample
+
+FILTER DETECTION (revision 23+):
+Upstream filters are read in priority order:
+1. EncodingParameters (-filter:v:0 chain) - set by FFmpeg Builder or Cleaning Filters
+2. Model Filter/Filters/OptionalFilter collections - legacy FFmpeg Builder mode
+3. Variables.filters or Variables.video_filters - fallback (set by Video - Cleaning Filters)
+Debug logging (via Logger.DLog) shows which source was used; check logs if filters aren't being applied.
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
@@ -52,7 +61,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 21
+ * @revision 23
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -293,12 +302,25 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const cropFilter = getCropFilterFromModel(video);
     let upstreamVideoFilters = encodingParamFilter || getUpstreamVideoFilters(video);
 
+    // Debug: log what we found from EncodingParameters
+    Logger.DLog(`Auto quality: encodingParamFilter from EncodingParameters: '${encodingParamFilter || '(empty)'}'`);
+
+    // Fallback: if no filters found in EncodingParameters or model, try Variables.filters (set by Cleaning Filters)
+    if (!upstreamVideoFilters) {
+        const cleaningFiltersVar = String(Variables.filters || Variables.video_filters || '').trim();
+        if (cleaningFiltersVar) {
+            upstreamVideoFilters = cleaningFiltersVar;
+            Variables.AutoQuality_FilterSource = 'variables-filters';
+            Logger.ILog(`Auto quality: using filters from Variables.filters: ${upstreamVideoFilters}`);
+        }
+    }
+
     if (encodingParamFilter) {
         Variables.AutoQuality_FilterSource = 'encoding-params';
         if (cropFilter && upstreamVideoFilters.indexOf('crop=') < 0) {
             upstreamVideoFilters = cropFilter + ',' + upstreamVideoFilters;
         }
-    } else {
+    } else if (!upstreamVideoFilters) {
         Variables.AutoQuality_FilterSource = 'model';
     }
 
@@ -313,6 +335,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         if (maybeModelFilters) {
             Logger.WLog('Auto quality: video filters exist on the FFmpeg Builder model, but no filter chain was found in EncodingParameters; the final executor may ignore them depending on runner version.');
         }
+        Logger.WLog('Auto quality: no upstream filters detected - reference and test encodes will use raw source');
     }
 
     // "Extra high quality" reference transcode quality used as the VMAF/SSIM reference.
@@ -414,21 +437,26 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const filtersNeedQsv = detectNeedsQsvFilters(upstreamVideoFilters);
 
     // Reference strategy:
-    // - encoded: pre-encode high quality reference samples using the same encoder + filters as tests (recommended when filters can change the picture, eg denoise).
-    // - source: compare against the raw sample (no reference transcode).
+    // - encoded: pre-encode high quality reference samples using the same encoder + filters as tests.
+    //            This ensures apples-to-apples comparison (both go through identical pipeline, only quality differs).
+    // - source: compare against the raw sample (no reference transcode). Not recommended as encoder-introduced
+    //           changes (colorspace, chroma subsampling) can artificially lower scores.
     // - filtered-in-metric: apply software filters to the reference stream inside the VMAF/SSIM pass (no reference transcode).
     //
-    // Default ("auto"): encoded when any upstream filters exist, otherwise source.
+    // Default ("auto"): always use 'encoded' to ensure reference and test samples are computed identically.
     let referenceMode = 'auto';
     try {
         const rm = String(Variables.AutoQuality_ReferenceMode || '').trim().toLowerCase();
         if (rm) referenceMode = rm;
     } catch (e) { }
     if (referenceMode === 'auto') {
-        referenceMode = upstreamVideoFilters ? 'encoded' : 'source';
+        // Always use 'encoded' so both reference and test go through the same encoding pipeline.
+        // This ensures the quality measurement reflects only the difference in quality settings,
+        // not encoder-introduced artifacts like colorspace conversion or chroma subsampling.
+        referenceMode = 'encoded';
     }
     if (referenceMode !== 'encoded' && referenceMode !== 'source' && referenceMode !== 'filtered-in-metric') {
-        referenceMode = upstreamVideoFilters ? 'encoded' : 'source';
+        referenceMode = 'encoded';
     }
 
     const referenceSamples = (referenceMode === 'encoded')
@@ -747,14 +775,26 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         // (eg: '-filter:v:0 <chain>'). Prefer this chain for sampling when available so tests match the final pass.
         try {
             const ep = toEnumerableArray(videoStream?.EncodingParameters, 2000).map(safeTokenString).filter(x => x);
+            Logger.DLog(`getVideoFilterFromEncodingParameters: found ${ep.length} tokens in EncodingParameters`);
+
+            // Debug: show first 20 tokens to help diagnose issues
+            if (ep.length > 0) {
+                const preview = ep.slice(0, 20).map((t, i) => `[${i}]${t}`).join(' ');
+                Logger.DLog(`EncodingParameters preview (first 20): ${preview}`);
+            }
+
             for (let i = 0; i < ep.length - 1; i++) {
                 const t = String(ep[i] || '');
                 if (t === '-vf' || t.startsWith('-filter:v')) {
                     const val = String(ep[i + 1] || '').trim();
+                    Logger.DLog(`Found filter arg at index ${i}: '${t}' -> '${val.substring(0, 100)}${val.length > 100 ? '...' : ''}'`);
                     if (val) return val;
                 }
             }
-        } catch (err) { }
+            Logger.DLog('No -vf or -filter:v found in EncodingParameters');
+        } catch (err) {
+            Logger.WLog(`getVideoFilterFromEncodingParameters error: ${err}`);
+        }
         return '';
     }
 
