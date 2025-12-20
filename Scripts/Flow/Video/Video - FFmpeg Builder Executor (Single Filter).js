@@ -13,6 +13,14 @@
 function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCommentLength) {
     function truthy(value) { return value === true || value === 'true' || value === 1 || value === '1'; }
 
+    function clampNumber(value, min, max) {
+        const n = parseFloat(value);
+        if (isNaN(n)) return min;
+        if (n < min) return min;
+        if (n > max) return max;
+        return n;
+    }
+
     function safeTokenString(token) {
         if (token === null || token === undefined) return '';
         if (typeof token === 'string' || typeof token === 'number' || typeof token === 'boolean') return String(token);
@@ -453,6 +461,107 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return false;
     }
 
+    function tryGetDurationSeconds(model) {
+        // Prefer the duration already computed by FileFlows, but fall back to builder model and finally stderr parsing.
+        try {
+            const d = Variables.video && Variables.video.Duration !== undefined ? parseFloat(Variables.video.Duration) : NaN;
+            if (!isNaN(d) && d > 0) return d;
+        } catch (err) { }
+        try {
+            const d = Variables.vi && Variables.vi.Duration !== undefined ? parseFloat(Variables.vi.Duration) : NaN;
+            if (!isNaN(d) && d > 0) return d;
+        } catch (err) { }
+        try {
+            const d = model && model.VideoInfo && model.VideoInfo.VideoStreams && model.VideoInfo.VideoStreams.length
+                ? parseFloat(model.VideoInfo.VideoStreams[0].Duration)
+                : NaN;
+            if (!isNaN(d) && d > 0) return d;
+        } catch (err) { }
+        try {
+            const d = Variables.vi && Variables.vi.VideoInfo && Variables.vi.VideoInfo.VideoStreams && Variables.vi.VideoInfo.VideoStreams.length
+                ? parseFloat(Variables.vi.VideoInfo.VideoStreams[0].Duration)
+                : NaN;
+            if (!isNaN(d) && d > 0) return d;
+        } catch (err) { }
+        return 0;
+    }
+
+    function humanTimeToSeconds(text) {
+        const t = String(text || '').trim();
+        if (!t) return 0;
+        // "123.45"
+        if (/^[0-9]+(\.[0-9]+)?$/.test(t)) return parseFloat(t);
+        // "HH:MM:SS.xx" or "MM:SS.xx"
+        const parts = t.split(':').map(p => parseFloat(p));
+        if (!parts.length) return 0;
+        let seconds = 0;
+        seconds += parts.pop() || 0;
+        if (parts.length) seconds += (parts.pop() || 0) * 60;
+        if (parts.length) seconds += (parts.pop() || 0) * 3600;
+        return seconds;
+    }
+
+    function createFfmpegProgressHandler(durationSeconds) {
+        let duration = parseFloat(durationSeconds || 0);
+        let lastPercent = -1;
+        let lastUpdateMs = 0;
+
+        function updatePercent(percent, force) {
+            const p = clampNumber(percent, 0, 100);
+            const now = Date.now();
+            const shouldUpdate = force || (p !== lastPercent && (now - lastUpdateMs) >= 750);
+            if (!shouldUpdate) return;
+            lastPercent = p;
+            lastUpdateMs = now;
+            try { Flow.PartPercentageUpdate(p); } catch (err) { }
+        }
+
+        function tryUpdateFromSeconds(seconds) {
+            if (!duration || duration <= 0) return;
+            if (!seconds || seconds < 0) return;
+            updatePercent((100.0 / duration) * seconds, false);
+        }
+
+        function maybeSetDurationFromLine(line) {
+            if (duration && duration > 0) return;
+            const m = String(line || '').match(/Duration:\s*([0-9:.]+)/i);
+            if (!m) return;
+            const d = humanTimeToSeconds(m[1]);
+            if (d > 0) duration = d;
+        }
+
+        function handleLine(line) {
+            const s = String(line || '');
+            if (!s) return;
+
+            maybeSetDurationFromLine(s);
+
+            // -progress style output: out_time_ms=12345678
+            let m = s.match(/out_time_ms=([0-9]+)/i);
+            if (m) {
+                const ms = parseInt(m[1], 10);
+                if (!isNaN(ms) && ms >= 0) tryUpdateFromSeconds(ms / 1000000.0);
+                return;
+            }
+
+            // -stats style output: time=00:00:12.34
+            m = s.match(/time=([\.:0-9]+)/i);
+            if (m) {
+                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                return;
+            }
+
+            // Completion markers
+            if (s.indexOf('progress=end') >= 0) updatePercent(100, true);
+        }
+
+        function complete() {
+            updatePercent(100, true);
+        }
+
+        return { handleLine, complete };
+    }
+
     function tryClearModel(keep) {
         if (keep) return;
         try { Variables.FfmpegBuilderModel = null; } catch (err) { }
@@ -693,7 +802,35 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     Logger.ILog('FFmpeg.Arguments:\n' + argsLine);
 
     const timeout = (model.TimeoutSeconds && model.TimeoutSeconds > 0) ? model.TimeoutSeconds : 0;
-    const result = Flow.Execute({ command: ffmpegPath, argumentList: args, timeout: timeout });
+
+    // Use ExecuteArgs to stream stderr and update UI progress like the built-in FFmpeg Builder Executor.
+    let executeArgs;
+    try { executeArgs = new ExecuteArgs(); } catch (err) { executeArgs = null; }
+
+    const durationSeconds = tryGetDurationSeconds(model);
+    const progress = createFfmpegProgressHandler(durationSeconds);
+    try { Flow.PartPercentageUpdate(0); } catch (err) { }
+
+    let result;
+    if (executeArgs) {
+        executeArgs.command = ffmpegPath;
+        executeArgs.argumentList = args;
+        try { if (timeout > 0) executeArgs.timeout = timeout; } catch (err) { }
+        try { if (timeout > 0) executeArgs.Timeout = timeout; } catch (err) { }
+        try { if (timeout > 0) executeArgs.TimeoutSeconds = timeout; } catch (err) { }
+
+        try {
+            executeArgs.add_Error((line) => { progress.handleLine(line); });
+        } catch (err) { }
+        try {
+            executeArgs.add_Output((line) => { progress.handleLine(line); });
+        } catch (err) { }
+
+        result = Flow.Execute(executeArgs);
+    } else {
+        // Fallback: no streaming support available in this runner; execute normally (no progress).
+        result = Flow.Execute({ command: ffmpegPath, argumentList: args, timeout: timeout });
+    }
 
     if (!result || result.exitCode !== 0) {
         const code = result ? result.exitCode : -1;
@@ -702,6 +839,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 3000));
         return -1;
     }
+
+    progress.complete();
 
     // Update working file and optionally clear model.
     Flow.SetWorkingFile(outFile);

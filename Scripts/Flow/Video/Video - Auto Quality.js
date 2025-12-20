@@ -61,7 +61,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 23
+ * @revision 24
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -76,6 +76,27 @@ OUTPUT VARIABLES:
  * @output Video already optimal (copy mode)
  */
 function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxSearchIterations, PreferSmaller, UseTags, Preset) {
+    function clampNumber(value, min, max) {
+        const n = parseFloat(value);
+        if (isNaN(n)) return min;
+        if (n < min) return min;
+        if (n > max) return max;
+        return n;
+    }
+
+    function humanTimeToSeconds(text) {
+        const t = String(text || '').trim();
+        if (!t) return 0;
+        if (/^[0-9]+(\.[0-9]+)?$/.test(t)) return parseFloat(t);
+        const parts = t.split(':').map(p => parseFloat(p));
+        if (!parts.length) return 0;
+        let seconds = 0;
+        seconds += parts.pop() || 0;
+        if (parts.length) seconds += (parts.pop() || 0) * 60;
+        if (parts.length) seconds += (parts.pop() || 0) * 3600;
+        return seconds;
+    }
+
     function quoteProcessArg(arg) {
         // Fallback quoting when ProcessStartInfo.ArgumentList isn't available.
         // Keep it simple: quote args containing whitespace or quotes.
@@ -94,6 +115,114 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         // ffmpeg filter args use ':' as a separator, so escape it for Windows drive letters.
         // Use forward slashes to avoid backslash escaping rules.
         return String((value === undefined || value === null) ? '' : value).replace(/\\/g, '/').replace(/:/g, '\\:');
+    }
+
+    function createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan) {
+        let duration = parseFloat(durationSeconds || 0);
+        const base = parseFloat(progressBase || 0);
+        const span = parseFloat(progressSpan || 100);
+
+        let lastPercent = -1;
+        let lastUpdateMs = 0;
+
+        function updatePercent(percent, force) {
+            const p = clampNumber(percent, 0, 100);
+            const now = Date.now();
+            const shouldUpdate = force || (p !== lastPercent && (now - lastUpdateMs) >= 750);
+            if (!shouldUpdate) return;
+            lastPercent = p;
+            lastUpdateMs = now;
+
+            const mapped = clampNumber(base + (span * (p / 100.0)), 0, 100);
+            try { Flow.PartPercentageUpdate?.(mapped); } catch (err) { }
+        }
+
+        function tryUpdateFromSeconds(seconds) {
+            if (!duration || duration <= 0) return;
+            if (seconds === null || seconds === undefined) return;
+            const s = parseFloat(seconds);
+            if (isNaN(s) || s < 0) return;
+            updatePercent((100.0 / duration) * s, false);
+        }
+
+        function maybeSetDurationFromLine(line) {
+            if (duration && duration > 0) return;
+            const m = String(line || '').match(/Duration:\s*([0-9:.]+)/i);
+            if (!m) return;
+            const d = humanTimeToSeconds(m[1]);
+            if (d > 0) duration = d;
+        }
+
+        function handleLine(line) {
+            const s = String(line || '');
+            if (!s) return;
+
+            maybeSetDurationFromLine(s);
+
+            // -progress style output: out_time_ms=12345678
+            let m = s.match(/out_time_ms=([0-9]+)/i);
+            if (m) {
+                const ms = parseInt(m[1], 10);
+                if (!isNaN(ms) && ms >= 0) tryUpdateFromSeconds(ms / 1000000.0);
+                return;
+            }
+
+            // -stats style output: time=00:00:12.34
+            m = s.match(/time=([\.:0-9]+)/i);
+            if (m) {
+                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                return;
+            }
+
+            if (s.indexOf('progress=end') >= 0) updatePercent(100, true);
+        }
+
+        function complete() {
+            updatePercent(100, true);
+        }
+
+        return { handleLine, complete };
+    }
+
+    function executeFfmpegWithProgress(command, argumentList, timeoutSeconds, durationSeconds, progressBase, progressSpan) {
+        let executeArgs = null;
+        try { executeArgs = new ExecuteArgs(); } catch (err) { executeArgs = null; }
+
+        const handler = createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan);
+
+        // Collect output in-memory for parsing (VMAF/SSIM), but cap it.
+        let collected = '';
+        const maxCollected = 250000;
+        function capture(line) {
+            if (!line) return;
+            if (collected.length >= maxCollected) return;
+            const s = String(line);
+            collected += s + '\n';
+            if (collected.length > maxCollected) collected = collected.substring(0, maxCollected);
+        }
+
+        if (executeArgs) {
+            executeArgs.command = command;
+            executeArgs.argumentList = argumentList;
+            try { if (timeoutSeconds > 0) executeArgs.timeout = timeoutSeconds; } catch (err) { }
+            try { if (timeoutSeconds > 0) executeArgs.Timeout = timeoutSeconds; } catch (err) { }
+            try { if (timeoutSeconds > 0) executeArgs.TimeoutSeconds = timeoutSeconds; } catch (err) { }
+
+            try { executeArgs.add_Error((line) => { handler.handleLine(line); capture(line); }); } catch (err) { }
+            try { executeArgs.add_Output((line) => { handler.handleLine(line); capture(line); }); } catch (err) { }
+
+            const r = Flow.Execute(executeArgs);
+            if (r && r.exitCode === 0) handler.complete();
+
+            // Keep behavior similar to Flow.Execute results, but include collected output for parsing.
+            if (r && !r.output && collected) {
+                try { r.output = collected; } catch (err) { }
+            }
+            return r;
+        }
+
+        // Fallback: no streaming support available in this runner.
+        return Flow.Execute({ command: command, argumentList: argumentList, timeout: timeoutSeconds });
     }
 
     function executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
@@ -499,10 +628,11 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             Logger.ILog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
             Flow.AdditionalInfoRecorder?.('Auto Quality', `CRF ${testCRF}`, 1);
 
-            const progressPct = Math.round((iterations / MaxSearchIterations) * 100);
-            Flow.PartPercentageUpdate?.(progressPct);
+            const iterBase = ((iterations - 1) / MaxSearchIterations) * 100.0;
+            const iterSpan = (1.0 / MaxSearchIterations) * 100.0;
+            Flow.PartPercentageUpdate?.(iterBase);
 
-            const qualityScore = measureQualityAtQualityValue(ffmpegEncodePath, ffmpegPath, samples, testCRF, video, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceMode, referenceSamples);
+            const qualityScore = measureQualityAtQualityValue(ffmpegEncodePath, ffmpegPath, samples, testCRF, video, targetCodec, SampleDurationSec, use10BitForTests, qualityMetric, upstreamVideoFilters, referenceMode, referenceSamples, iterBase, iterSpan);
 
             if (qualityScore < 0) {
                 Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
@@ -937,6 +1067,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             try {
                 const args = [
                     '-hide_banner', '-loglevel', 'error', '-y',
+                    '-progress', 'pipe:2', '-nostats',
                     '-ss', String(sec),
                     '-i', inputFile,
                     '-t', String(sampleDur),
@@ -947,7 +1078,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     samplePath
                 ];
 
-                const r = Flow.Execute({ command: ffmpegExtract, argumentList: args, timeout: 120 });
+                const r = executeFfmpegWithProgress(ffmpegExtract, args, 120, sampleDur, 0, 100);
                 if (r && r.exitCode === 0 && System.IO.File.Exists(samplePath)) {
                     extracted = true;
                 }
@@ -1181,7 +1312,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         Logger.ILog(`Pre-encoding ${samples.length} reference samples at quality ${referenceQuality} (${encoder})...`);
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
             if (sample.seekSeconds && sample.seekSeconds > 0) args.push('-ss', String(sample.seekSeconds));
@@ -1204,21 +1335,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             let filterMode = 'upstream';
 
             try {
-                let refResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
-                    timeout: 600
-                });
+                let refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters), 600, sampleDur, 0, 100);
 
                 if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
                     Logger.WLog(`Reference sample ${i + 1} failed with QSV filters (${sample.key}); retrying with software-only filters`);
                     activeFilters = softwareFilters;
                     filterMode = 'software-fallback';
-                    refResult = Flow.Execute({
-                        command: ffmpegEncode,
-                        argumentList: buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
-                        timeout: 600
-                    });
+                    refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters), 600, sampleDur, 0, 100);
                 }
 
                 if (refResult.exitCode !== 0) {
@@ -1346,7 +1469,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
 
         function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsv(filters);
             if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
             args.push('-ss', String(Math.floor(posSeconds)));
@@ -1378,21 +1501,13 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             let filterMode = 'upstream';
 
             try {
-                let refResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters),
-                    timeout: 600
-                });
+                let refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters), 600, sampleDur, 0, 100);
 
                 if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
                     Logger.WLog(`Reference sample ${i + 1} failed with QSV filters at ${Math.round(pos)}s; retrying with software-only filters`);
                     activeFilters = softwareFilters;
                     filterMode = 'software-fallback';
-                    refResult = Flow.Execute({
-                        command: ffmpegEncode,
-                        argumentList: buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters),
-                        timeout: 600
-                    });
+                    refResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, referenceCrf, referencePath, activeFilters), 600, sampleDur, 0, 100);
                 }
 
                 if (refResult.exitCode !== 0) {
@@ -1416,7 +1531,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return results;
     }
 
-    function measureQualityAtQualityValue(ffmpegEncode, ffmpegMetric, samples, qualityValue, videoStream, encoder, sampleDur, use10Bit, metric, upstreamFilters, referenceMode, referenceSamples) {
+    function measureQualityAtQualityValue(ffmpegEncode, ffmpegMetric, samples, qualityValue, videoStream, encoder, sampleDur, use10Bit, metric, upstreamFilters, referenceMode, referenceSamples, progressBase, progressSpan) {
         const tempDir = Flow.TempPath;
         const scores = [];
 
@@ -1545,7 +1660,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
             if (sample.seekSeconds && sample.seekSeconds > 0) args.push('-ss', String(sample.seekSeconds));
@@ -1580,6 +1695,11 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             ? `libvmaf=n_threads=4${vmafNSubsample > 1 ? (':n_subsample=' + vmafNSubsample) : ''}:shortest=1:eof_action=endall`
             : 'ssim';
 
+        const pb = parseFloat(progressBase || 0);
+        const ps = parseFloat(progressSpan || 100);
+        const totalSteps = Math.max(1, (samples.length * 2));
+        const stepSpan = ps / totalSteps;
+
         for (let i = 0; i < samples.length; i++) {
             const sample = samples[i];
             const encodedSample = `${tempDir}/${sample.key}_encoded_quality_${qualityValue}.mkv`;
@@ -1589,11 +1709,8 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const filterMode = ref?.filterMode || (upstreamFiltersStr ? 'upstream' : 'none');
 
             try {
-                const encResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters),
-                    timeout: 600
-                });
+                const encStepBase = pb + (stepSpan * ((i * 2) + 0));
+                const encResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters), 600, sampleDur, encStepBase, stepSpan);
 
                 if (encResult.exitCode !== 0) {
                     Logger.WLog(`Failed to encode sample (${sample.key}) at quality ${qualityValue} (${encoder})`);
@@ -1610,7 +1727,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                 const refChain = applyRefFiltersInMetric ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic` : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
                 const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
 
-                const metricArgs = ['-hide_banner', '-loglevel', 'info', '-nostats', '-y', '-i', encodedSample];
+                const metricArgs = ['-hide_banner', '-loglevel', 'info', '-progress', 'pipe:2', '-nostats', '-y', '-i', encodedSample];
 
                 if (referenceMode === 'encoded') {
                     const referencePath = ref?.path;
@@ -1627,11 +1744,8 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
 
                 metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
 
-                const qualityResult = Flow.Execute({
-                    command: ffmpegMetric,
-                    argumentList: metricArgs,
-                    timeout: 300
-                });
+                const metricStepBase = pb + (stepSpan * ((i * 2) + 1));
+                const qualityResult = executeFfmpegWithProgress(ffmpegMetric, metricArgs, 300, sampleDur, metricStepBase, stepSpan);
 
                 const output = (qualityResult.output || '') + '\n' + (qualityResult.standardOutput || '') + '\n' + (qualityResult.standardError || '');
 
@@ -1757,7 +1871,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
 
         function buildEncodeArgs(posSeconds, qualityValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsv(filters);
             if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
             args.push('-ss', String(Math.floor(posSeconds)));
@@ -1787,11 +1901,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
             const encodedSample = `${tempDir}/${sampleId}_encoded.mkv`;
 
             try {
-                const encResult = Flow.Execute({
-                    command: ffmpegEncode,
-                    argumentList: buildEncodeArgs(pos, crf, encodedSample, activeFilters),
-                    timeout: 600
-                });
+                const encResult = executeFfmpegWithProgress(ffmpegEncode, buildEncodeArgs(pos, crf, encodedSample, activeFilters), 600, sampleDur, 0, 100);
 
                 if (encResult.exitCode !== 0) {
                     Logger.WLog(`Failed to encode sample at CRF ${crf}, pos ${Math.round(pos)}s`);
@@ -1811,17 +1921,20 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
                     filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]setpts=PTS-STARTPTS,scale=flags=bicubic[reference];[distorted][reference]ssim`;
                 }
 
-                const qualityResult = Flow.Execute({
-                    command: ffmpegMetric,
-                    argumentList: [
-                        '-hide_banner', '-loglevel', 'info', '-nostats', '-y',
+                const qualityResult = executeFfmpegWithProgress(
+                    ffmpegMetric,
+                    [
+                        '-hide_banner', '-loglevel', 'info', '-progress', 'pipe:2', '-nostats', '-y',
                         '-i', encodedSample,
                         '-i', referencePath,
                         '-filter_complex', filterComplex,
                         '-f', 'null', '-'
                     ],
-                    timeout: 300
-                });
+                    300,
+                    sampleDur,
+                    0,
+                    100
+                );
 
                 const output = (qualityResult.output || '') + '\n' + (qualityResult.standardOutput || '') + '\n' + (qualityResult.standardError || '');
 
