@@ -12,8 +12,10 @@
  */
 function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFiltersWithHardwareEncode, AutoDeinterlace, MpDecimateAnimation) {
     Logger.ILog('Cleaning filters.js revision 32 loaded');
-    MpDecimateAnimation = MpDecimateAnimation === true || MpDecimateAnimation === 'true' || MpDecimateAnimation === 1 || MpDecimateAnimation === '1';
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
+    SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
+    AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
+    MpDecimateAnimation = truthyVar(MpDecimateAnimation) || truthyVar(Variables.MpDecimateAnimation);
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
@@ -1098,7 +1100,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                             }
                             return items;
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // Check for IEnumerable
                     try {
@@ -1112,7 +1114,7 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                             }
                             if (items.length > 0) return items;
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // Regular object - enumerate properties
                     if (typeof val === 'object') {
