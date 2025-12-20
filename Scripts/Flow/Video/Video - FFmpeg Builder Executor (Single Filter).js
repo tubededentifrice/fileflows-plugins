@@ -1,7 +1,9 @@
+import { FfmpegBuilderDefaults } from "Shared/FfmpegBuilderDefaults";
+
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 7
+ * @revision 11
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -385,6 +387,22 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return false;
     }
 
+    function isQsvCodec(codec) {
+        const c = String(codec || '').toLowerCase();
+        return c.indexOf('_qsv') >= 0;
+    }
+
+    function hasLowPowerOption(tokens, outIndex) {
+        // Treat "-low_power" and "-low_power:v" as global for all video streams.
+        const target = `-low_power:v:${outIndex}`;
+        for (let i = 0; i < (tokens || []).length; i++) {
+            const t = String(tokens[i] || '').trim().toLowerCase();
+            if (!t) continue;
+            if (t === '-low_power' || t === '-low_power:v' || t === target) return true;
+        }
+        return false;
+    }
+
     function stripExistingCommentMetadata(tokens) {
         // Remove pairs like: -metadata comment=...
         const out = [];
@@ -463,23 +481,33 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     function tryGetDurationSeconds(model) {
         // Prefer the duration already computed by FileFlows, but fall back to builder model and finally stderr parsing.
+        function tryParseDurationSeconds(value) {
+            if (value === null || value === undefined) return NaN;
+            if (typeof value === 'number') return value;
+            const s = String(value).trim();
+            if (!s) return NaN;
+            if (/^[0-9]+(\.[0-9]+)?$/.test(s)) return parseFloat(s);
+            if (s.indexOf(':') >= 0) return humanTimeToSeconds(s);
+            const n = parseFloat(s);
+            return isNaN(n) ? NaN : n;
+        }
         try {
-            const d = Variables.video && Variables.video.Duration !== undefined ? parseFloat(Variables.video.Duration) : NaN;
+            const d = Variables.video && Variables.video.Duration !== undefined ? tryParseDurationSeconds(Variables.video.Duration) : NaN;
             if (!isNaN(d) && d > 0) return d;
         } catch (err) { }
         try {
-            const d = Variables.vi && Variables.vi.Duration !== undefined ? parseFloat(Variables.vi.Duration) : NaN;
+            const d = Variables.vi && Variables.vi.Duration !== undefined ? tryParseDurationSeconds(Variables.vi.Duration) : NaN;
             if (!isNaN(d) && d > 0) return d;
         } catch (err) { }
         try {
             const d = model && model.VideoInfo && model.VideoInfo.VideoStreams && model.VideoInfo.VideoStreams.length
-                ? parseFloat(model.VideoInfo.VideoStreams[0].Duration)
+                ? tryParseDurationSeconds(model.VideoInfo.VideoStreams[0].Duration)
                 : NaN;
             if (!isNaN(d) && d > 0) return d;
         } catch (err) { }
         try {
             const d = Variables.vi && Variables.vi.VideoInfo && Variables.vi.VideoInfo.VideoStreams && Variables.vi.VideoInfo.VideoStreams.length
-                ? parseFloat(Variables.vi.VideoInfo.VideoStreams[0].Duration)
+                ? tryParseDurationSeconds(Variables.vi.VideoInfo.VideoStreams[0].Duration)
                 : NaN;
             if (!isNaN(d) && d > 0) return d;
         } catch (err) { }
@@ -501,10 +529,83 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return seconds;
     }
 
+    function secondsToClock(seconds) {
+        const s0 = parseFloat(seconds || 0);
+        if (isNaN(s0) || s0 <= 0) return '00:00:00';
+        const total = Math.floor(s0);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = Math.floor(total % 60);
+        const hh = String(h).padStart(2, '0');
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        return `${hh}:${mm}:${ss}`;
+    }
+
+    function quoteProcessArg(arg) {
+        const s = String((arg === undefined || arg === null) ? '' : arg);
+        if (s.length === 0) return '""';
+        if (!/[\\s\"]/g.test(s)) return s;
+        return '"' + s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"') + '"';
+    }
+
+    function probeDurationSeconds(ffmpegPath, inputFile) {
+        const file = String(inputFile || '').trim();
+        if (!file) return 0;
+        try {
+            const psi = new System.Diagnostics.ProcessStartInfo();
+            psi.FileName = String(ffmpegPath);
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+
+            const args = ['-hide_banner', '-i', file];
+            let usedArgumentList = false;
+            try {
+                if (psi.ArgumentList) {
+                    for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
+                    usedArgumentList = true;
+                }
+            } catch (e) { }
+            if (!usedArgumentList) {
+                psi.Arguments = args.map(quoteProcessArg).join(' ');
+            }
+
+            const p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            const started = p.Start();
+            if (!started) return 0;
+
+            // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
+            let exited = true;
+            try { exited = p.WaitForExit(15000); } catch (err) { exited = true; }
+            if (exited === false) {
+                try { p.Kill(); } catch (err) { }
+                return 0;
+            }
+
+            let text = '';
+            try { text += String(p.StandardError.ReadToEnd() || ''); } catch (err) { }
+            try { text += '\n' + String(p.StandardOutput.ReadToEnd() || ''); } catch (err) { }
+
+            const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
+            if (!m) return 0;
+            const d = humanTimeToSeconds(m[1]);
+            return (d > 0) ? d : 0;
+        } catch (err) {
+            return 0;
+        }
+    }
+
     function createFfmpegProgressHandler(durationSeconds) {
         let duration = parseFloat(durationSeconds || 0);
         let lastPercent = -1;
         let lastUpdateMs = 0;
+        let lastOutSeconds = 0;
+        let lastFps = NaN;
+        let lastSpeed = NaN;
+        let lastInfoUpdateMs = 0;
 
         function updatePercent(percent, force) {
             const p = clampNumber(percent, 0, 100);
@@ -518,8 +619,32 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
         function tryUpdateFromSeconds(seconds) {
             if (!duration || duration <= 0) return;
-            if (!seconds || seconds < 0) return;
-            updatePercent((100.0 / duration) * seconds, false);
+            if (seconds === null || seconds === undefined) return;
+            const s = parseFloat(seconds);
+            if (isNaN(s) || s < 0) return;
+            lastOutSeconds = s;
+            updatePercent((100.0 / duration) * s, false);
+        }
+
+        function maybeUpdateAdditionalInfo(force) {
+            const now = Date.now();
+            const throttleOk = force || ((now - lastInfoUpdateMs) >= 1000);
+            if (!throttleOk) return;
+            lastInfoUpdateMs = now;
+
+            let speedParts = [];
+            if (!isNaN(lastFps) && lastFps > 0) speedParts.push(`${lastFps.toFixed(1)} fps`);
+            if (!isNaN(lastSpeed) && lastSpeed > 0) speedParts.push(`(${lastSpeed.toFixed(2)}x)`);
+
+            if (speedParts.length > 0) {
+                try { Flow.AdditionalInfoRecorder?.('Speed', speedParts.join(' '), 1); } catch (err) { }
+            }
+
+            if (duration > 0 && lastOutSeconds >= 0 && !isNaN(lastSpeed) && lastSpeed > 0) {
+                const remaining = Math.max(0, duration - lastOutSeconds);
+                const etaSeconds = remaining / lastSpeed;
+                try { Flow.AdditionalInfoRecorder?.('Time Left', secondsToClock(etaSeconds), 2); } catch (err) { }
+            }
         }
 
         function maybeSetDurationFromLine(line) {
@@ -541,6 +666,42 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             if (m) {
                 const ms = parseInt(m[1], 10);
                 if (!isNaN(ms) && ms >= 0) tryUpdateFromSeconds(ms / 1000000.0);
+                maybeUpdateAdditionalInfo(false);
+                return;
+            }
+
+            // -progress style output: out_time_us=12345678
+            m = s.match(/out_time_us=([0-9]+)/i);
+            if (m) {
+                const us = parseInt(m[1], 10);
+                if (!isNaN(us) && us >= 0) tryUpdateFromSeconds(us / 1000000.0);
+                maybeUpdateAdditionalInfo(false);
+                return;
+            }
+
+            // -progress style output: out_time=00:00:12.34
+            m = s.match(/out_time=([0-9:.]+)/i);
+            if (m) {
+                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                maybeUpdateAdditionalInfo(false);
+                return;
+            }
+
+            // -progress style output: fps=47.3
+            m = s.match(/fps=\s*([0-9.]+)/i);
+            if (m) {
+                const fps = parseFloat(m[1]);
+                if (!isNaN(fps) && fps >= 0) lastFps = fps;
+                maybeUpdateAdditionalInfo(false);
+                return;
+            }
+
+            // -progress style output: speed=1.28x
+            m = s.match(/speed=\s*([0-9.]+)x/i);
+            if (m) {
+                const sp = parseFloat(m[1]);
+                if (!isNaN(sp) && sp >= 0) lastSpeed = sp;
+                maybeUpdateAdditionalInfo(false);
                 return;
             }
 
@@ -548,15 +709,20 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             m = s.match(/time=([\.:0-9]+)/i);
             if (m) {
                 tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                maybeUpdateAdditionalInfo(false);
                 return;
             }
 
             // Completion markers
-            if (s.indexOf('progress=end') >= 0) updatePercent(100, true);
+            if (s.indexOf('progress=end') >= 0) {
+                updatePercent(100, true);
+                maybeUpdateAdditionalInfo(true);
+            }
         }
 
         function complete() {
             updatePercent(100, true);
+            maybeUpdateAdditionalInfo(true);
         }
 
         return { handleLine, complete };
@@ -615,13 +781,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     // ===== GLOBAL ARGS =====
     // Match FFmpeg Builder executor defaults as closely as possible.
     // Note: These are placed before inputs so they apply as input options.
-    let args = [
-        '-fflags', '+genpts',
-        '-probesize', '300M',
-        '-analyzeduration', '240000000',
-        '-y',
-        '-stats_period', '5'
-    ];
+    let args = FfmpegBuilderDefaults.ApplyFfmpegBuilderExecutorDefaults([]);
 
     // Include model custom parameters early so input options (probesize/analyzeduration/etc) still apply.
     const customTokens0 = flattenTokenList(model.CustomParameters);
@@ -719,6 +879,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const built = buildStream('v', v, outV);
         if (!built.ok) return -1;
         args = args.concat([`-c:v:${outV}`, built.codec || 'copy']);
+        // Force full-power QSV encode unless already specified (avoids unexpected low_power defaults).
+        if (isQsvCodec(built.codec) && !hasLowPowerOption(args, outV) && !hasLowPowerOption(built.tokens, outV)) {
+            args = args.concat([`-low_power:v:${outV}`, '0']);
+        }
         if (built.tokens.length) args = args.concat(built.tokens);
         if (built.filterChain) args = args.concat([`-filter:v:${outV}`, built.filterChain]);
         addStreamMetadata('v', v, outV);
@@ -807,7 +971,12 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     let executeArgs;
     try { executeArgs = new ExecuteArgs(); } catch (err) { executeArgs = null; }
 
-    const durationSeconds = tryGetDurationSeconds(model);
+    let durationSeconds = tryGetDurationSeconds(model);
+    if (!durationSeconds || durationSeconds <= 0) {
+        // Some flows don't run the Video File node, so Duration variables may be missing.
+        // Do a fast probe to get Duration from ffmpeg headers so progress still works.
+        durationSeconds = probeDurationSeconds(ffmpegPath, inputFiles.length ? inputFiles[0] : '');
+    }
     const progress = createFfmpegProgressHandler(durationSeconds);
     try { Flow.PartPercentageUpdate(0); } catch (err) { }
 

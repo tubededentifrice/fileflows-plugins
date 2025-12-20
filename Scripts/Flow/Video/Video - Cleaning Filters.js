@@ -1,7 +1,7 @@
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 38
+ * @revision 39
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -15,6 +15,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     const truthyVar = (value) => value === true || value === 'true' || value === 1 || value === '1';
     SkipDenoise = truthyVar(SkipDenoise) || truthyVar(Variables.SkipDenoise);
     AggressiveCompression = truthyVar(AggressiveCompression) || truthyVar(Variables.AggressiveCompression);
+    UseCPUFilters = truthyVar(UseCPUFilters) || truthyVar(Variables.UseCPUFilters);
+    AllowCpuFiltersWithHardwareEncode = truthyVar(AllowCpuFiltersWithHardwareEncode) || truthyVar(Variables.AllowCpuFiltersWithHardwareEncode);
+    AutoDeinterlace = truthyVar(AutoDeinterlace) || truthyVar(Variables.AutoDeinterlace);
     MpDecimateAnimation = truthyVar(MpDecimateAnimation) || truthyVar(Variables.MpDecimateAnimation);
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
@@ -1056,9 +1059,9 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
     } else if (!isAnimation) {
         enableMpDecimate = false;
         mpDecimateReason = 'not-animation';
-    } else if (hwEncoder && hwEncoder !== 'qsv') {
+    } else if (hwEncoder && (hwEncoder !== 'qsv' || !AllowCpuFiltersWithHardwareEncode)) {
         enableMpDecimate = false;
-        mpDecimateReason = `unsupported-hw-encoder:${hwEncoder}`;
+        mpDecimateReason = hwEncoder !== 'qsv' ? `unsupported-hw-encoder:${hwEncoder}` : 'skipped (hardware-encode-no-cpu-allowed)';
     } else {
         if (forceMpDecimate) {
             enableMpDecimate = true;
@@ -1578,10 +1581,10 @@ function Script(SkipDenoise, AggressiveCompression, UseCPUFilters, AllowCpuFilte
                 const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
                 const added = [];
 
-                if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead'))) added.push('-look_ahead 1');
-                if (ensureArgWithValue(ep, '-look_ahead_depth', (isAnimation ? '40' : '20'), isFlag('-look_ahead_depth'))) {
-                    added.push(`-look_ahead_depth ${isAnimation ? '40' : '20'}`);
-                }
+                // if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead'))) added.push('-look_ahead 1');
+                // if (ensureArgWithValue(ep, '-look_ahead_depth', (isAnimation ? '40' : '20'), isFlag('-look_ahead_depth'))) {
+                //     added.push(`-look_ahead_depth ${isAnimation ? '40' : '20'}`);
+                // }
                 if (ensureArgWithValue(ep, '-extbrc', '1', isFlag('-extbrc'))) added.push('-extbrc 1');
 
                 // B-frames / refs (mostly impacts compression at same quality).

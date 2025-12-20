@@ -197,6 +197,10 @@ Flow.GetDirectorySize(path)         // Directory size in bytes
 Flow.GetToolPath('ffmpeg')          // Get configured tool path
 Flow.Execute(args)                  // Execute external command
 
+// Flow reporting (shown in the Processing Runner UI)
+// See: https://fileflows.com/docs/scripting/javascript/flow/
+Flow.AdditionalInfoRecorder(name, value, steps)
+
 // Properties
 Flow.FileName, Flow.WorkingFile, Flow.WorkingFileName
 Flow.IsDocker, Flow.IsWindows, Flow.IsLinux, Flow.IsMac
@@ -286,7 +290,7 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 - [Scripting Overview](https://fileflows.com/docs/scripting/)
 - [Flow Scripts](https://fileflows.com/docs/scripting/javascript/flow-scripts/)
 - [Variables](https://fileflows.com/docs/scripting/javascript/flow/variables)
-- [Flow Object](https://fileflows.com/docs/scripting/javascript/flow/)
+- [Flow Object](https://fileflows.com/docs/scripting/javascript/flow/) - Flow API and `AdditionalInfoRecorder(...)` for flow reporting (progress/info to the Processing Runner UI)
 - [Flow.Execute](https://fileflows.com/docs/scripting/javascript/flow/execute)
 - [Function Examples](https://fileflows.com/docs/scripting/javascript/function-examples)
 - [Video File Node](https://fileflows.com/docs/plugins/video-nodes/video-file)
