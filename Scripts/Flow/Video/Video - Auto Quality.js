@@ -50,7 +50,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 18
+ * @revision 19
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -398,7 +398,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const referenceMode = (!upstreamVideoFilters ? 'source' : (filtersNeedQsv ? 'encoded' : 'filtered-in-metric'));
 
     const referenceSamples = (referenceMode === 'encoded')
-        ? encodeReferenceSamples(ffmpegEncodePath, samples, SampleDurationSec, use10BitForTests, video, targetCodec, upstreamVideoFilters, referenceQuality)
+        ? encodeReferenceSamplesForAutoQuality(ffmpegEncodePath, samples, SampleDurationSec, use10BitForTests, video, targetCodec, upstreamVideoFilters, referenceQuality)
         : [];
 
     if (referenceSamples.length === 0) {
@@ -934,6 +934,210 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return overallAvg;
     }
 
+    function encodeReferenceSamplesForAutoQuality(ffmpegEncode, samples, sampleDur, use10Bit, videoStream, encoder, upstreamFilters, referenceQuality) {
+        // Pre-encode high-quality reference samples (only used when upstream filters require QSV filters).
+        // Returns array of {key, pos, path, filterMode, activeFilters}.
+        const tempDir = Flow.TempPath;
+        const results = [];
+
+        const upstreamFiltersStr = String(upstreamFilters || '').trim();
+        const upstreamNeedsQsv = detectNeedsQsvFilters(upstreamFiltersStr);
+
+        function getQualityArgForSampling(codec) {
+            const base = getCRFArgument(String(codec || ''));
+            if (base === '-global_quality') return '-global_quality:v';
+            return base;
+        }
+
+        const encSig = String(encoder || '').toLowerCase();
+        const outputIsQsvEncoder = encSig.indexOf('_qsv') >= 0;
+        const qualityArg = getQualityArgForSampling(encoder);
+
+        function buildBaseEncodeTokens() {
+            const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000).map(safeTokenString).filter(x => x);
+            const kept = [];
+
+            for (let i = 0; i < raw.length; i++) {
+                const t = String(raw[i] || '');
+                if (!t) continue;
+
+                if (t === '-vf' || t === '-filter_complex') { i++; continue; }
+                if (t === '-pix_fmt') { i++; continue; }
+                if (t === '-loglevel' || t === '-ss' || t === '-t' || t === '-i' || t === '-map' || t === '-map_chapters') { i++; continue; }
+
+                if (t === '-crf' || t.startsWith('-crf')) { i++; continue; }
+                if (t === '-cq' || t.startsWith('-cq')) { i++; continue; }
+                if (t === '-qp' || t.startsWith('-qp') || t.startsWith('-qp_i')) { i++; continue; }
+                if (t === '-global_quality' || t.startsWith('-global_quality')) { i++; continue; }
+                if (t.startsWith('-filter:v')) { i++; continue; }
+                if (t.startsWith('-c:v')) { i++; continue; }
+                if (t.startsWith('-pix_fmt')) { i++; continue; }
+                if (t === '-an' || t === '-sn' || t === '-dn' || t === '-y' || t === '-hide_banner' || t === '-nostats') continue;
+
+                kept.push(t);
+            }
+
+            kept.push('-c:v', String(encoder));
+            if (encSig.indexOf('_qsv') >= 0) {
+                const pf = use10Bit ? 'p010le' : 'nv12';
+                kept.push('-pix_fmt', pf);
+            } else {
+                const pf = use10Bit ? 'yuv420p10le' : 'yuv420p';
+                kept.push('-pix_fmt', pf);
+                kept.push('-preset', Preset);
+            }
+
+            return kept;
+        }
+
+        const baseEncodeTokens = buildBaseEncodeTokens();
+
+        function splitFilterChain(chain) {
+            const s = String(chain || '');
+            const parts = [];
+            let cur = '';
+            let escaped = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (escaped) { cur += ch; escaped = false; continue; }
+                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
+                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
+                cur += ch;
+            }
+            const tail = cur.trim();
+            if (tail) parts.push(tail);
+            return parts;
+        }
+
+        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
+        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
+        function isQsvFilterSegment(seg) {
+            const s = String(seg || '').trim().toLowerCase();
+            if (!s) return false;
+            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
+            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
+            return false;
+        }
+
+        function buildSamplingFilterGraph(filters, wantSoftwareFrames) {
+            let vf = String(filters || '').trim();
+            if (!vf) return '';
+            const qsvRequired = detectNeedsQsvFilters(vf);
+            if (!qsvRequired) return vf;
+
+            const segments = splitFilterChain(vf);
+            if (segments.length === 0) return '';
+
+            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
+            let firstQsv = -1;
+            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
+            if (firstQsv < 0) firstQsv = 0;
+
+            let hasHwuploadBefore = false;
+            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
+            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
+
+            if (wantSoftwareFrames) {
+                let lastQsv = -1;
+                for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
+                if (lastQsv < 0) lastQsv = segments.length - 1;
+
+                let hasHwdownloadAfter = false;
+                for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
+                if (!hasHwdownloadAfter) {
+                    const downloadFmt = use10Bit ? 'p010le' : 'nv12';
+                    const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
+                    if (downloadFmt === pixFmt) {
+                        segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
+                    } else {
+                        segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
+                    }
+                }
+            }
+
+            return segments.join(',');
+        }
+
+        function stripQsvOnlyFilters(filters) {
+            const vf = String(filters || '').trim();
+            if (!vf) return '';
+            const segs = splitFilterChain(vf);
+            const kept = [];
+            for (let i = 0; i < segs.length; i++) {
+                const seg = segs[i];
+                if (isQsvFilterSegment(seg)) continue;
+                if (isHwuploadSegment(seg) || isHwdownloadSegment(seg)) continue;
+                kept.push(seg);
+            }
+            return kept.join(',');
+        }
+
+        const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
+
+        Logger.ILog(`Pre-encoding ${samples.length} reference samples at quality ${referenceQuality} (${encoder})...`);
+
+        function buildEncodeArgs(sample, qValue, outputFile, filters) {
+            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const qsvRequired = detectNeedsQsvFilters(filters);
+            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
+            if (sample.seekSeconds && sample.seekSeconds > 0) args.push('-ss', String(sample.seekSeconds));
+            args.push('-i', sample.inputFile);
+            args.push('-t', String(sampleDur));
+            args.push('-map', '0:v:0');
+            const vf = buildSamplingFilterGraph(filters, !outputIsQsvEncoder);
+            if (vf) { args.push('-vf', vf); }
+            for (let i = 0; i < baseEncodeTokens.length; i++) args.push(baseEncodeTokens[i]);
+            args.push(qualityArg, String(qValue));
+            args.push('-an', '-sn', outputFile);
+            return args;
+        }
+
+        for (let i = 0; i < samples.length; i++) {
+            const sample = samples[i];
+            const referencePath = `${tempDir}/${sample.key}_reference.mkv`;
+
+            let activeFilters = upstreamFiltersStr;
+            let filterMode = 'upstream';
+
+            try {
+                let refResult = Flow.Execute({
+                    command: ffmpegEncode,
+                    argumentList: buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
+                    timeout: 600
+                });
+
+                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
+                    Logger.WLog(`Reference sample ${i + 1} failed with QSV filters (${sample.key}); retrying with software-only filters`);
+                    activeFilters = softwareFilters;
+                    filterMode = 'software-fallback';
+                    refResult = Flow.Execute({
+                        command: ffmpegEncode,
+                        argumentList: buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
+                        timeout: 600
+                    });
+                }
+
+                if (refResult.exitCode !== 0) {
+                    Logger.WLog(`Failed to encode reference sample ${i + 1} (${sample.key})`);
+                    continue;
+                }
+
+                results.push({ key: sample.key, pos: sample.pos, path: referencePath, filterMode: filterMode, activeFilters: activeFilters });
+                Logger.DLog(`Reference sample ${i + 1} encoded (${sample.key}, ${filterMode})`);
+            } catch (err) {
+                Logger.WLog(`Error encoding reference sample ${i + 1} (${sample.key}): ${err}`);
+            }
+        }
+
+        if (results.length === 0) {
+            Logger.ELog('Failed to encode any reference samples');
+        } else {
+            Logger.ILog(`Successfully pre-encoded ${results.length}/${samples.length} reference samples`);
+        }
+
+        return results;
+    }
+
     function encodeReferenceSamples(ffmpegEncode, inputFile, positions, sampleDur, use10Bit, encoder, upstreamFilters, referenceCrf) {
         // Pre-encode reference samples once for reuse across all CRF iterations.
         // Returns array of {pos, path, filterMode} for successful samples.
@@ -1106,6 +1310,256 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         }
 
         return results;
+    }
+
+    function measureQualityAtQualityValue(ffmpegEncode, ffmpegMetric, samples, qualityValue, videoStream, encoder, sampleDur, use10Bit, metric, upstreamFilters, referenceMode, referenceSamples) {
+        const tempDir = Flow.TempPath;
+        const scores = [];
+
+        if (!samples || samples.length === 0) {
+            Logger.ELog('No samples available for quality measurement');
+            return -1;
+        }
+
+        const upstreamFiltersStr = String(upstreamFilters || '').trim();
+        const encSig = String(encoder || '').toLowerCase();
+        const outputIsQsvEncoder = encSig.indexOf('_qsv') >= 0;
+
+        function getQualityArgForSampling(codec) {
+            const base = getCRFArgument(String(codec || ''));
+            if (base === '-global_quality') return '-global_quality:v';
+            return base;
+        }
+
+        const qualityArg = getQualityArgForSampling(encoder);
+
+        function buildBaseEncodeTokens() {
+            const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000).map(safeTokenString).filter(x => x);
+            const kept = [];
+
+            for (let i = 0; i < raw.length; i++) {
+                const t = String(raw[i] || '');
+                if (!t) continue;
+
+                if (t === '-vf' || t === '-filter_complex') { i++; continue; }
+                if (t === '-pix_fmt') { i++; continue; }
+                if (t === '-loglevel' || t === '-ss' || t === '-t' || t === '-i' || t === '-map' || t === '-map_chapters') { i++; continue; }
+
+                if (t === '-crf' || t.startsWith('-crf')) { i++; continue; }
+                if (t === '-cq' || t.startsWith('-cq')) { i++; continue; }
+                if (t === '-qp' || t.startsWith('-qp') || t.startsWith('-qp_i')) { i++; continue; }
+                if (t === '-global_quality' || t.startsWith('-global_quality')) { i++; continue; }
+                if (t.startsWith('-filter:v')) { i++; continue; }
+                if (t.startsWith('-c:v')) { i++; continue; }
+                if (t.startsWith('-pix_fmt')) { i++; continue; }
+                if (t === '-an' || t === '-sn' || t === '-dn' || t === '-y' || t === '-hide_banner' || t === '-nostats') continue;
+
+                kept.push(t);
+            }
+
+            kept.push('-c:v', String(encoder));
+            if (encSig.indexOf('_qsv') >= 0) {
+                const pf = use10Bit ? 'p010le' : 'nv12';
+                kept.push('-pix_fmt', pf);
+            } else {
+                const pf = use10Bit ? 'yuv420p10le' : 'yuv420p';
+                kept.push('-pix_fmt', pf);
+                kept.push('-preset', Preset);
+            }
+
+            return kept;
+        }
+
+        const baseEncodeTokens = buildBaseEncodeTokens();
+
+        function splitFilterChain(chain) {
+            const s = String(chain || '');
+            const parts = [];
+            let cur = '';
+            let escaped = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (escaped) { cur += ch; escaped = false; continue; }
+                if (ch === '\\\\') { cur += ch; escaped = true; continue; }
+                if (ch === ',') { const t = cur.trim(); if (t) parts.push(t); cur = ''; continue; }
+                cur += ch;
+            }
+            const tail = cur.trim();
+            if (tail) parts.push(tail);
+            return parts;
+        }
+
+        function isHwuploadSegment(seg) { return /^hwupload(=|$)/i.test(String(seg || '').trim()); }
+        function isHwdownloadSegment(seg) { return /^hwdownload(=|$)/i.test(String(seg || '').trim()); }
+        function isQsvFilterSegment(seg) {
+            const s = String(seg || '').trim().toLowerCase();
+            if (!s) return false;
+            if (s.startsWith('vpp_qsv') || s.startsWith('scale_qsv') || s.startsWith('deinterlace_qsv') || s.startsWith('tonemap_qsv')) return true;
+            if (/^[a-z0-9_]+_qsv(=|$)/.test(s)) return true;
+            return false;
+        }
+
+        function buildSamplingFilterGraph(filters, wantSoftwareFrames) {
+            let vf = String(filters || '').trim();
+            if (!vf) return '';
+            const qsvRequired = detectNeedsQsvFilters(vf);
+            if (!qsvRequired) return vf;
+
+            const segments = splitFilterChain(vf);
+            if (segments.length === 0) return '';
+
+            const uploadFmt = use10Bit ? 'p010le' : 'nv12';
+            let firstQsv = -1;
+            for (let i = 0; i < segments.length; i++) { if (isQsvFilterSegment(segments[i])) { firstQsv = i; break; } }
+            if (firstQsv < 0) firstQsv = 0;
+
+            let hasHwuploadBefore = false;
+            for (let i = 0; i < firstQsv; i++) { if (isHwuploadSegment(segments[i])) { hasHwuploadBefore = true; break; } }
+            if (!hasHwuploadBefore) { segments.splice(firstQsv, 0, `format=${uploadFmt}`, 'hwupload=extra_hw_frames=64'); }
+
+            if (wantSoftwareFrames) {
+                let lastQsv = -1;
+                for (let i = segments.length - 1; i >= 0; i--) { if (isQsvFilterSegment(segments[i])) { lastQsv = i; break; } }
+                if (lastQsv < 0) lastQsv = segments.length - 1;
+
+                let hasHwdownloadAfter = false;
+                for (let i = lastQsv + 1; i < segments.length; i++) { if (isHwdownloadSegment(segments[i])) { hasHwdownloadAfter = true; break; } }
+                if (!hasHwdownloadAfter) {
+                    const downloadFmt = use10Bit ? 'p010le' : 'nv12';
+                    const pixFmt = use10Bit ? 'yuv420p10le' : 'yuv420p';
+                    if (downloadFmt === pixFmt) {
+                        segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`);
+                    } else {
+                        segments.splice(lastQsv + 1, 0, 'hwdownload', `format=${downloadFmt}`, `format=${pixFmt}`);
+                    }
+                }
+            }
+
+            return segments.join(',');
+        }
+
+        function buildEncodeArgs(sample, qValue, outputFile, filters) {
+            const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+            const qsvRequired = detectNeedsQsvFilters(filters);
+            if (qsvRequired) { args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv'); }
+            if (sample.seekSeconds && sample.seekSeconds > 0) args.push('-ss', String(sample.seekSeconds));
+            args.push('-i', sample.inputFile);
+            args.push('-t', String(sampleDur));
+            args.push('-map', '0:v:0');
+            const vf = buildSamplingFilterGraph(filters, !outputIsQsvEncoder);
+            if (vf) { args.push('-vf', vf); }
+            for (let i = 0; i < baseEncodeTokens.length; i++) args.push(baseEncodeTokens[i]);
+            args.push(qualityArg, String(qValue));
+            args.push('-an', '-sn', outputFile);
+            return args;
+        }
+
+        const refByKey = {};
+        if (referenceSamples && referenceSamples.length) {
+            for (let i = 0; i < referenceSamples.length; i++) {
+                const r = referenceSamples[i];
+                if (r && r.key) refByKey[r.key] = r;
+            }
+        }
+
+        let vmafNSubsample = 1;
+        try {
+            const desired = parseFloat(Variables.AutoQuality_VmafFps || Variables.VmafFps || 0);
+            if (metric === 'VMAF' && desired > 0 && fps > 0) {
+                vmafNSubsample = Math.max(1, Math.round(fps / desired));
+            }
+        } catch (e) { }
+
+        const metricFilter = (metric === 'VMAF')
+            ? `libvmaf=n_threads=4${vmafNSubsample > 1 ? (':n_subsample=' + vmafNSubsample) : ''}:shortest=1:eof_action=endall`
+            : 'ssim';
+
+        for (let i = 0; i < samples.length; i++) {
+            const sample = samples[i];
+            const encodedSample = `${tempDir}/${sample.key}_encoded_quality_${qualityValue}.mkv`;
+
+            const ref = refByKey[sample.key];
+            const activeFilters = ref?.activeFilters || upstreamFiltersStr;
+            const filterMode = ref?.filterMode || (upstreamFiltersStr ? 'upstream' : 'none');
+
+            try {
+                const encResult = Flow.Execute({
+                    command: ffmpegEncode,
+                    argumentList: buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters),
+                    timeout: 600
+                });
+
+                if (encResult.exitCode !== 0) {
+                    Logger.WLog(`Failed to encode sample (${sample.key}) at quality ${qualityValue} (${encoder})`);
+                    continue;
+                }
+
+                if (filterMode === 'software-fallback') {
+                    Variables.AutoQuality_FilterMode = 'software-fallback';
+                } else if (!Variables.AutoQuality_FilterMode) {
+                    Variables.AutoQuality_FilterMode = upstreamFiltersStr ? 'upstream' : 'none';
+                }
+
+                const applyRefFiltersInMetric = (referenceMode === 'filtered-in-metric' && upstreamFiltersStr);
+                const refChain = applyRefFiltersInMetric ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic` : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
+                const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
+
+                const metricArgs = ['-hide_banner', '-loglevel', 'info', '-nostats', '-y', '-i', encodedSample];
+
+                if (referenceMode === 'encoded') {
+                    const referencePath = ref?.path;
+                    if (!referencePath) {
+                        Logger.WLog(`Missing reference for sample ${sample.key}`);
+                        continue;
+                    }
+                    metricArgs.push('-i', referencePath);
+                } else {
+                    if (sample.seekSeconds && sample.seekSeconds > 0) metricArgs.push('-ss', String(sample.seekSeconds));
+                    metricArgs.push('-t', String(sampleDur));
+                    metricArgs.push('-i', sample.inputFile);
+                }
+
+                metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
+
+                const qualityResult = Flow.Execute({
+                    command: ffmpegMetric,
+                    argumentList: metricArgs,
+                    timeout: 300
+                });
+
+                const output = (qualityResult.output || '') + '\n' + (qualityResult.standardOutput || '') + '\n' + (qualityResult.standardError || '');
+
+                let score = null;
+                if (metric === 'VMAF') {
+                    const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                    if (vmafMatch) score = parseFloat(vmafMatch[1]);
+                    else {
+                        const jsonMatch = output.match(/\"vmaf\"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                        if (jsonMatch) score = parseFloat(jsonMatch[1]);
+                    }
+                } else {
+                    const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                    if (ssimMatch) score = parseFloat(ssimMatch[1]);
+                }
+
+                if (score !== null) {
+                    scores.push(score);
+                    const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
+                    Logger.DLog(`Sample ${i + 1} (${sample.key}): ${metric} ${scoreDisplay}`);
+                } else {
+                    Logger.WLog(`Could not parse ${metric} score for sample ${sample.key}`);
+                    const snippet = output.substring(0, 500).split('\n').join(' ');
+                    Logger.DLog(`Output snippet: ${snippet}`);
+                }
+            } catch (err) {
+                Logger.WLog(`Error processing sample ${sample.key}: ${err}`);
+            } finally {
+                cleanupFiles([encodedSample]);
+            }
+        }
+
+        if (scores.length === 0) return -1;
+        return scores.reduce((a, b) => a + b, 0) / scores.length;
     }
 
     function measureQualityAtCRF(ffmpegEncode, ffmpegMetric, inputFile, crf, encoder, sampleDur, use10Bit, metric, referenceSamples) {
