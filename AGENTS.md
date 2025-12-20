@@ -158,6 +158,8 @@ stream.Codec             // string - Codec name
 stream.Channels          // number - Audio channels (e.g., 5.1 = 6)
 ```
 
+When working with `EncodingParameters` and filter injection (e.g. `-filter:v:0`), the FFmpeg Builder docs are the primary reference: [FFmpeg Builder](https://fileflows.com/docs/plugins/video-nodes/ffmpeg-builder/).
+
 ### Stream Manipulation Patterns
 ```javascript
 // Remove streams by language

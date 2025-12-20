@@ -40,6 +40,8 @@ VARIABLE OVERRIDES:
 - Variables.AutoQualityPreset: 'quality' | 'balanced' | 'compression'
 - Variables['ffmpeg_vmaf']: Path to VMAF-enabled FFmpeg (e.g., '/app/common/ffmpeg-static/ffmpeg')
 - Variables.Preset: Override encoder preset (ultrafast to veryslow)
+- Variables.AutoQuality_ReferenceMode: 'auto' | 'encoded' | 'source' | 'filtered-in-metric' (default: auto)
+- Variables.AutoQuality_VmafFps: VMAF scoring FPS hint (eg 12); mapped to libvmaf n_subsample
 
 OUTPUT VARIABLES:
 - Variables.AutoQuality_CRF: The CRF value found
@@ -50,7 +52,7 @@ OUTPUT VARIABLES:
 - Variables.AutoQuality_Results: JSON array of all tested CRF/score pairs
 
  * @author Vincent Courcelle
- * @revision 19
+ * @revision 21
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -263,7 +265,7 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const isHDR = videoInfo.VideoStreams?.[0]?.HDR || false;
     const isDolbyVision = videoInfo.VideoStreams?.[0]?.DolbyVision || false;
 
-    Logger.ILog(`Source: ${width}x${height}, ${fps}fps, ${Math.round(videoBitrate/1000)}kbps, codec=${videoCodec}, HDR=${isHDR}, 10bit=${use10BitForTests}, duration=${Math.round(duration)}s`);
+    Logger.ILog(`Source: ${width}x${height}, ${fps}fps, ${Math.round(videoBitrate / 1000)}kbps, codec=${videoCodec}, HDR=${isHDR}, 10bit=${use10BitForTests}, duration=${Math.round(duration)}s`);
 
     // Validate duration - must be a positive number
     if (!duration || isNaN(duration) || duration <= 0) {
@@ -287,10 +289,30 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     Logger.ILog(`Target encoder: ${targetCodec}, CRF argument: ${crfArg}`);
 
     // ===== UPSTREAM VIDEO FILTERS (from FFmpeg Builder) =====
-    const upstreamVideoFilters = getUpstreamVideoFilters(video);
+    const encodingParamFilter = getVideoFilterFromEncodingParameters(video);
+    const cropFilter = getCropFilterFromModel(video);
+    let upstreamVideoFilters = encodingParamFilter || getUpstreamVideoFilters(video);
+
+    if (encodingParamFilter) {
+        Variables.AutoQuality_FilterSource = 'encoding-params';
+        if (cropFilter && upstreamVideoFilters.indexOf('crop=') < 0) {
+            upstreamVideoFilters = cropFilter + ',' + upstreamVideoFilters;
+        }
+    } else {
+        Variables.AutoQuality_FilterSource = 'model';
+    }
+
     Variables.AutoQuality_UpstreamVideoFilters = upstreamVideoFilters;
+    Variables.AutoQuality_EncodingParamFilter = encodingParamFilter || '';
     if (upstreamVideoFilters) {
-        Logger.ILog(`Auto quality: using upstream video filters for sampling: ${upstreamVideoFilters}`);
+        Logger.ILog(`Auto quality: using upstream video filters for sampling: ${upstreamVideoFilters} (source=${Variables.AutoQuality_FilterSource})`);
+    } else {
+        // Sanity check: warn if filters exist on the model but none are present in EncodingParameters.
+        // Some runner versions may ignore Filter/Filters collections in "New mode", so prefer using Cleaning Filters (or equivalent) to inject '-filter:v:0'.
+        const maybeModelFilters = asJoinedString(video.Filter) || asJoinedString(video.Filters) || asJoinedString(video.OptionalFilter) || '';
+        if (maybeModelFilters) {
+            Logger.WLog('Auto quality: video filters exist on the FFmpeg Builder model, but no filter chain was found in EncodingParameters; the final executor may ignore them depending on runner version.');
+        }
     }
 
     // "Extra high quality" reference transcode quality used as the VMAF/SSIM reference.
@@ -392,10 +414,22 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
     const filtersNeedQsv = detectNeedsQsvFilters(upstreamVideoFilters);
 
     // Reference strategy:
-    // - No filters: use the raw sample as reference (no reference transcode).
-    // - Software-only filters: apply them to the reference stream inside the VMAF/SSIM pass (no reference transcode).
-    // - QSV filters: prefilter+encode a reference file once per sample so VMAF doesn't penalize intentional filtering.
-    const referenceMode = (!upstreamVideoFilters ? 'source' : (filtersNeedQsv ? 'encoded' : 'filtered-in-metric'));
+    // - encoded: pre-encode high quality reference samples using the same encoder + filters as tests (recommended when filters can change the picture, eg denoise).
+    // - source: compare against the raw sample (no reference transcode).
+    // - filtered-in-metric: apply software filters to the reference stream inside the VMAF/SSIM pass (no reference transcode).
+    //
+    // Default ("auto"): encoded when any upstream filters exist, otherwise source.
+    let referenceMode = 'auto';
+    try {
+        const rm = String(Variables.AutoQuality_ReferenceMode || '').trim().toLowerCase();
+        if (rm) referenceMode = rm;
+    } catch (e) { }
+    if (referenceMode === 'auto') {
+        referenceMode = upstreamVideoFilters ? 'encoded' : 'source';
+    }
+    if (referenceMode !== 'encoded' && referenceMode !== 'source' && referenceMode !== 'filtered-in-metric') {
+        referenceMode = upstreamVideoFilters ? 'encoded' : 'source';
+    }
 
     const referenceSamples = (referenceMode === 'encoded')
         ? encodeReferenceSamplesForAutoQuality(ffmpegEncodePath, samples, SampleDurationSec, use10BitForTests, video, targetCodec, upstreamVideoFilters, referenceQuality)
@@ -708,6 +742,34 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         return deduped.join(',');
     }
 
+    function getVideoFilterFromEncodingParameters(videoStream) {
+        // In FFmpeg Builder "New mode" the executor may rely on filters being present in EncodingParameters
+        // (eg: '-filter:v:0 <chain>'). Prefer this chain for sampling when available so tests match the final pass.
+        try {
+            const ep = toEnumerableArray(videoStream?.EncodingParameters, 2000).map(safeTokenString).filter(x => x);
+            for (let i = 0; i < ep.length - 1; i++) {
+                const t = String(ep[i] || '');
+                if (t === '-vf' || t.startsWith('-filter:v')) {
+                    const val = String(ep[i + 1] || '').trim();
+                    if (val) return val;
+                }
+            }
+        } catch (err) { }
+        return '';
+    }
+
+    function getCropFilterFromModel(videoStream) {
+        try {
+            const crop = videoStream?.Crop;
+            if (crop && crop.Width > 0 && crop.Height > 0) {
+                const cx = (crop.X !== null && crop.X !== undefined) ? crop.X : 0;
+                const cy = (crop.Y !== null && crop.Y !== undefined) ? crop.Y : 0;
+                return `crop=${crop.Width}:${crop.Height}:${cx}:${cy}`;
+            }
+        } catch (err) { }
+        return '';
+    }
+
     function getReferenceQuality(minValue, targetCodec) {
         // Keep the reference noticeably higher quality than the search range.
         // For software CRF-like scales: lower is better; clamp to 0.
@@ -956,10 +1018,12 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         function buildBaseEncodeTokens() {
             const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000).map(safeTokenString).filter(x => x);
             const kept = [];
+            const encoderToken = String(encoder || '').trim().toLowerCase();
 
             for (let i = 0; i < raw.length; i++) {
-                const t = String(raw[i] || '');
+                const t = String(raw[i] || '').replace(/\{index\}/gi, '0');
                 if (!t) continue;
+                if (encoderToken && String(t).trim().toLowerCase() === encoderToken) continue;
 
                 if (t === '-vf' || t === '-filter_complex') { i++; continue; }
                 if (t === '-pix_fmt') { i++; continue; }
@@ -1336,10 +1400,12 @@ function Script(TargetVMAF, MinCRF, MaxCRF, SampleDurationSec, SampleCount, MaxS
         function buildBaseEncodeTokens() {
             const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000).map(safeTokenString).filter(x => x);
             const kept = [];
+            const encoderToken = String(encoder || '').trim().toLowerCase();
 
             for (let i = 0; i < raw.length; i++) {
-                const t = String(raw[i] || '');
+                const t = String(raw[i] || '').replace(/\{index\}/gi, '0');
                 if (!t) continue;
+                if (encoderToken && String(t).trim().toLowerCase() === encoderToken) continue;
 
                 if (t === '-vf' || t === '-filter_complex') { i++; continue; }
                 if (t === '-pix_fmt') { i++; continue; }
