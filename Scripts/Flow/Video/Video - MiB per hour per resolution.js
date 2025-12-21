@@ -52,8 +52,8 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     }
 
     const fileSize = Variables.file.Size;
-    if (!duration) {
-        Logger.ILog('No duration found');
+    if (!duration || isNaN(duration) || duration <= 0) {
+        Logger.WLog(`Unable to determine video duration. MiB per hour calculation aborted. Duration: ${duration}`);
         return OUTPUT_UNABLE;
     }
 

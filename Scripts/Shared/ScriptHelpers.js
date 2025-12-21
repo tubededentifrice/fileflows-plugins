@@ -521,16 +521,35 @@ export class ScriptHelpers {
         const videoVar = Variables.video || {};
         const viVar = Variables.vi || {};
         const ffmpegModel = Variables.FfmpegBuilderModel || {};
-        const videoInfo = viVar.VideoInfo || ffmpegModel.VideoInfo || {};
+        const videoInfo = viVar.VideoInfo || Variables['vi.VideoInfo'] || ffmpegModel.VideoInfo || {};
         const videoStreams = this.toEnumerableArray(videoInfo.VideoStreams, 10);
         const vs0 = videoStreams.length > 0 ? videoStreams[0] : {};
 
-        const width = parseInt(videoVar.Width || vs0.Width || 0);
-        const height = parseInt(videoVar.Height || vs0.Height || 0);
+        const width = parseInt(videoVar.Width || vs0.Width || Variables['video.Width'] || Variables['vi.Width'] || 0);
+        const height = parseInt(
+            videoVar.Height || vs0.Height || Variables['video.Height'] || Variables['vi.Height'] || 0
+        );
 
-        let duration = videoVar.Duration || viVar.Duration || videoInfo.Duration || vs0.Duration || 0;
+        let duration =
+            videoVar.Duration ||
+            viVar.Duration ||
+            videoInfo.Duration ||
+            vs0.Duration ||
+            Variables['video.Duration'] ||
+            Variables['vi.Duration'] ||
+            Variables['vi.VideoInfo.Duration'] ||
+            0;
+
         if (duration && typeof duration !== 'number') {
+            const originalDuration = duration;
             duration = this.parseDurationSeconds(duration);
+            Logger.DLog(`Parsed duration '${originalDuration}' to ${duration} seconds`);
+        }
+
+        if (!duration || duration <= 0) {
+            Logger.WLog(
+                `getVideoMetadata: No duration found. Sources: videoVar.Duration=${videoVar.Duration}, viVar.Duration=${viVar.Duration}, videoInfo.Duration=${videoInfo.Duration}, vs0.Duration=${vs0.Duration}, Variables['video.Duration']=${Variables['video.Duration']}, Variables['vi.Duration']=${Variables['vi.Duration']}`
+            );
         }
 
         return {
