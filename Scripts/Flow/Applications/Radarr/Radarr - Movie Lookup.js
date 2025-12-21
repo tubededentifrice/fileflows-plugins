@@ -27,7 +27,7 @@ function Script(URL, ApiKey, UseFolderName) {
 
     // Search for the movie in Radarr by path, queue, or download history
     // Logic moved to Shared/RadarrVc.js to enforce DRY
-    let movie =
+    const movie =
         radarr.searchMovieByPath(searchPattern) ||
         radarr.searchInQueue(searchPattern) ||
         radarr.searchInDownloadHistory(searchPattern);

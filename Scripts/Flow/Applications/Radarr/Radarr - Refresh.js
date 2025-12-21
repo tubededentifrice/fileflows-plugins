@@ -12,13 +12,13 @@ import { RadarrVc } from 'Shared/RadarrVc';
 function Script(URI, ApiKey) {
     // Remove trailing / from URI
     URI = URI.replace(/\/$/, '');
-    let radarr = new RadarrVc(URI, ApiKey);
+    const radarr = new RadarrVc(URI, ApiKey);
     // let folderPath = Variables.folder.FullName;
     // let currentFileName = Variables.file.Name;
     // let newFilePath = null;
 
     // Find movie name from radarr
-    let movieId = Variables['movie.RadarrId'];
+    const movieId = Variables['movie.RadarrId'];
     if (!movieId) {
         Logger.WLog('This script requires the Radarr - Movie search script to be run first');
         return 2;
@@ -36,18 +36,18 @@ function Script(URI, ApiKey) {
     Logger.ILog('Refreshing movie ' + movieId);
 
     // Get Movie File info
-    let movieFiles = radarr.findMovieFiles(movieId);
+    const movieFiles = radarr.findMovieFiles(movieId);
     if (!movieFiles) {
         Logger.ILog('No files found for movie ' + movieId);
         return 2;
     }
 
     try {
-        let refreshBody = {
+        const refreshBody = {
             movieIds: [movieId],
             isNewMovie: false
         };
-        let refreshData = radarr.sendCommand('RefreshMovie', refreshBody);
+        const refreshData = radarr.sendCommand('RefreshMovie', refreshBody);
         Logger.ILog('Movie refreshed: ' + JSON.stringify(refreshData));
 
         return 1;

@@ -12,7 +12,7 @@ import { SonarrVc } from 'Shared/SonarrVc';
 function Script(URI, ApiKey) {
     // Remove trailing / from URI
     URI = URI.replace(/\/$/, '');
-    let sonarr = new SonarrVc(URI, ApiKey);
+    const sonarr = new SonarrVc(URI, ApiKey);
     // const folderPath = Variables.folder.Orig.FullName;
     const ogFileName = Variables.file.Orig.FileName;
     const ogFullName = Variables.file.Orig.FullName;
@@ -20,7 +20,7 @@ function Script(URI, ApiKey) {
     // let newFilePath = null;
 
     const series = Variables['TVShowInfo'];
-    let seriesId = Variables['movie.SonarrId'];
+    const seriesId = Variables['movie.SonarrId'];
     if (!seriesId) {
         Logger.WLog('This script requires the Radarr - Movie search script to be run first');
         return 2;
@@ -30,8 +30,8 @@ function Script(URI, ApiKey) {
 
     // Fetch the episode of the serie before touching anything
     // Logic moved to Shared/SonarrVc.js
-    let episodeResult = sonarr.fetchEpisode(ogFullName, series);
-    let episode = episodeResult && episodeResult[1];
+    const episodeResult = sonarr.fetchEpisode(ogFullName, series);
+    const episode = episodeResult && episodeResult[1];
     if (episode && episode.id !== undefined) {
         Logger.ILog('Original episode found: Season ' + episode.seasonNumber + ' Episode: ' + episode.episodeNumber);
     } else {
@@ -48,12 +48,12 @@ function Script(URI, ApiKey) {
 
     if (episode && episode.id) {
         // Sometimes sonarr doesn't autodetect the transcoded files so we need to manually import it for Sonarr to rename it
-        let manualImport = sonarr.fetchManualImportFile(ogFileName, seriesId, episode.seasonNumber);
+        const manualImport = sonarr.fetchManualImportFile(ogFileName, seriesId, episode.seasonNumber);
         if (manualImport) {
             Logger.ILog('Updated file not auto-detected by Sonarr. Manually importing');
 
-            let importCommand = sonarr.manuallyImportFile(manualImport, episode.id);
-            let importCompleted = sonarr.waitForCompletion(importCommand.id, 30000);
+            const importCommand = sonarr.manuallyImportFile(manualImport, episode.id);
+            const importCompleted = sonarr.waitForCompletion(importCommand.id, 30000);
             if (!importCompleted) {
                 Logger.WLog('import not completed');
                 return 2;

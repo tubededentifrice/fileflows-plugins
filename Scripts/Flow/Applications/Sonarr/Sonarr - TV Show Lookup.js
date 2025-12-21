@@ -30,7 +30,7 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
 
     // Search for the series in Sonarr by path, queue, or download history
     // Logic moved to Shared/SonarrVc.js to enforce DRY
-    let series =
+    const series =
         sonarr.searchSeriesByPath(searchPattern) ||
         sonarr.searchInQueue(searchPattern) ||
         sonarr.searchInDownloadHistory(searchPattern);
