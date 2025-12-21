@@ -728,7 +728,7 @@ function Script(
 
             const output = (process.standardError || '') + '\n' + (process.standardOutput || '');
             const match = output.match(
-                /Multi frame detection:\\s*TFF:\\s*(\\d+)\\s*BFF:\\s*(\\d+)\\s*Progressive:\\s*(\\d+)\\s*Undetermined:\\s*(\\d+)/i
+                /Multi frame detection:\s*TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)\s*Undetermined:\s*(\d+)/i
             );
             if (match) {
                 tff += parseInt(match[1]) || 0;
