@@ -17,10 +17,12 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     const OUTPUT_ABOVE = 2;
     const OUTPUT_UNABLE = 3;
 
+    const metadata = helpers.getVideoMetadata();
+    const width = metadata.width;
+    const height = metadata.height;
+    const duration = metadata.duration;
+
     let MaxMiBPerHour = null;
-    const videoVar = Variables.video;
-    const width = videoVar && videoVar.Width;
-    const height = videoVar && videoVar.Height;
     switch (helpers.getResolution(width, height)) {
         case '4K':
             MaxMiBPerHour = MaxMiBPerHour4K;
@@ -50,7 +52,6 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     }
 
     const fileSize = Variables.file.Size;
-    const duration = videoVar && videoVar.Duration;
     if (!duration) {
         Logger.ILog('No duration found');
         return OUTPUT_UNABLE;

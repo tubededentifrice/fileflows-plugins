@@ -512,4 +512,31 @@ export class ScriptHelpers {
         }
         return 8;
     }
+
+    /**
+     * Gets the most reliable video information available from global variables
+     * @returns {Object} { width, height, duration }
+     */
+    getVideoMetadata() {
+        const videoVar = Variables.video || {};
+        const viVar = Variables.vi || {};
+        const ffmpegModel = Variables.FfmpegBuilderModel || {};
+        const videoInfo = viVar.VideoInfo || ffmpegModel.VideoInfo || {};
+        const videoStreams = this.toEnumerableArray(videoInfo.VideoStreams, 10);
+        const vs0 = videoStreams.length > 0 ? videoStreams[0] : {};
+
+        const width = parseInt(videoVar.Width || vs0.Width || 0);
+        const height = parseInt(videoVar.Height || vs0.Height || 0);
+
+        let duration = videoVar.Duration || viVar.Duration || videoInfo.Duration || vs0.Duration || 0;
+        if (duration && typeof duration !== 'number') {
+            duration = this.parseDurationSeconds(duration);
+        }
+
+        return {
+            width: width > 0 ? width : 0,
+            height: height > 0 ? height : 0,
+            duration: duration > 0 ? parseFloat(duration) : 0
+        };
+    }
 }

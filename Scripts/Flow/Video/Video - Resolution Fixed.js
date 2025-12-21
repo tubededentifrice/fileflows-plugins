@@ -15,9 +15,9 @@ function Script() {
     const OUTPUT_720 = 3;
     const OUTPUT_SD = 4;
 
-    const videoVar = Variables.video;
-    const width = videoVar && videoVar.Width;
-    const height = videoVar && videoVar.Height;
+    const metadata = helpers.getVideoMetadata();
+    const width = metadata.width;
+    const height = metadata.height;
 
     if (!width || !height) {
         Logger.ELog('No video info found, run the Video File flow element first.');

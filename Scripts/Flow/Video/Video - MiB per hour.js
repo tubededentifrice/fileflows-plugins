@@ -22,9 +22,9 @@ function Script(MaxMiBPerHour) {
         return OUTPUT_UNABLE;
     }
 
+    const metadata = helpers.getVideoMetadata();
     const fileSize = Variables.file.Size;
-    const videoVar = Variables.video;
-    const duration = videoVar && videoVar.Duration;
+    const duration = metadata.duration;
     if (!duration) {
         Logger.ILog('No duration found');
         return OUTPUT_UNABLE;

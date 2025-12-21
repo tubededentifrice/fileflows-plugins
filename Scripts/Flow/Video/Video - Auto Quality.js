@@ -368,6 +368,11 @@ function Script(
     Variables.AutoQuality_Metric = qualityMetric;
 
     // ===== GATHER VIDEO INFO =====
+    const metadata = helpers.getVideoMetadata();
+    const duration = metadata.duration;
+    const width = metadata.width || 1920;
+    const height = metadata.height || 1080;
+
     const viVar = Variables.vi;
     const videoInfo = (viVar && viVar.VideoInfo) || ffmpegModel.VideoInfo;
     if (!videoInfo) {
@@ -376,36 +381,15 @@ function Script(
     }
 
     const fileVar = Variables.file;
-    const videoVar = Variables.video;
 
     const sourceFile = (fileVar && fileVar.FullName) || Flow.WorkingFile;
     const originalFile = (fileVar && fileVar.Orig && fileVar.Orig.FullName) || sourceFile;
 
-    // Get duration from multiple sources - FileFlows stores it in various places
-    let duration = 0;
-    const videoStream0 = videoInfo.VideoStreams && videoInfo.VideoStreams[0];
-    // Try video stream duration first
-    if (videoStream0 && videoStream0.Duration > 0) {
-        duration = videoInfo.VideoStreams[0].Duration;
-    }
-    // Try Variables.video.Duration (set by Video File node)
-    else if (videoVar && videoVar.Duration > 0) {
-        duration = videoVar.Duration;
-    }
-    // Try overall VideoInfo duration
-    else if (videoInfo.Duration > 0) {
-        duration = videoInfo.Duration;
-    }
-    // Estimate from file size and bitrate as last resort
-    else if (videoInfo.Bitrate > 0 && fileVar && fileVar.Size > 0) {
-        duration = (fileVar.Size * 8) / videoInfo.Bitrate;
-        Logger.WLog(`Estimated duration from filesize/bitrate: ${Math.round(duration)}s`);
-    }
+    const videoStreams = helpers.toEnumerableArray(videoInfo.VideoStreams, 10);
+    const videoStream0 = videoStreams.length > 0 ? videoStreams[0] : null;
 
     const videoCodec = videoStream0 && videoStream0.Codec ? String(videoStream0.Codec).toLowerCase() : '';
     const videoBitrate = getVideoBitrate(videoInfo);
-    const width = (videoStream0 && videoStream0.Width) || (videoVar && videoVar.Width) || 1920;
-    const height = (videoStream0 && videoStream0.Height) || (videoVar && videoVar.Height) || 1080;
     const fps = (videoStream0 && videoStream0.FramesPerSecond) || 24;
     const is10Bit = (videoStream0 && videoStream0.Is10Bit) || (videoStream0 && videoStream0.Bits === 10);
     const targetBitDepth = detectTargetBitDepth(video);
@@ -419,11 +403,7 @@ function Script(
 
     // Validate duration - must be a positive number
     if (!duration || isNaN(duration) || duration <= 0) {
-        const streamDuration = videoStream0 ? videoStream0.Duration : null;
-        const varDuration = videoVar ? videoVar.Duration : null;
-        Logger.ELog(
-            `Auto quality: Could not determine video duration. VideoInfo.Duration=${videoInfo.Duration}, VideoStream.Duration=${streamDuration}, Variables.video.Duration=${varDuration}`
-        );
+        Logger.ELog(`Auto quality: Could not determine video duration.`);
         Logger.WLog('Leaving quality settings unchanged.');
         Variables.AutoQuality_CRF = 'unchanged';
         Variables.AutoQuality_Reason = 'unknown_duration';
