@@ -1,10 +1,10 @@
 import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
- * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
+ * @description Detect missing audio/subtitle track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
  * @help Run after a "Video File" node so `vi.VideoInfo` is available. For MKV outputs, `mkvpropedit` is used for instant in-place tagging (sets both legacy `language` and modern `language-ietf`/BCP47 when possible); otherwise an ffmpeg stream-copy remux is done.
  * @author Vincent Courcelle
- * @revision 13
+ * @revision 14
  * @minimumVersion 24.0.0.0
  * @param {bool} DryRun Log what would change, but do not modify the file. Default: false
  * @param {bool} UseHeuristics Infer language from track title / filename tags (e.g. "English", "[jpn]"). Default: true
@@ -15,6 +15,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {int} SampleDurationSeconds Duration of the audio sample in seconds. Default: 25
  * @param {bool} PreferMkvPropEdit For MKV, prefer mkvpropedit over remuxing. Default: true
  * @param {bool} ForceRetag Force detection/tagging even if tracks already have a language tag. Can be overridden by `Variables['AudioLangID.ForceRetag']`. Default: false
+ * @param {bool} TagSubtitles Also tag subtitle tracks that are missing a language tag. Can be overridden by `Variables['AudioLangID.TagSubtitles']`. Default: true
  * @output Tagged languages
  * @output No changes needed
  * @output Error
@@ -28,9 +29,10 @@ function Script(
     SampleStartSeconds,
     SampleDurationSeconds,
     PreferMkvPropEdit,
-    ForceRetag
+    ForceRetag,
+    TagSubtitles
 ) {
-    Logger.ILog('Audio - Auto tag missing language.js revision 13 loaded');
+    Logger.ILog('Audio - Auto tag missing language.js revision 14 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -432,6 +434,7 @@ function Script(
 
     const dryRun = !!DryRun;
     const forceRetagParam = ForceRetag === undefined || ForceRetag === null ? false : !!ForceRetag;
+    const tagSubtitlesParam = TagSubtitles === undefined || TagSubtitles === null ? true : !!TagSubtitles;
     const useHeuristics = UseHeuristics === undefined || UseHeuristics === null ? true : !!UseHeuristics;
     const useSpeechBrain = UseSpeechBrain === undefined || UseSpeechBrain === null ? true : !!UseSpeechBrain;
     const speechBrainMinConfidence = clampInt(toInt(SpeechBrainMinConfidence, 75), 0, 100);
@@ -452,6 +455,9 @@ function Script(
 
     const forceRetagVar = parseBool(getVariablesKey('AudioLangID.ForceRetag'));
     const forceRetag = forceRetagVar === null ? forceRetagParam : !!forceRetagVar;
+
+    const tagSubtitlesVar = parseBool(getVariablesKey('AudioLangID.TagSubtitles'));
+    const tagSubtitles = tagSubtitlesVar === null ? tagSubtitlesParam : !!tagSubtitlesVar;
 
     const sampleStartSecondsOverride = toInt(getVariablesKey('AudioLangID.SampleStartSeconds'), null);
     const sampleDurationSecondsOverride = toInt(getVariablesKey('AudioLangID.SampleDurationSeconds'), null);
@@ -512,10 +518,20 @@ function Script(
         return candidates;
     }
 
-    function applyInMemoryLanguageUpdates(changesList, primaryVideoInfo, viObj, videoObj, ffModel) {
-        if (!changesList || changesList.length === 0) return;
+    function applyInMemoryLanguageUpdates(
+        audioChangesList,
+        subtitleChangesList,
+        primaryVideoInfo,
+        viObj,
+        videoObj,
+        ffModel
+    ) {
+        const audioChanges = audioChangesList || [];
+        const subtitleChanges = subtitleChangesList || [];
+        if (audioChanges.length === 0 && subtitleChanges.length === 0) return;
 
         let updatedAudioStreams = 0;
+        let updatedSubtitleStreams = 0;
         let updatedBuilderStreams = 0;
         let failedUpdates = 0;
 
@@ -533,7 +549,7 @@ function Script(
             const list = toEnumerableArray(audioList, 500);
             if (!list || list.length === 0) return;
 
-            for (const c of changesList) {
+            for (const c of audioChanges) {
                 if (!c || !c.iso) continue;
 
                 // Prefer updating the exact stream instance when we still have it.
@@ -596,6 +612,81 @@ function Script(
             }
         }
 
+        function updateSubtitleStreamsOnVideoInfo(videoInfoObj, label) {
+            if (!videoInfoObj) return;
+
+            let subtitleList = null;
+            try {
+                subtitleList = videoInfoObj.SubtitleStreams;
+            } catch (err) {
+                subtitleList = null;
+            }
+            if (!subtitleList) return;
+
+            const list = toEnumerableArray(subtitleList, 500);
+            if (!list || list.length === 0) return;
+
+            for (const c of subtitleChanges) {
+                if (!c || !c.iso) continue;
+
+                let target = c.streamRef && typeof c.streamRef === 'object' ? c.streamRef : null;
+
+                if (!target && c.overallIndex !== null && c.overallIndex !== undefined) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (
+                                s.Index !== undefined &&
+                                s.Index !== null &&
+                                Number(s.Index) === Number(c.overallIndex)
+                            ) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) {}
+                    }
+                }
+
+                if (!target) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (
+                                s.TypeIndex !== undefined &&
+                                s.TypeIndex !== null &&
+                                Number(s.TypeIndex) === Number(c.typeIndex)
+                            ) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) {}
+                    }
+                }
+
+                if (!target) {
+                    target = c.subtitleIndex >= 0 && c.subtitleIndex < list.length ? list[c.subtitleIndex] : null;
+                }
+                if (!target) continue;
+
+                try {
+                    target.Language = c.iso;
+                    updatedSubtitleStreams++;
+                } catch (err2) {
+                    failedUpdates++;
+                    Logger.WLog(
+                        'Failed to update in-memory subtitle language on ' +
+                            label +
+                            ' for 0:s:' +
+                            String(c.typeIndex) +
+                            ': ' +
+                            safeString(err2)
+                    );
+                }
+            }
+        }
+
         function updateFfmpegBuilderAudioStreams(ffModelObj) {
             if (!ffModelObj) return;
             let audioList = null;
@@ -610,7 +701,7 @@ function Script(
             if (!list || list.length === 0) return;
 
             let updatedAny = false;
-            for (const c of changesList) {
+            for (const c of audioChanges) {
                 if (!c || !c.iso) continue;
 
                 let target = null;
@@ -695,32 +786,142 @@ function Script(
             } catch (err4) {}
         }
 
+        function updateFfmpegBuilderSubtitleStreams(ffModelObj) {
+            if (!ffModelObj) return;
+            let subtitleList = null;
+            try {
+                subtitleList = ffModelObj.SubtitleStreams;
+            } catch (err) {
+                subtitleList = null;
+            }
+            if (!subtitleList) return;
+
+            const list = toEnumerableArray(subtitleList, 500);
+            if (!list || list.length === 0) return;
+
+            let updatedAny = false;
+            for (const c of subtitleChanges) {
+                if (!c || !c.iso) continue;
+
+                let target = null;
+
+                for (let i = 0; i < list.length; i++) {
+                    const s = list[i];
+                    if (!s) continue;
+                    try {
+                        if (
+                            c.overallIndex !== null &&
+                            c.overallIndex !== undefined &&
+                            s.Index !== undefined &&
+                            s.Index !== null &&
+                            Number(s.Index) === Number(c.overallIndex)
+                        ) {
+                            target = s;
+                            break;
+                        }
+                    } catch (err) {}
+                }
+
+                if (!target) {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (
+                                s.TypeIndex !== undefined &&
+                                s.TypeIndex !== null &&
+                                Number(s.TypeIndex) === Number(c.typeIndex)
+                            ) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) {}
+                    }
+                }
+
+                if (!target && c.streamRef && typeof c.streamRef === 'object') {
+                    for (let i = 0; i < list.length; i++) {
+                        const s = list[i];
+                        if (!s) continue;
+                        try {
+                            if (s.Stream && s.Stream === c.streamRef) {
+                                target = s;
+                                break;
+                            }
+                        } catch (err) {}
+                    }
+                }
+                if (!target) continue;
+
+                try {
+                    target.Language = c.iso;
+                    try {
+                        if (target.Stream && target.Stream.Language !== undefined) {
+                            target.Stream.Language = c.iso;
+                        }
+                    } catch (errS) {}
+                    updatedBuilderStreams++;
+                    updatedAny = true;
+                    try {
+                        if (target.ForcedChange !== undefined) target.ForcedChange = true;
+                    } catch (err3) {}
+                } catch (err2) {
+                    failedUpdates++;
+                    Logger.WLog(
+                        'Failed to update in-memory FFmpeg Builder subtitle language for 0:s:' +
+                            String(c.typeIndex) +
+                            ': ' +
+                            safeString(err2)
+                    );
+                }
+            }
+
+            try {
+                if (updatedAny && ffModelObj.ForceEncode !== undefined) ffModelObj.ForceEncode = true;
+            } catch (err4) {}
+        }
+
         const candidates = getVideoInfoCandidates(primaryVideoInfo, viObj, videoObj, ffModel);
         for (let i = 0; i < candidates.length; i++) {
             updateAudioStreamsOnVideoInfo(candidates[i], 'VideoInfo[' + i + ']');
+            updateSubtitleStreamsOnVideoInfo(candidates[i], 'VideoInfo[' + i + ']');
         }
 
         updateFfmpegBuilderAudioStreams(ffModel);
+        updateFfmpegBuilderSubtitleStreams(ffModel);
 
         // Expose a compact mapping for downstream nodes, even if a .NET object property is not writable.
         // Keyed by overall Index (FFmpeg stream index), value is ISO-639-2/B code.
         try {
-            const mapByIndex = {};
-            const mapByTypeIndex = {};
-            for (const c of changesList) {
+            const audioMapByIndex = {};
+            const audioMapByTypeIndex = {};
+            for (const c of audioChanges) {
                 if (!c || !c.iso) continue;
                 if (c.overallIndex !== null && c.overallIndex !== undefined)
-                    mapByIndex[String(c.overallIndex)] = String(c.iso);
-                mapByTypeIndex[String(c.typeIndex)] = String(c.iso);
+                    audioMapByIndex[String(c.overallIndex)] = String(c.iso);
+                audioMapByTypeIndex[String(c.typeIndex)] = String(c.iso);
             }
-            Variables['AudioLangID.UpdatedAudioLanguagesByIndex'] = JSON.stringify(mapByIndex);
+            Variables['AudioLangID.UpdatedAudioLanguagesByIndex'] = JSON.stringify(audioMapByIndex);
             // Backwards-compatible key (if any downstream flow already started using it)
-            Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(mapByTypeIndex);
+            Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex'] = JSON.stringify(audioMapByTypeIndex);
+
+            const subtitleMapByIndex = {};
+            const subtitleMapByTypeIndex = {};
+            for (const c of subtitleChanges) {
+                if (!c || !c.iso) continue;
+                if (c.overallIndex !== null && c.overallIndex !== undefined)
+                    subtitleMapByIndex[String(c.overallIndex)] = String(c.iso);
+                subtitleMapByTypeIndex[String(c.typeIndex)] = String(c.iso);
+            }
+            Variables['AudioLangID.UpdatedSubtitleLanguagesByIndex'] = JSON.stringify(subtitleMapByIndex);
+            Variables['AudioLangID.UpdatedSubtitleLanguagesByTypeIndex'] = JSON.stringify(subtitleMapByTypeIndex);
         } catch (err) {}
 
         Logger.ILog(
-            'Updated in-memory audio language metadata: VideoInfo=' +
+            'Updated in-memory language metadata: VideoInfo audio=' +
                 updatedAudioStreams +
+                ' subtitle=' +
+                updatedSubtitleStreams +
                 ', FfmpegBuilderModel=' +
                 updatedBuilderStreams +
                 (failedUpdates ? ', failed=' + failedUpdates : '')
@@ -739,11 +940,8 @@ function Script(
         return -1;
     }
 
-    const audioStreams = toEnumerableArray(videoInfo.AudioStreams, 500);
-    if (!audioStreams || audioStreams.length === 0) {
-        Logger.ILog('No audio streams found.');
-        return 2;
-    }
+    const audioStreams = toEnumerableArray(videoInfo.AudioStreams, 500) || [];
+    const subtitleStreams = toEnumerableArray(videoInfo.SubtitleStreams, 500) || [];
 
     const overallDurationSeconds =
         parseDurationSeconds(videoInfo && videoInfo.Duration ? videoInfo.Duration : 0) ||
@@ -775,7 +973,10 @@ function Script(
     if (isMkv && preferMkvPropEdit && !canUseMkvPropEdit)
         Logger.WLog('mkvpropedit not available; will fall back to ffmpeg remux.');
 
-    const pending = [];
+    if (!audioStreams.length) Logger.ILog('No audio streams found.');
+    if (!subtitleStreams.length) Logger.ILog('No subtitle streams found.');
+
+    const pendingAudio = [];
     for (let i = 0; i < audioStreams.length; i++) {
         const stream = audioStreams[i];
         const lang = safeString(stream && stream.Language)
@@ -784,7 +985,7 @@ function Script(
         const hasLang = !!lang && lang !== 'und';
         if (!forceRetag && hasLang) continue;
 
-        pending.push({
+        pendingAudio.push({
             streamRef: stream,
             audioIndex: i,
             overallIndex: stream && stream.Index !== undefined && stream.Index !== null ? Number(stream.Index) : null,
@@ -796,23 +997,56 @@ function Script(
         });
     }
 
-    if (!pending.length) {
+    const pendingSubtitle = [];
+    if (tagSubtitles) {
+        for (let i = 0; i < subtitleStreams.length; i++) {
+            const stream = subtitleStreams[i];
+            const lang = safeString(stream && stream.Language)
+                .trim()
+                .toLowerCase();
+            const hasLang = !!lang && lang !== 'und';
+            if (!forceRetag && hasLang) continue;
+
+            pendingSubtitle.push({
+                streamRef: stream,
+                subtitleIndex: i,
+                overallIndex:
+                    stream && stream.Index !== undefined && stream.Index !== null ? Number(stream.Index) : null,
+                typeIndex: stream && stream.TypeIndex !== undefined && stream.TypeIndex !== null ? stream.TypeIndex : i,
+                title: safeString(stream && stream.Title),
+                codec: safeString(stream && stream.Codec),
+                forced: truthy(stream && stream.Forced),
+                existingLang: safeString(stream && stream.Language)
+            });
+        }
+    }
+
+    if (!pendingAudio.length && !pendingSubtitle.length) {
         Logger.ILog(
-            'All audio tracks already have language tags.' +
-                (forceRetag ? ' (ForceRetag enabled but no audio tracks found?)' : '')
+            'All selected tracks already have language tags.' +
+                (forceRetag ? ' (ForceRetag enabled but no eligible tracks found?)' : '') +
+                (!tagSubtitles ? ' (TagSubtitles disabled)' : '')
         );
         return 2;
     }
 
-    Logger.ILog(
-        (forceRetag ? 'Audio tracks selected for (re)tagging: ' : 'Audio tracks missing language tags: ') +
-            pending.length
-    );
+    if (pendingAudio.length) {
+        Logger.ILog(
+            (forceRetag ? 'Audio tracks selected for (re)tagging: ' : 'Audio tracks missing language tags: ') +
+                pendingAudio.length
+        );
+    }
+    if (pendingSubtitle.length) {
+        Logger.ILog(
+            (forceRetag ? 'Subtitle tracks selected for (re)tagging: ' : 'Subtitle tracks missing language tags: ') +
+                pendingSubtitle.length
+        );
+    }
 
-    const changes = [];
+    const audioChanges = [];
     let detectedCount = 0;
     let detectedSameAsExistingCount = 0;
-    for (const track of pending) {
+    for (const track of pendingAudio) {
         const trackLabel = 'a:' + track.audioIndex + ' (0:a:' + track.typeIndex + ')';
         let detectedIso = '';
         let detectedSource = '';
@@ -933,7 +1167,7 @@ function Script(
             continue;
         }
 
-        changes.push({
+        audioChanges.push({
             streamRef: track.streamRef,
             audioIndex: track.audioIndex,
             overallIndex:
@@ -956,10 +1190,144 @@ function Script(
         );
     }
 
-    if (!changes.length) {
-        if (detectedCount > 0 && detectedSameAsExistingCount === detectedCount) {
-            Logger.ILog('Languages were detected, but all audio tracks already had matching tags; nothing changed.');
-        } else if (detectedCount > 0) {
+    function computeDefaultAudioLanguageIso(audioStreamsList, detectedAudioChangesList) {
+        if (!audioStreamsList || audioStreamsList.length === 0) return '';
+
+        function langForAudioIndex(i) {
+            let iso = normalizeLangToIso6392b(audioStreamsList[i] && audioStreamsList[i].Language);
+            for (const c of detectedAudioChangesList || []) {
+                if (c && c.audioIndex === i && c.iso) {
+                    iso = String(c.iso);
+                    break;
+                }
+            }
+            return iso || '';
+        }
+
+        let defaultIndex = 0;
+        for (let i = 0; i < audioStreamsList.length; i++) {
+            const s = audioStreamsList[i];
+            if (!s) continue;
+            try {
+                if (truthy(s.IsDefault) || truthy(s.Default)) {
+                    defaultIndex = i;
+                    break;
+                }
+            } catch (err) {}
+        }
+        const iso = langForAudioIndex(defaultIndex) || langForAudioIndex(0);
+        return iso || '';
+    }
+
+    function computeSingleAudioLanguageIso(audioStreamsList, detectedAudioChangesList) {
+        if (!audioStreamsList || audioStreamsList.length === 0) return '';
+        const distinct = {};
+        let distinctCount = 0;
+        let firstIso = '';
+
+        function langForAudioIndex(i) {
+            let iso = normalizeLangToIso6392b(audioStreamsList[i] && audioStreamsList[i].Language);
+            for (const c of detectedAudioChangesList || []) {
+                if (c && c.audioIndex === i && c.iso) {
+                    iso = String(c.iso);
+                    break;
+                }
+            }
+            return iso || '';
+        }
+
+        for (let i = 0; i < audioStreamsList.length; i++) {
+            const iso = langForAudioIndex(i);
+            if (!iso) continue;
+            if (!firstIso) firstIso = iso;
+            if (!distinct[iso]) {
+                distinct[iso] = true;
+                distinctCount++;
+                if (distinctCount > 1) return '';
+            }
+        }
+        return distinctCount === 1 ? firstIso : '';
+    }
+
+    const subtitleChanges = [];
+    let subtitleDetectedCount = 0;
+    let subtitleDetectedSameAsExistingCount = 0;
+
+    if (pendingSubtitle.length) {
+        const defaultAudioIso = computeDefaultAudioLanguageIso(audioStreams, audioChanges);
+        const singleAudioIso = computeSingleAudioLanguageIso(audioStreams, audioChanges);
+
+        for (const track of pendingSubtitle) {
+            const trackLabel = 's:' + track.subtitleIndex + ' (0:s:' + track.typeIndex + ')';
+            let detectedIso = '';
+            let detectedSource = '';
+
+            const existingIso = normalizeLangToIso6392b(track.existingLang);
+
+            if (useHeuristics) {
+                const h = guessLanguageFromText(track.title + ' ' + fileName);
+                if (h) {
+                    detectedIso = h;
+                    detectedSource = 'heuristics';
+                }
+            }
+
+            // Subtitles are not audio; fall back only when it is safe/unambiguous.
+            if (!detectedIso) {
+                if (track.forced && defaultAudioIso) {
+                    detectedIso = defaultAudioIso;
+                    detectedSource = 'forced-default-audio';
+                } else if (singleAudioIso) {
+                    detectedIso = singleAudioIso;
+                    detectedSource = 'single-audio-lang';
+                }
+            }
+
+            if (!detectedIso) {
+                Logger.WLog(
+                    'Could not infer subtitle language for ' +
+                        trackLabel +
+                        ' title="' +
+                        track.title +
+                        '" codec=' +
+                        track.codec
+                );
+                continue;
+            }
+
+            subtitleDetectedCount++;
+            if (existingIso && existingIso === detectedIso) {
+                Logger.DLog('Detected subtitle language matches existing tag for ' + trackLabel + ': ' + detectedIso);
+                subtitleDetectedSameAsExistingCount++;
+                continue;
+            }
+
+            subtitleChanges.push({
+                streamRef: track.streamRef,
+                subtitleIndex: track.subtitleIndex,
+                overallIndex:
+                    track.overallIndex !== undefined && track.overallIndex !== null ? Number(track.overallIndex) : null,
+                typeIndex: track.typeIndex,
+                iso: detectedIso,
+                source: detectedSource,
+                title: track.title
+            });
+
+            Logger.ILog('Detected ' + detectedIso + ' for ' + trackLabel + ' via ' + detectedSource);
+        }
+    }
+
+    if (!audioChanges.length && !subtitleChanges.length) {
+        const anyDetected = detectedCount > 0 || subtitleDetectedCount > 0;
+        const allSameAsExisting =
+            detectedCount > 0 &&
+            detectedSameAsExistingCount === detectedCount &&
+            subtitleDetectedCount > 0 &&
+            subtitleDetectedSameAsExistingCount === subtitleDetectedCount;
+
+        if (allSameAsExisting) {
+            Logger.ILog('Languages were detected, but all selected tracks already had matching tags; nothing changed.');
+        } else if (anyDetected) {
             Logger.ILog('Languages were detected, but no tag updates were required; nothing changed.');
         } else {
             Logger.ILog('No language tags could be inferred; nothing changed.');
@@ -975,7 +1343,7 @@ function Script(
     if (canUseMkvPropEdit) {
         function buildMkvPropEditArgs(includeIetf) {
             const args = [inputFile];
-            for (const c of changes) {
+            for (const c of audioChanges) {
                 // mkvpropedit uses 1-based audio track selection (track:a1 is first audio track).
                 const trackNumber = c.audioIndex + 1;
                 args.push('--edit', 'track:a' + String(trackNumber));
@@ -984,6 +1352,16 @@ function Script(
                 args.push('--set', 'language=' + c.iso);
 
                 // Modern Matroska element: BCP 47 (LanguageIETF).
+                if (includeIetf) {
+                    const ietf = iso6392bToBcp47(c.iso);
+                    if (ietf) args.push('--set', 'language-ietf=' + ietf);
+                }
+            }
+            for (const c of subtitleChanges) {
+                // mkvpropedit uses 1-based subtitle track selection (track:s1 is first subtitle track).
+                const trackNumber = c.subtitleIndex + 1;
+                args.push('--edit', 'track:s' + String(trackNumber));
+                args.push('--set', 'language=' + c.iso);
                 if (includeIetf) {
                     const ietf = iso6392bToBcp47(c.iso);
                     if (ietf) args.push('--set', 'language-ietf=' + ietf);
@@ -1010,7 +1388,7 @@ function Script(
         }
 
         // Ensure downstream nodes can see updated languages without re-parsing the file.
-        applyInMemoryLanguageUpdates(changes, videoInfo, viVar, videoVar, ffmpegModel);
+        applyInMemoryLanguageUpdates(audioChanges, subtitleChanges, videoInfo, viVar, videoVar, ffmpegModel);
         Logger.ILog('Tagged languages in-place with mkvpropedit.');
         return 1;
     }
@@ -1018,7 +1396,7 @@ function Script(
     // Fallback: stream-copy remux with ffmpeg and per-audio-stream metadata.
     const outputFile = System.IO.Path.Combine(Flow.TempPath, Flow.NewGuid() + fileExt);
     const ffArgs = ['-hide_banner', '-nostats', '-loglevel', 'error', '-y', '-i', inputFile, '-map', '0', '-c', 'copy'];
-    for (const c of changes) {
+    for (const c of audioChanges) {
         ffArgs.push('-metadata:s:a:' + String(c.audioIndex));
         ffArgs.push('language=' + c.iso);
 
@@ -1026,6 +1404,16 @@ function Script(
         const ietf = iso6392bToBcp47(c.iso);
         if (ietf) {
             ffArgs.push('-metadata:s:a:' + String(c.audioIndex));
+            ffArgs.push('language-ietf=' + ietf);
+        }
+    }
+    for (const c of subtitleChanges) {
+        ffArgs.push('-metadata:s:s:' + String(c.subtitleIndex));
+        ffArgs.push('language=' + c.iso);
+
+        const ietf = iso6392bToBcp47(c.iso);
+        if (ietf) {
+            ffArgs.push('-metadata:s:s:' + String(c.subtitleIndex));
             ffArgs.push('language-ietf=' + ietf);
         }
     }
@@ -1042,7 +1430,7 @@ function Script(
     Flow.SetWorkingFile(outputFile);
 
     // Ensure downstream nodes can see updated languages without re-parsing the file.
-    applyInMemoryLanguageUpdates(changes, videoInfo, viVar, videoVar, ffmpegModel);
+    applyInMemoryLanguageUpdates(audioChanges, subtitleChanges, videoInfo, viVar, videoVar, ffmpegModel);
     Logger.ILog('Tagged languages via ffmpeg remux and updated working file.');
     return 1;
 }
