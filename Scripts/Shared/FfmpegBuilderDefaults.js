@@ -1,5 +1,8 @@
 /**
+ * @name FfmpegBuilderDefaults
+ * @uid 9979D52A-22E4-493A-8045-9251561CDD68
  * @description Helpers for matching FileFlows FFmpeg Builder executor default arguments.
+ * @author Vincent Courcelle
  * @revision 3
  * @minimumVersion 1.0.0.0
  */

@@ -1,7 +1,10 @@
 import { ServiceApi } from 'Shared/ServiceApi';
 
 /**
+ * @name RadarrVc
+ * @uid 37C89BDA-3B3B-4348-AA23-E04C83D9B0F0
  * @description Class that interacts with Radarr
+ * @author Vincent Courcelle
  * @revision 8
  * @minimumVersion 1.0.0.0
  */
@@ -21,15 +24,15 @@ export class RadarrVc extends ServiceApi {
             return null;
         }
         let movies = this.fetchJson('movie');
-        if (!movies?.length) return null;
+        if (!movies || !movies.length) return null;
 
         let cp = file.toLowerCase();
         let movie = movies.filter((x) => {
-            let mp = x.movieFile?.relativePath;
+            let mp = x.movieFile && x.movieFile.relativePath;
             if (!mp) return false;
             return mp.split('.')[0].toLowerCase().includes(cp.split('.')[0]);
         });
-        if (movie?.length) {
+        if (movie && movie.length) {
             movie = movie[0];
             Logger.ILog('Found movie: ' + movie.title);
             return movie;
@@ -49,15 +52,15 @@ export class RadarrVc extends ServiceApi {
             return null;
         }
         let movies = this.fetchJson('movie');
-        if (!movies?.length) return null;
+        if (!movies || !movies.length) return null;
 
         let cp = path.toLowerCase();
         let movie = movies.filter((x) => {
-            let mp = x.movieFile?.path;
+            let mp = x.movieFile && x.movieFile.path;
             if (!mp) return false;
             return mp.toLowerCase().includes(cp);
         });
-        if (movie?.length) {
+        if (movie && movie.length) {
             movie = movie[0];
             Logger.ILog('Found movie: ' + movie.title);
             return movie;
@@ -108,7 +111,7 @@ export class RadarrVc extends ServiceApi {
             Logger.WLog('Unable to get original language for path: ' + path);
             return null;
         }
-        return movie.originalLanguage?.name;
+        return movie.originalLanguage && movie.originalLanguage.name;
     }
 
     /**

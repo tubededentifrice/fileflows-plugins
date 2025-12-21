@@ -1,7 +1,10 @@
 import { ServiceApi } from 'Shared/ServiceApi';
 
 /**
+ * @name SonarrVc
+ * @uid 7035484E-138F-4C2D-8D33-235744A27C35
  * @description Class that interacts with Sonarr
+ * @author Vincent Courcelle
  * @revision 10
  * @minimumVersion 1.0.0.0
  */
@@ -34,7 +37,7 @@ export class SonarrVc extends ServiceApi {
             return null;
         }
         let shows = this.getAllShows();
-        if (!shows?.length) return null;
+        if (!shows || !shows.length) return null;
 
         let cp = path.toString().toLowerCase();
         let show = shows.filter((x) => {
@@ -42,7 +45,7 @@ export class SonarrVc extends ServiceApi {
             if (!sp) return false;
             return sp.includes(cp);
         });
-        if (show?.length === 1) {
+        if (show && show.length === 1) {
             show = show[0];
             Logger.ILog('Found show: ' + show.id);
             return show;
@@ -89,7 +92,7 @@ export class SonarrVc extends ServiceApi {
             return null;
         }
         let files = this.getAllFiles();
-        if (!files?.length) return null;
+        if (!files || !files.length) return null;
 
         let cp = path.toString().toLowerCase();
         let showfile = files.filter((x) => {
@@ -97,7 +100,7 @@ export class SonarrVc extends ServiceApi {
             if (!sp) return false;
             return sp.includes(cp);
         });
-        if (showfile?.length) {
+        if (showfile && showfile.length) {
             showfile = showfile[0];
             Logger.ILog('Found show file: ' + showfile.id);
             return showfile;
@@ -150,7 +153,7 @@ export class SonarrVc extends ServiceApi {
         }
         let imdbId = showfile.show.imdbId;
 
-        let html = this.fetchString(`https://www.imdb.com/title/${imdbId}/`);
+        let html = this.fetchString('https://www.imdb.com/title/' + imdbId + '/');
         let languages = html.match(/title-details-languages(.*?)<\/li>/);
         if (!languages) {
             Logger.WLog('Failed to lookup IMDb language for ' + imdbId);
@@ -183,8 +186,8 @@ export class SonarrVc extends ServiceApi {
      * @returns Response if ran successfully otherwise null
      */
     toggleMonitored(episodeIds, monitored = true) {
-        let endpoint = `${this.BaseUrl}/api/v3/episode/monitor`;
-        if (this.BaseUrl.endsWith('/')) endpoint = `${this.BaseUrl}api/v3/episode/monitor`;
+        let endpoint = this.BaseUrl + '/api/v3/episode/monitor';
+        if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/episode/monitor';
 
         let jsonData = JSON.stringify({
             episodeIds: episodeIds,
@@ -198,7 +201,7 @@ export class SonarrVc extends ServiceApi {
 
             if (response.IsSuccessStatusCode) {
                 let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
-                Logger.ILog(`Monitored toggled for ${episodeIds}`);
+                Logger.ILog('Monitored toggled for ' + episodeIds);
                 return responseData;
             } else {
                 let error = response.Content.ReadAsStringAsync().Result;
@@ -260,10 +263,10 @@ export class SonarrVc extends ServiceApi {
         return this.searchApi(
             'queue',
             searchPattern,
-            (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
+            (item, sp) => item.outputPath && item.outputPath.toLowerCase().indexOf(sp) !== -1,
             { includeSeries: 'true' },
             (item) => {
-                Logger.ILog(`Found TV Show in Queue: ${item.series.title}`);
+                Logger.ILog('Found TV Show in Queue: ' + item.series.title);
                 return item.series;
             }
         );
@@ -278,10 +281,10 @@ export class SonarrVc extends ServiceApi {
         return this.searchApi(
             'history',
             searchPattern,
-            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
+            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().indexOf(sp) !== -1,
             { eventType: 3, includeSeries: 'true' },
             (item) => {
-                Logger.ILog(`Found TV Show in History: ${item.series.title}`);
+                Logger.ILog('Found TV Show in History: ' + item.series.title);
                 return item.series;
             }
         );

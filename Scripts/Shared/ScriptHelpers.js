@@ -1,6 +1,10 @@
 /**
+ * @name ScriptHelpers
+ * @uid F17EAED8-5E6F-43A8-88A5-416A2BEB7482
  * @description Common utility functions for FileFlows scripts
+ * @author Vincent Courcelle
  * @revision 1
+ * @minimumVersion 1.0.0.0
  */
 
 /**
