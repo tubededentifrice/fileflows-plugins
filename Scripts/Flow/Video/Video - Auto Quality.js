@@ -16,6 +16,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
  * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
  * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
+ * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: 2
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -29,7 +30,8 @@ function Script(
     PreferSmaller,
     UseTags,
     Preset,
-    MinSizeReduction
+    MinSizeReduction,
+    MaxParallel
 ) {
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -65,6 +67,16 @@ function Script(
     if (Variables.MaxCRF) MaxCRF = parseInt(Variables.MaxCRF);
     if (Variables.Preset) Preset = String(Variables.Preset);
     if (Variables.MinSizeReduction) MinSizeReduction = parseInt(Variables.MinSizeReduction);
+    if (Variables.MaxParallel) MaxParallel = parseInt(Variables.MaxParallel);
+
+    if (!MaxParallel || MaxParallel <= 0) {
+        try {
+            MaxParallel = Math.max(1, Math.floor(System.Environment.ProcessorCount / 2));
+            Logger.ILog(`Auto-detected parallel limit: ${MaxParallel} (Cores: ${System.Environment.ProcessorCount})`);
+        } catch (e) {
+            MaxParallel = 2;
+        }
+    }
     if (Variables.AutoQualityPreset) {
         const preset = Variables.AutoQualityPreset.toLowerCase();
         if (preset === 'quality') {
@@ -617,6 +629,107 @@ function Script(
 
     // ===== HELPER FUNCTIONS =====
 
+    /**
+     * Executes multiple FFmpeg commands in parallel using System.Diagnostics.Process
+     * Captures output to temporary log files to avoid buffer deadlocks
+     * @param {Array} tasks Array of { id, command, args }
+     * @param {int} concurrency Max parallel processes
+     * @returns {Object} Map of id -> { exitCode, output, duration }
+     */
+    function executeBatch(tasks, concurrency) {
+        if (!tasks || tasks.length === 0) return {};
+
+        const results = {};
+        const queue = tasks.slice();
+        const running = [];
+
+        Logger.ILog(`Executing ${tasks.length} tasks with concurrency ${concurrency}...`);
+
+        while (queue.length > 0 || running.length > 0) {
+            while (running.length < concurrency && queue.length > 0) {
+                const task = queue.shift();
+                const logFile = System.IO.Path.Combine(Flow.TempPath, `batch_${Flow.NewGuid()}.log`);
+
+                try {
+                    const psi = new System.Diagnostics.ProcessStartInfo();
+                    psi.FileName = task.command;
+                    // We redirect stdout/stderr to a file using shell redirection if possible,
+                    // BUT ProcessStartInfo with UseShellExecute=false (required for direct arg passing) doesn't support ">".
+                    // So we must read streams. To avoid deadlocks in Jint without async,
+                    // we will let FFmpeg write to a file via command line args if possible,
+                    // OR we accept that we might block if we try to read standard output.
+                    // BEST APPROACH: Set FFmpeg to write log to file using environment variable or specific arg if possible?
+                    // No, generic approach:
+                    // Use standard process execution but redirect stdout/err to null in .NET and rely on log file passed as arg?
+                    // No, we need the output for VMAF parsing.
+
+                    // Jint workaround: We can't easily use async read.
+                    // We will use the approach of NOT redirecting to .NET streams, but letting the process inherit handles?
+                    // No, that prints to console.
+
+                    // Actually, we can assume FFmpeg tasks here.
+                    // We can append ` > logfile 2>&1` if we run via shell (bash/cmd).
+
+                    const isWindows = Flow.IsWindows;
+                    if (isWindows) {
+                        psi.FileName = 'cmd.exe';
+                        // Quote the command and the arguments carefully
+                        const cmdLine = `"${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
+                        psi.Arguments = `/C "${cmdLine}"`;
+                    } else {
+                        psi.FileName = '/bin/bash';
+                        const cmdLine = `"${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
+                        psi.Arguments = `-c ${helpers.quoteProcessArg(cmdLine)}`;
+                    }
+
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+
+                    const p = new System.Diagnostics.Process();
+                    p.StartInfo = psi;
+                    p.Start();
+
+                    running.push({
+                        process: p,
+                        id: task.id,
+                        logFile: logFile,
+                        startTime: Date.now()
+                    });
+                } catch (e) {
+                    Logger.ELog(`Failed to start task ${task.id}: ${e}`);
+                    results[task.id] = { exitCode: -1, output: e.toString() };
+                }
+            }
+
+            System.Threading.Thread.Sleep(100);
+
+            for (let i = running.length - 1; i >= 0; i--) {
+                const r = running[i];
+                if (r.process.HasExited) {
+                    const exitCode = r.process.ExitCode;
+                    r.process.Dispose();
+
+                    let output = '';
+                    try {
+                        if (System.IO.File.Exists(r.logFile)) {
+                            output = System.IO.File.ReadAllText(r.logFile);
+                            System.IO.File.Delete(r.logFile);
+                        }
+                    } catch (e) {}
+
+                    results[r.id] = {
+                        exitCode: exitCode,
+                        output: output,
+                        duration: Date.now() - r.startTime
+                    };
+                    running.splice(i, 1);
+                }
+            }
+        }
+
+        return results;
+    }
+
     function getVideoBitrate(vi) {
         const videoStream0 = vi && vi.VideoStreams && vi.VideoStreams[0];
         let bitrate = videoStream0 ? videoStream0.Bitrate : 0;
@@ -744,12 +857,12 @@ function Script(
 
         // HDR content needs higher quality to preserve dynamic range nuances
         if (isHDR || isDolbyVision) {
-            target = Math.min(target + 1, 97);
+            target = Math.min(target + 1, 96);
         }
 
         // 4K content - slightly higher target
         if (width >= 3800) {
-            target = Math.min(target + 1, 97);
+            target = Math.min(target + 1, 96);
         }
 
         const hasMetadata = metadata.Year || metadata.year;
@@ -804,8 +917,9 @@ function Script(
     function extractVideoSamples(ffmpegExtract, inputFile, positions, sampleDur) {
         // Provider-style: extract short video-only sample files once, then run encodes/metrics against those.
         // Returns an array of sample descriptors; if extraction fails, entries fall back to seeking into inputFile.
-        const results = [];
-        const tempDir = Flow.TempPath;
+
+        const tasks = [];
+        const taskMap = {}; // map index to temp details
 
         const pad6 = (n) => ('000000' + String(n)).slice(-6);
 
@@ -813,64 +927,79 @@ function Script(
             const pos = positions[i];
             const sec = Math.max(0, Math.floor(pos || 0));
             const sampleName = `sample_${pad6(sec)}`;
-            const samplePath = `${tempDir}/${sampleName}.mkv`;
+            const samplePath = `${Flow.TempPath}/${sampleName}.mkv`;
 
-            let extracted = false;
             try {
-                const args = [
-                    '-hide_banner',
-                    '-loglevel',
-                    'error',
-                    '-y',
-                    '-stats',
-                    '-ss',
-                    String(sec),
-                    '-i',
-                    inputFile,
-                    '-t',
-                    String(sampleDur),
-                    '-map',
-                    '0:v:0',
-                    '-an',
-                    '-sn',
-                    '-c:v',
-                    'copy',
-                    '-map_chapters',
-                    '-1',
-                    samplePath
-                ];
-
-                const r = helpers.executeFfmpegWithProgress(ffmpegExtract, args, 120, sampleDur, 0, 100);
-                if (r && r.exitCode === 0 && System.IO.File.Exists(samplePath)) {
-                    extracted = true;
-                }
+                if (System.IO.File.Exists(samplePath)) System.IO.File.Delete(samplePath);
             } catch (e) {}
 
+            const args = [
+                '-hide_banner',
+                '-loglevel',
+                'error',
+                '-y',
+                '-stats',
+                '-ss',
+                String(sec),
+                '-i',
+                inputFile,
+                '-t',
+                String(sampleDur),
+                '-map',
+                '0:v:0',
+                '-an',
+                '-sn',
+                '-c:v',
+                'copy',
+                '-map_chapters',
+                '-1',
+                samplePath
+            ];
+
+            tasks.push({ id: i, command: ffmpegExtract, args: args });
+            taskMap[i] = { pos, sec, sampleName, samplePath };
+        }
+
+        const results = executeBatch(tasks, MaxParallel);
+        const finalSamples = [];
+
+        for (let i = 0; i < positions.length; i++) {
+            const t = taskMap[i];
+            const res = results[i];
+
+            let extracted = false;
+            if (res && res.exitCode === 0 && System.IO.File.Exists(t.samplePath)) {
+                try {
+                    const fi = new System.IO.FileInfo(t.samplePath);
+                    if (fi.Length > 0) extracted = true;
+                } catch (e) {}
+            }
+
             if (extracted) {
-                results.push({
-                    pos: pos,
-                    inputFile: samplePath,
+                finalSamples.push({
+                    pos: t.pos,
+                    inputFile: t.samplePath,
                     seekSeconds: 0,
                     durationSeconds: sampleDur,
                     isTempSample: true,
-                    key: sampleName
+                    key: t.sampleName
                 });
             } else {
                 try {
-                    if (System.IO.File.Exists(samplePath)) System.IO.File.Delete(samplePath);
+                    if (System.IO.File.Exists(t.samplePath)) System.IO.File.Delete(t.samplePath);
                 } catch (e) {}
-                results.push({
-                    pos: pos,
+                finalSamples.push({
+                    pos: t.pos,
                     inputFile: inputFile,
-                    seekSeconds: sec,
+                    seekSeconds: t.sec,
                     durationSeconds: sampleDur,
                     isTempSample: false,
-                    key: sampleName
+                    key: t.sampleName
                 });
             }
         }
 
-        return results;
+        return finalSamples;
     }
 
     function analyzeLuminance(ffmpeg, inputFile, positions, _sampleDur) {
@@ -1227,54 +1356,87 @@ function Script(
             return args;
         }
 
+        const tasks = [];
+
         for (let i = 0; i < samples.length; i++) {
             const sample = samples[i];
             const referencePath = `${tempDir}/${sample.key}_reference.mkv`;
+            const activeFilters = upstreamFiltersStr;
+            const filterMode = 'upstream';
 
-            let activeFilters = upstreamFiltersStr;
-            let filterMode = 'upstream';
+            tasks.push({
+                id: i,
+                command: ffmpegEncode,
+                args: buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
+                sample: sample,
+                referencePath: referencePath,
+                activeFilters: activeFilters,
+                filterMode: filterMode,
+                canRetry: upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr
+            });
+        }
 
-            try {
-                let refResult = helpers.executeFfmpegWithProgress(
-                    ffmpegEncode,
-                    buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
-                    600,
-                    sampleDur,
-                    0,
-                    100
-                );
+        const batchResults = executeBatch(tasks, MaxParallel);
 
-                if (refResult.exitCode !== 0 && upstreamNeedsQsv && softwareFilters !== upstreamFiltersStr) {
+        const retryTasks = [];
+
+        for (let i = 0; i < tasks.length; i++) {
+            const t = tasks[i];
+            const res = batchResults[t.id];
+
+            if (res.exitCode !== 0) {
+                if (t.canRetry) {
                     Logger.WLog(
-                        `Reference sample ${i + 1} failed with QSV filters (${sample.key}); retrying with software-only filters`
+                        `Reference sample ${i + 1} failed with QSV filters (${t.sample.key}); scheduling retry with software-only filters`
                     );
-                    activeFilters = softwareFilters;
-                    filterMode = 'software-fallback';
-                    refResult = helpers.executeFfmpegWithProgress(
-                        ffmpegEncode,
-                        buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
-                        600,
-                        sampleDur,
-                        0,
-                        100
+                    const newFilters = softwareFilters;
+                    const newArgs = buildEncodeArgs(t.sample, referenceQuality, t.referencePath, newFilters);
+
+                    retryTasks.push({
+                        id: t.id,
+                        command: ffmpegEncode,
+                        args: newArgs,
+                        sample: t.sample,
+                        referencePath: t.referencePath,
+                        activeFilters: newFilters,
+                        filterMode: 'software-fallback'
+                    });
+                } else {
+                    Logger.WLog(
+                        `Failed to encode reference sample ${i + 1} (${t.sample.key}). Output: ${res.output.substring(0, 200)}...`
                     );
                 }
-
-                if (refResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode reference sample ${i + 1} (${sample.key})`);
-                    continue;
-                }
-
+            } else {
                 results.push({
-                    key: sample.key,
-                    pos: sample.pos,
-                    path: referencePath,
-                    filterMode: filterMode,
-                    activeFilters: activeFilters
+                    key: t.sample.key,
+                    pos: t.sample.pos,
+                    path: t.referencePath,
+                    filterMode: t.filterMode,
+                    activeFilters: t.activeFilters
                 });
-                Logger.DLog(`Reference sample ${i + 1} encoded (${sample.key}, ${filterMode})`);
-            } catch (err) {
-                Logger.WLog(`Error encoding reference sample ${i + 1} (${sample.key}): ${err}`);
+            }
+        }
+
+        if (retryTasks.length > 0) {
+            const retryResults = executeBatch(retryTasks, MaxParallel);
+            for (let i = 0; i < retryTasks.length; i++) {
+                const t = retryTasks[i];
+                const res = retryResults[t.id];
+
+                if (res.exitCode === 0) {
+                    results.push({
+                        key: t.sample.key,
+                        pos: t.sample.pos,
+                        path: t.referencePath,
+                        filterMode: t.filterMode,
+                        activeFilters: t.activeFilters
+                    });
+                    Logger.DLog(
+                        `Reference sample ${t.id + 1} encoded with fallback (${t.sample.key}, ${t.filterMode})`
+                    );
+                } else {
+                    Logger.WLog(`Failed to encode reference sample ${t.id + 1} with fallback (${t.sample.key})`);
+                }
             }
         }
 
@@ -1564,116 +1726,135 @@ function Script(
 
         const pb = parseFloat(progressBase || 0);
         const ps = parseFloat(progressSpan || 100);
-        const totalSteps = Math.max(1, samples.length * 2);
-        const stepSpan = ps / totalSteps;
+        const stepSpan = ps / 2;
 
+        const encodeTasks = [];
         for (let i = 0; i < samples.length; i++) {
             const sample = samples[i];
             const encodedSample = `${tempDir}/${sample.key}_encoded_quality_${qualityValue}.mkv`;
 
             const ref = refByKey[sample.key];
             const activeFilters = (ref && ref.activeFilters) || upstreamFiltersStr;
-            const filterMode = (ref && ref.filterMode) || (upstreamFiltersStr ? 'upstream' : 'none');
+
+            encodeTasks.push({
+                id: i,
+                command: ffmpegEncode,
+                args: buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters),
+                sample: sample,
+                encodedSample: encodedSample,
+                ref: ref,
+                activeFilters: activeFilters
+            });
+        }
+
+        const encodeResults = executeBatch(encodeTasks, MaxParallel);
+
+        if (typeof Flow.PartPercentageUpdate === 'function') Flow.PartPercentageUpdate(pb + stepSpan);
+
+        const metricTasks = [];
+        const validEncodedSamples = [];
+
+        for (let i = 0; i < samples.length; i++) {
+            const task = encodeTasks[i];
+            const res = encodeResults[i];
+
+            if (res.exitCode !== 0) {
+                Logger.WLog(
+                    `Failed to encode sample (${task.sample.key}) at quality ${qualityValue}. Output: ${res.output.substring(0, 100)}...`
+                );
+                continue;
+            }
 
             try {
-                const encStepBase = pb + stepSpan * (i * 2 + 0);
-                const encResult = helpers.executeFfmpegWithProgress(
-                    ffmpegEncode,
-                    buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters),
-                    600,
-                    sampleDur,
-                    encStepBase,
-                    stepSpan
-                );
+                const fi = new System.IO.FileInfo(task.encodedSample);
+                if (fi.Exists) {
+                    totalEncodedBytes += fi.Length;
+                    totalEncodedSeconds += sampleDur;
+                }
+            } catch (e) {}
 
-                if (encResult.exitCode !== 0) {
-                    Logger.WLog(`Failed to encode sample (${sample.key}) at quality ${qualityValue} (${encoder})`);
+            const ref = task.ref;
+            const filterMode = (ref && ref.filterMode) || (upstreamFiltersStr ? 'upstream' : 'none');
+
+            if (filterMode === 'software-fallback') Variables.AutoQuality_FilterMode = 'software-fallback';
+            else if (!Variables.AutoQuality_FilterMode)
+                Variables.AutoQuality_FilterMode = upstreamFiltersStr ? 'upstream' : 'none';
+
+            const applyRefFiltersInMetric = referenceMode === 'filtered-in-metric' && upstreamFiltersStr;
+            const refChain = applyRefFiltersInMetric
+                ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic`
+                : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
+            const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
+
+            const metricArgs = ['-hide_banner', '-loglevel', 'info', '-stats', '-y', '-i', task.encodedSample];
+
+            if (referenceMode === 'encoded') {
+                const referencePath = ref && ref.path;
+                if (!referencePath) {
+                    Logger.WLog(`Missing reference for sample ${task.sample.key}`);
                     continue;
                 }
+                metricArgs.push('-i', referencePath);
+            } else {
+                if (task.sample.seekSeconds && task.sample.seekSeconds > 0)
+                    metricArgs.push('-ss', String(task.sample.seekSeconds));
+                metricArgs.push('-t', String(sampleDur));
+                metricArgs.push('-i', task.sample.inputFile);
+            }
 
-                try {
-                    const fi = new System.IO.FileInfo(encodedSample);
-                    if (fi.Exists) {
-                        totalEncodedBytes += fi.Length;
-                        totalEncodedSeconds += sampleDur;
-                    }
-                } catch (e) {}
+            metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
 
-                if (filterMode === 'software-fallback') {
-                    Variables.AutoQuality_FilterMode = 'software-fallback';
-                } else if (!Variables.AutoQuality_FilterMode) {
-                    Variables.AutoQuality_FilterMode = upstreamFiltersStr ? 'upstream' : 'none';
-                }
+            metricTasks.push({
+                id: i,
+                command: ffmpegMetric,
+                args: metricArgs,
+                sample: task.sample,
+                encodedSample: task.encodedSample
+            });
 
-                const applyRefFiltersInMetric = referenceMode === 'filtered-in-metric' && upstreamFiltersStr;
-                const refChain = applyRefFiltersInMetric
-                    ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic`
-                    : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
-                const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
+            validEncodedSamples.push(task.encodedSample);
+        }
 
-                const metricArgs = ['-hide_banner', '-loglevel', 'info', '-stats', '-y', '-i', encodedSample];
+        const metricResults = executeBatch(metricTasks, MaxParallel);
 
-                if (referenceMode === 'encoded') {
-                    const referencePath = ref && ref.path;
-                    if (!referencePath) {
-                        Logger.WLog(`Missing reference for sample ${sample.key}`);
-                        continue;
-                    }
-                    metricArgs.push('-i', referencePath);
-                } else {
-                    if (sample.seekSeconds && sample.seekSeconds > 0)
-                        metricArgs.push('-ss', String(sample.seekSeconds));
-                    metricArgs.push('-t', String(sampleDur));
-                    metricArgs.push('-i', sample.inputFile);
-                }
+        if (typeof Flow.PartPercentageUpdate === 'function') Flow.PartPercentageUpdate(pb + ps);
 
-                metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
+        for (let i = 0; i < metricTasks.length; i++) {
+            const t = metricTasks[i];
+            const res = metricResults[t.id];
 
-                const metricStepBase = pb + stepSpan * (i * 2 + 1);
-                const qualityResult = helpers.executeFfmpegWithProgress(
-                    ffmpegMetric,
-                    metricArgs,
-                    300,
-                    sampleDur,
-                    metricStepBase,
-                    stepSpan
+            cleanupFiles([t.encodedSample]);
+
+            if (res.exitCode !== 0 && res.exitCode !== 1) {
+                Logger.WLog(
+                    `Error measuring quality for sample ${t.sample.key}. Output: ${res.output.substring(0, 100)}...`
                 );
+                continue;
+            }
 
-                const output =
-                    (qualityResult.output || '') +
-                    '\n' +
-                    (qualityResult.standardOutput || '') +
-                    '\n' +
-                    (qualityResult.standardError || '');
-
-                let score = null;
-                if (metric === 'VMAF') {
-                    const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                    if (vmafMatch) score = parseFloat(vmafMatch[1]);
-                    else {
-                        const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                        if (jsonMatch) score = parseFloat(jsonMatch[1]);
-                    }
-                } else {
-                    const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                    if (ssimMatch) score = parseFloat(ssimMatch[1]);
+            const output = res.output;
+            let score = null;
+            if (metric === 'VMAF') {
+                const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                if (vmafMatch) score = parseFloat(vmafMatch[1]);
+                else {
+                    const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                    if (jsonMatch) score = parseFloat(jsonMatch[1]);
                 }
+            } else {
+                const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
+                if (ssimMatch) score = parseFloat(ssimMatch[1]);
+            }
 
-                if (score !== null) {
-                    scores.push(score);
-                    const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
-                    Logger.DLog(`Sample ${i + 1} (${sample.key}): ${metric} ${scoreDisplay}`);
-                } else {
-                    Logger.WLog(`Could not parse ${metric} score for sample ${sample.key}`);
-                    const snippet = output.substring(0, 500).split('\n').join(' ');
-                    Logger.DLog(`Output snippet: ${snippet}`);
-                }
-            } catch (err) {
-                Logger.WLog(`Error processing sample ${sample.key}: ${err}`);
-            } finally {
-                cleanupFiles([encodedSample]);
+            if (score !== null) {
+                scores.push(score);
+                const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
+                Logger.DLog(`Sample ${t.id + 1} (${t.sample.key}): ${metric} ${scoreDisplay}`);
+            } else {
+                Logger.WLog(`Could not parse ${metric} score for sample ${t.sample.key}`);
             }
         }
+        cleanupFiles(validEncodedSamples);
 
         if (scores.length === 0) return null;
 
