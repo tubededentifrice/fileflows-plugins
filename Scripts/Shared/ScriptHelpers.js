@@ -1021,77 +1021,13 @@ export class ScriptHelpers {
     probeDurationSeconds(ffmpegPath, inputFile) {
         const file = String(inputFile || '').trim();
         if (!file) return 0;
-        try {
-            let psi;
-            try {
-                psi = new System.Diagnostics.ProcessStartInfo();
-            } catch (e) {
-                // Fallback to Flow.Execute if ProcessStartInfo is not available
-                const args = ['-hide_banner', '-i', file];
-                const result = Flow.Execute({
-                    command: ffmpegPath,
-                    argumentList: args,
-                    timeout: 15
-                });
 
-                let text = (result.standardError || '') + '\n' + (result.standardOutput || '');
-                const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
-                if (!m) return 0;
-                const d = this.parseDurationSeconds(m[1]);
-                return d > 0 ? d : 0;
-            }
+        const result = this.executeSilently(ffmpegPath, ['-hide_banner', '-i', file], 15);
 
-            psi.FileName = String(ffmpegPath);
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-
-            const args = ['-hide_banner', '-i', file];
-            let usedArgumentList = false;
-            try {
-                if (psi.ArgumentList) {
-                    for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
-                    usedArgumentList = true;
-                }
-            } catch (e) {}
-            if (!usedArgumentList) {
-                psi.Arguments = args.map((a) => this.quoteProcessArg(a)).join(' ');
-            }
-
-            const p = new System.Diagnostics.Process();
-            p.StartInfo = psi;
-            const started = p.Start();
-            if (!started) return 0;
-
-            // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
-            let exited = true;
-            try {
-                exited = p.WaitForExit(15000);
-            } catch (err) {
-                exited = true;
-            }
-            if (exited === false) {
-                try {
-                    p.Kill();
-                } catch (err) {}
-                return 0;
-            }
-
-            let text = '';
-            try {
-                text += String(p.StandardError.ReadToEnd() || '');
-            } catch (err) {}
-            try {
-                text += '\n' + String(p.StandardOutput.ReadToEnd() || '');
-            } catch (err) {}
-
-            const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
-            if (!m) return 0;
-            const d = this.parseDurationSeconds(m[1]);
-            return d > 0 ? d : 0;
-        } catch (err) {
-            return 0;
-        }
+        const text = (result.standardError || '') + '\n' + (result.standardOutput || '');
+        const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
+        if (!m) return 0;
+        const d = this.parseDurationSeconds(m[1]);
+        return d > 0 ? d : 0;
     }
 }
