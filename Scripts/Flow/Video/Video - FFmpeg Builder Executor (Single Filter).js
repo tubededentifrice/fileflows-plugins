@@ -19,7 +19,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const safeString = (v) => helpers.safeString(v);
     const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
     const truthy = (v) => helpers.truthy(v);
-    const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
     const secondsToClock = (v) => helpers.secondsToClock(v);
     const hasArg = (l, f) => helpers.hasArg(l, (t) => t.toLowerCase() === String(f || '').toLowerCase());
 
@@ -109,10 +108,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             }
         }
         return out;
-    }
-
-    function quoteForAudit(arg) {
-        return helpers.quoteProcessArg(arg);
     }
 
     function buildAuditCommandLine(executable, args) {
@@ -504,12 +499,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return 0;
     }
 
-    function buildAuditCommandLine(executable, args) {
-        const tokens = [helpers.quoteProcessArg(executable)];
-        for (let i = 0; i < (args || []).length; i++) tokens.push(helpers.quoteProcessArg(args[i]));
-        return tokens.join(' ');
-    }
-
     function createFfmpegProgressHandler(durationSeconds) {
         let duration = parseFloat(durationSeconds || 0);
         let lastPercent = -1;
@@ -776,7 +765,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const bare = extractBareCodecToken(tokens);
         tokens = bare.tokens;
         const streamCodec = stream && stream.Codec ? String(stream.Codec).trim() : '';
-        const acceptStreamCodec = streamCodec && streamCodec.indexOf('-') === -1;
+        // Some codecs (like PGS/DVD subs) are decoder-only names; we shouldn't try to use them as encoders.
+        const isDecoderOnly = /^(hdmv_pgs_subtitle|dvd_subtitle|dvb_subtitle)$/i.test(streamCodec);
+        const acceptStreamCodec = streamCodec && streamCodec.indexOf('-') === -1 && !isDecoderOnly;
         const codec = String(codecFromArgs || bare.codec || (acceptStreamCodec ? streamCodec : '') || 'copy').trim();
 
         if (filterChain && codec.toLowerCase() === 'copy') {

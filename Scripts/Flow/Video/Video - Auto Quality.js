@@ -32,17 +32,11 @@ function Script(
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
     const safeString = (v) => helpers.safeString(v);
-    const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
-    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
     const detectTargetBitDepth = (v) => helpers.detectTargetBitDepth(v);
     const asJoinedString = (v) => helpers.asJoinedString(v);
 
     // Local alias for safeString to match previous code style if preferred, or just use safeString directly.
     const safeTokenString = safeString;
-
-    function humanTimeToSeconds(text) {
-        return parseDurationSeconds(text);
-    }
 
     function escapeFfmpegFilterArgValue(value) {
         // ffmpeg filter args use ':' as a separator, so escape it for Windows drive letters.
