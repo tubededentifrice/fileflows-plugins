@@ -23,6 +23,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
 
     const helpers = new ScriptHelpers();
     const toArray = (v, m) => helpers.toEnumerableArray(v, m);
+    const normalizeToIso2 = (l) => helpers.normalizeToIso2(l);
+    const languagesMatch = (l1, l2) => helpers.languagesMatch(l1, l2);
+    const tryReorderNetList = (l, i) => helpers.listReorder(l, i);
 
     // =========================================================================
     // CONFIGURATION DEFAULTS
@@ -35,30 +38,6 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     // =========================================================================
     // HELPER FUNCTIONS
     // =========================================================================
-
-    /**
-     * Normalize language code to ISO 639-2/B (3-letter) using FileFlows helper.
-     * Returns lowercase for consistent comparison.
-     */
-    function normalizeToIso2(lang) {
-        if (!lang) return '';
-        const normalized = LanguageHelper.GetIso2Code(lang);
-        return (normalized || lang).toLowerCase();
-    }
-
-    /**
-     * Check if two language codes match (handles ISO 639-1 vs ISO 639-2).
-     */
-    function languagesMatch(lang1, lang2) {
-        if (!lang1 || !lang2) return false;
-        try {
-            return LanguageHelper.AreSame(lang1, lang2) === true;
-        } catch (err) {
-            const iso2_1 = normalizeToIso2(lang1);
-            const iso2_2 = normalizeToIso2(lang2);
-            return iso2_1 === iso2_2;
-        }
-    }
 
     /**
      * Get sort priority for a stream based on language preference order.
@@ -94,29 +73,6 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         });
 
         return decorated.map((x) => x.stream);
-    }
-
-    /**
-     * Try to clear a .NET List and rebuild with new order.
-     * Returns true if successful, false if not supported.
-     */
-    function tryReorderNetList(netList, orderedItems) {
-        if (!netList) return false;
-
-        try {
-            // Try .NET List<T>.Clear() and Add()
-            if (typeof netList.Clear === 'function' && typeof netList.Add === 'function') {
-                netList.Clear();
-                for (let i = 0; i < orderedItems.length; i++) {
-                    netList.Add(orderedItems[i]);
-                }
-                return true;
-            }
-        } catch (err) {
-            Logger.WLog(`Failed to reorder .NET list: ${err}`);
-        }
-
-        return false;
     }
 
     // =========================================================================

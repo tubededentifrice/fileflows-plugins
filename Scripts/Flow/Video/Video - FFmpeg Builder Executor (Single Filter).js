@@ -21,6 +21,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const truthy = (v) => helpers.truthy(v);
     const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
     const secondsToClock = (v) => helpers.secondsToClock(v);
+    const hasArg = (l, f) => helpers.hasArg(l, (t) => t.toLowerCase() === String(f || '').toLowerCase());
 
     const builderDefaults = new FfmpegBuilderDefaults();
 
@@ -388,14 +389,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         } catch (e) {}
         // fallback to common variables
         return Variables['ffmpeg'] || Variables['FFmpeg'] || Variables.ffmpeg || Variables.FFmpeg || '';
-    }
-
-    function hasArg(tokens, flag) {
-        const f = String(flag || '').toLowerCase();
-        for (let i = 0; i < (tokens || []).length; i++) {
-            if (String(tokens[i] || '').toLowerCase() === f) return true;
-        }
-        return false;
     }
 
     function isQsvCodec(codec) {

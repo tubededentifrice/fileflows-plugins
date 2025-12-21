@@ -221,4 +221,31 @@ export class RadarrVc {
         }
         return null;
     }
+
+    /**
+     * Updates the movie metadata in the global variables based on the Radarr movie data
+     * @param {Object} movie - Movie object returned from Radarr API
+     */
+    updateMetadata(movie) {
+        const language = LanguageHelper.GetIso1Code(movie.originalLanguage.name);
+
+        Variables['movie.Title'] = movie.title;
+        Variables['movie.Year'] = movie.year;
+        Variables['movie.RadarrId'] = movie.id;
+        Variables.VideoMetadata = {
+            Title: movie.title,
+            Description: movie.overview,
+            Year: movie.year,
+            ReleaseDate: movie.firstAired,
+            OriginalLanguage: language,
+            Genres: movie.genres
+        };
+
+        Variables.MovieInfo = movie;
+        Variables.OriginalLanguage = language;
+
+        Logger.ILog('Detected VideoMetadata: ' + JSON.stringify(Variables.VideoMetadata));
+        Logger.ILog('Detected MovieInfo: ' + JSON.stringify(Variables.MovieInfo));
+        Logger.ILog('Detected Original Language: ' + language);
+    }
 }

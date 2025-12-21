@@ -207,4 +207,309 @@ export class ScriptHelpers {
             };
         }
     }
+
+    /**
+     * Gets the resolution category of a video
+     * @param {number} width
+     * @param {number} height
+     * @returns {string} '4K', '1080p', '720p', 'SD'
+     */
+    getResolution(width, height) {
+        if (!width || !height) return 'SD';
+        if (width >= 2500 || height >= 2000) return '4K';
+        if (width >= 1700 || height >= 1000) return '1080p';
+        if (width >= 1000 || height >= 700) return '720p';
+        return 'SD';
+    }
+
+    /**
+     * Converts bytes to Gigabytes
+     * @param {number} bytes
+     * @returns {number} GB
+     */
+    bytesToGb(bytes) {
+        return Math.round(((bytes || 0) / 1024 / 1024 / 1024) * 100) / 100;
+    }
+
+    /**
+     * Calculates MiB per hour
+     * @param {number} fileSize bytes
+     * @param {number} duration seconds
+     * @returns {number} MiB/hour
+     */
+    calculateMiBPerHour(fileSize, duration) {
+        if (!duration) return 0;
+        return ((fileSize / duration) * 3600) / 1024 / 1024;
+    }
+
+    /**
+     * Normalizes a language code to ISO 639-2/B (3-letter)
+     * @param {string} lang
+     * @returns {string} 3-letter code
+     */
+    normalizeToIso2(lang) {
+        if (!lang) return '';
+        const normalized = LanguageHelper.GetIso2Code(lang);
+        return (normalized || lang).toLowerCase();
+    }
+
+    /**
+     * Checks if two language codes match
+     * @param {string} lang1
+     * @param {string} lang2
+     * @returns {boolean}
+     */
+    languagesMatch(lang1, lang2) {
+        if (!lang1 || !lang2) return false;
+        try {
+            return LanguageHelper.AreSame(lang1, lang2) === true;
+        } catch (err) {
+            const iso2_1 = this.normalizeToIso2(lang1);
+            const iso2_2 = this.normalizeToIso2(lang2);
+            return iso2_1 === iso2_2;
+        }
+    }
+
+    /**
+     * Joins a list of tokens into a single string
+     * @param {any} value
+     * @returns {string}
+     */
+    asJoinedString(value) {
+        if (!value) return '';
+        const tokens = this.toEnumerableArray(value, 1000)
+            .map((x) => this.safeString(x))
+            .filter((x) => x);
+        return tokens.join(' ');
+    }
+
+    /**
+     * Adds an item to a list (JS array or .NET List)
+     * @param {any} list
+     * @param {any} item
+     * @returns {boolean} Success
+     */
+    listAdd(list, item) {
+        if (!list) return false;
+        if (Array.isArray(list)) {
+            list.push(item);
+            return true;
+        }
+        try {
+            if (typeof list.Add === 'function') {
+                list.Add(item);
+                return true;
+            }
+        } catch (err) {}
+        return false;
+    }
+
+    /**
+     * Adds an item to a list only if it doesn't already exist
+     * @param {any} list
+     * @param {any} item
+     * @returns {boolean} Success
+     */
+    listAddUnique(list, item) {
+        if (!list) return false;
+        try {
+            const existing = this.toEnumerableArray(list, 2000).map((x) => this.safeString(x));
+            if (existing.indexOf(this.safeString(item)) >= 0) return true;
+        } catch (err) {}
+        return this.listAdd(list, item);
+    }
+
+    /**
+     * Gets the count of items in a list
+     * @param {any} list
+     * @returns {number|null} Count or null if not a list
+     */
+    listCount(list) {
+        if (!list) return null;
+        if (Array.isArray(list)) return list.length;
+        try {
+            if (typeof list.Count === 'number') return list.Count;
+        } catch (err) {}
+        return null;
+    }
+
+    /**
+     * Removes an item at a specific index from a list
+     * @param {any} list
+     * @param {number} index
+     * @returns {boolean} Success
+     */
+    listRemoveAt(list, index) {
+        if (!list) return false;
+        try {
+            if (Array.isArray(list)) {
+                list.splice(index, 1);
+                return true;
+            }
+        } catch (err) {}
+        try {
+            if (typeof list.RemoveAt === 'function') {
+                list.RemoveAt(index);
+                return true;
+            }
+        } catch (err) {}
+        return false;
+    }
+
+    /**
+     * Tries to reorder a .NET list or JS array
+     * @param {any} list
+     * @param {Array} orderedItems
+     * @returns {boolean} Success
+     */
+    listReorder(list, orderedItems) {
+        if (!list || !orderedItems) return false;
+        try {
+            if (Array.isArray(list)) {
+                list.length = 0;
+                for (let i = 0; i < orderedItems.length; i++) list.push(orderedItems[i]);
+                return true;
+            }
+            if (typeof list.Clear === 'function' && typeof list.Add === 'function') {
+                list.Clear();
+                for (let i = 0; i < orderedItems.length; i++) list.Add(orderedItems[i]);
+                return true;
+            }
+        } catch (err) {
+            Logger.WLog(`Failed to reorder list: ${err}`);
+        }
+        return false;
+    }
+
+    /**
+     * Checks if a list contains an argument matching a predicate
+
+     * @param {any} list
+     * @param {Function} predicate (token, index) => bool
+     * @returns {boolean}
+     */
+    hasArg(list, predicate) {
+        const count = this.listCount(list);
+        if (count === null) return false;
+        for (let i = 0; i < count; i++) {
+            const t = String(this.safeString(list[i]) || '').trim();
+            if (predicate(t, i)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Ensures a flag and its value are present in an argument list
+     * @param {any} list
+     * @param {string} flag
+     * @param {string} value
+     * @param {Function} predicate Optional predicate to find the flag
+     * @returns {boolean} True if added
+     */
+    ensureArgWithValue(list, flag, value, predicate) {
+        if (this.listCount(list) === null) return false;
+        const pred = predicate || ((t) => t === flag);
+        if (this.hasArg(list, pred)) return false;
+        this.listAdd(list, flag);
+        this.listAdd(list, value);
+        return true;
+    }
+
+    /**
+     * Removes all instances of a flag and its subsequent value from a list
+     * @param {any} list
+     * @param {Function} predicate (token, index) => bool
+     * @returns {Object} { removed: bool, removedCount: number }
+     */
+    removeArgWithValue(list, predicate) {
+        const count0 = this.listCount(list);
+        if (count0 === null) return { removed: false, removedCount: 0 };
+        let removedCount = 0;
+        let i = 0;
+        while (i < this.listCount(list)) {
+            const t = String(this.safeString(list[i]) || '').trim();
+            if (!predicate(t, i)) {
+                i++;
+                continue;
+            }
+            if (i < this.listCount(list) - 1) {
+                if (this.listRemoveAt(list, i + 1)) removedCount++;
+            }
+            if (this.listRemoveAt(list, i)) removedCount++;
+            continue;
+        }
+        return { removed: removedCount > 0, removedCount };
+    }
+
+    /**
+     * Extracts a year (1900-2099) from a filename pattern like .YYYY.
+     * @param {string} filePath
+     * @returns {number|null} Year
+     */
+    extractYearFromFilename(filePath) {
+        if (!filePath) return null;
+        const filename = String(filePath).split('/').pop().split('\\').pop();
+        if (!filename) return null;
+
+        const match = filename.match(/\.(19\d{2}|20\d{2})\./);
+        if (match) {
+            const year = parseInt(match[1], 10);
+            const currentYear = new Date().getFullYear();
+            if (year >= 1900 && year <= currentYear + 1) {
+                return year;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Detects hardware encoder type from video stream parameters
+     * @param {Object} videoStream
+     * @returns {string|null} 'qsv', 'vaapi', 'nvenc', 'amf' or null
+     */
+    detectHardwareEncoder(videoStream) {
+        const signature = [
+            this.asJoinedString(videoStream.EncodingParameters),
+            this.asJoinedString(videoStream.AdditionalParameters),
+            this.asJoinedString(videoStream.Codec)
+        ]
+            .join(' ')
+            .toLowerCase();
+
+        if (signature.indexOf('_qsv') >= 0 || signature.indexOf(' qsv') >= 0) return 'qsv';
+        if (signature.indexOf('_vaapi') >= 0 || signature.indexOf(' vaapi') >= 0) return 'vaapi';
+        if (signature.indexOf('_nvenc') >= 0 || signature.indexOf(' nvenc') >= 0) return 'nvenc';
+        if (signature.indexOf('_amf') >= 0 || signature.indexOf(' amf') >= 0) return 'amf';
+        return null;
+    }
+
+    /**
+     * Detects target output bit depth (8 or 10) from stream parameters
+     * @param {Object} videoStream
+     * @returns {number} 8 or 10
+     */
+    detectTargetBitDepth(videoStream) {
+        const signature = [
+            this.asJoinedString(videoStream.EncodingParameters),
+            this.asJoinedString(videoStream.AdditionalParameters),
+            this.asJoinedString(videoStream.Filters),
+            this.asJoinedString(videoStream.OptionalFilter),
+            this.asJoinedString(videoStream.Filter),
+            this.safeString(videoStream.Codec)
+        ]
+            .join(' ')
+            .toLowerCase();
+
+        if (
+            signature.indexOf('p010') >= 0 ||
+            signature.indexOf('format=p010le') >= 0 ||
+            signature.indexOf('main10') >= 0 ||
+            signature.indexOf('10bit') >= 0 ||
+            signature.indexOf('10-bit') >= 0 ||
+            signature.indexOf('yuv420p10') >= 0
+        ) {
+            return 10;
+        }
+        return 8;
+    }
 }

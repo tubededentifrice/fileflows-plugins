@@ -34,6 +34,8 @@ function Script(
     const safeString = (v) => helpers.safeString(v);
     const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
     const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
+    const detectTargetBitDepth = (v) => helpers.detectTargetBitDepth(v);
+    const asJoinedString = (v) => helpers.asJoinedString(v);
 
     // Local alias for safeString to match previous code style if preferred, or just use safeString directly.
     const safeTokenString = safeString;
@@ -851,142 +853,6 @@ function Script(
         if (codec.includes('_qsv')) return '-global_quality:v';
         if (codec.includes('_amf')) return '-qp_i';
         return '-crf';
-    }
-
-    function asJoinedString(value) {
-        if (!value) return '';
-        const tokens = toEnumerableArray(value, 1000)
-            .map(safeTokenString)
-            .filter((x) => x);
-        return tokens.join(' ');
-    }
-
-    function detectTargetBitDepth(videoStream) {
-        // Try to detect requested output bit depth from encoder params / filters.
-        const signature = [
-            asJoinedString(videoStream.EncodingParameters),
-            asJoinedString(videoStream.AdditionalParameters),
-            asJoinedString(videoStream.Filters),
-            asJoinedString(videoStream.OptionalFilter),
-            asJoinedString(videoStream.Filter)
-        ]
-            .join(' ')
-            .toLowerCase();
-
-        if (
-            signature.includes('p010') ||
-            signature.includes('p010le') ||
-            signature.includes('yuv420p10') ||
-            signature.includes('main10') ||
-            signature.includes('10bit') ||
-            signature.includes('10-bit')
-        ) {
-            return 10;
-        }
-        return 8;
-    }
-
-    function getUpstreamVideoFilters(videoStream) {
-        const filters = [];
-
-        const addAll = (value) => {
-            const items = toEnumerableArray(value, 500);
-            for (let i = 0; i < items.length; i++) {
-                const s = safeTokenString(items[i]).trim();
-                if (!s) continue;
-                filters.push(s);
-            }
-        };
-
-        // FileFlows versions vary: some expose Filter, some Filters/OptionalFilter, sometimes all.
-        addAll(videoStream.Filter);
-        addAll(videoStream.Filters);
-        addAll(videoStream.OptionalFilter);
-
-        // Crop can be stored separately on the model (and later translated to a filter by the builder).
-        try {
-            const crop = videoStream.Crop;
-            if (crop && crop.Width > 0 && crop.Height > 0) {
-                const cx = crop.X !== null && crop.X !== undefined ? crop.X : 0;
-                const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
-                filters.unshift(`crop=${crop.Width}:${crop.Height}:${cx}:${cy}`);
-            }
-        } catch (err) {}
-
-        // Some builder nodes encode filters directly into EncodingParameters (eg: -filter:v:0 scale_qsv=...).
-        try {
-            const ep = toEnumerableArray(videoStream.EncodingParameters, 2000)
-                .map(safeTokenString)
-                .filter((x) => x);
-            for (let i = 0; i < ep.length - 1; i++) {
-                const t = String(ep[i] || '');
-                if (t === '-vf' || t.startsWith('-filter:v')) {
-                    const val = String(ep[i + 1] || '').trim();
-                    if (val) filters.push(val);
-                }
-            }
-        } catch (err) {}
-
-        if (filters.length === 0) return '';
-
-        // De-dupe while preserving order.
-        const seen = {};
-        const deduped = [];
-        for (let i = 0; i < filters.length; i++) {
-            const f = filters[i];
-            if (seen[f]) continue;
-            seen[f] = true;
-            deduped.push(f);
-        }
-
-        return deduped.join(',');
-    }
-
-    function getVideoFilterFromEncodingParameters(videoStream) {
-        // In FFmpeg Builder "New mode" the executor may rely on filters being present in EncodingParameters
-        // (eg: '-filter:v:0 <chain>'). Prefer this chain for sampling when available so tests match the final pass.
-        try {
-            const ep = toEnumerableArray(videoStream && videoStream.EncodingParameters, 2000)
-                .map(safeTokenString)
-                .filter((x) => x);
-            Logger.DLog(`getVideoFilterFromEncodingParameters: found ${ep.length} tokens in EncodingParameters`);
-
-            // Debug: show first 20 tokens to help diagnose issues
-            if (ep.length > 0) {
-                const preview = ep
-                    .slice(0, 20)
-                    .map((t, i) => `[${i}]${t}`)
-                    .join(' ');
-                Logger.DLog(`EncodingParameters preview (first 20): ${preview}`);
-            }
-
-            for (let i = 0; i < ep.length - 1; i++) {
-                const t = String(ep[i] || '');
-                if (t === '-vf' || t.startsWith('-filter:v')) {
-                    const val = String(ep[i + 1] || '').trim();
-                    Logger.DLog(
-                        `Found filter arg at index ${i}: '${t}' -> '${val.substring(0, 100)}${val.length > 100 ? '...' : ''}'`
-                    );
-                    if (val) return val;
-                }
-            }
-            Logger.DLog('No -vf or -filter:v found in EncodingParameters');
-        } catch (err) {
-            Logger.WLog(`getVideoFilterFromEncodingParameters error: ${err}`);
-        }
-        return '';
-    }
-
-    function getCropFilterFromModel(videoStream) {
-        try {
-            const crop = videoStream && videoStream.Crop;
-            if (crop && crop.Width > 0 && crop.Height > 0) {
-                const cx = crop.X !== null && crop.X !== undefined ? crop.X : 0;
-                const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
-                return `crop=${crop.Width}:${crop.Height}:${cx}:${cy}`;
-            }
-        } catch (err) {}
-        return '';
     }
 
     function getReferenceQuality(minValue, targetCodec) {
@@ -2062,6 +1928,109 @@ function Script(
         }
 
         Logger.ILog(`Applied settings: ${crfArg} ${crf}, preset ${preset || 'default'}`);
+    }
+
+    function getVideoFilterFromEncodingParameters(videoStream) {
+        // In FFmpeg Builder "New mode" the executor may rely on filters being present in EncodingParameters
+        // (eg: '-filter:v:0 <chain>'). Prefer this chain for sampling when available so tests match the final pass.
+        try {
+            const ep = toEnumerableArray(videoStream && videoStream.EncodingParameters, 2000)
+                .map(safeTokenString)
+                .filter((x) => x);
+            Logger.DLog(`getVideoFilterFromEncodingParameters: found ${ep.length} tokens in EncodingParameters`);
+
+            // Debug: show first 20 tokens to help diagnose issues
+            if (ep.length > 0) {
+                const preview = ep
+                    .slice(0, 20)
+                    .map((t, i) => `[${i}]${t}`)
+                    .join(' ');
+                Logger.DLog(`EncodingParameters preview (first 20): ${preview}`);
+            }
+
+            for (let i = 0; i < ep.length - 1; i++) {
+                const t = String(ep[i] || '');
+                if (t === '-vf' || t.startsWith('-filter:v')) {
+                    const val = String(ep[i + 1] || '').trim();
+                    Logger.DLog(
+                        `Found filter arg at index ${i}: '${t}' -> '${val.substring(0, 100)}${val.length > 100 ? '...' : ''}'`
+                    );
+                    if (val) return val;
+                }
+            }
+            Logger.DLog('No -vf or -filter:v found in EncodingParameters');
+        } catch (err) {
+            Logger.WLog(`getVideoFilterFromEncodingParameters error: ${err}`);
+        }
+        return '';
+    }
+
+    function getCropFilterFromModel(videoStream) {
+        try {
+            const crop = videoStream && videoStream.Crop;
+            if (crop && crop.Width > 0 && crop.Height > 0) {
+                const cx = crop.X !== null && crop.X !== undefined ? crop.X : 0;
+                const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
+                return `crop=${crop.Width}:${crop.Height}:${cx}:${cy}`;
+            }
+        } catch (err) {}
+        return '';
+    }
+
+    function getUpstreamVideoFilters(videoStream) {
+        const filters = [];
+
+        const addAll = (value) => {
+            const items = toEnumerableArray(value, 500);
+            for (let i = 0; i < items.length; i++) {
+                const s = safeTokenString(items[i]).trim();
+                if (!s) continue;
+                filters.push(s);
+            }
+        };
+
+        // FileFlows versions vary: some expose Filter, some Filters/OptionalFilter, sometimes all.
+        addAll(videoStream.Filter);
+        addAll(videoStream.Filters);
+        addAll(videoStream.OptionalFilter);
+
+        // Crop can be stored separately on the model (and later translated to a filter by the builder).
+        try {
+            const crop = videoStream.Crop;
+            if (crop && crop.Width > 0 && crop.Height > 0) {
+                const cx = crop.X !== null && crop.X !== undefined ? crop.X : 0;
+                const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
+                filters.unshift(`crop=${crop.Width}:${crop.Height}:${cx}:${cy}`);
+            }
+        } catch (err) {}
+
+        // Some builder nodes encode filters directly into EncodingParameters (eg: -filter:v:0 scale_qsv=...).
+        try {
+            const ep = toEnumerableArray(videoStream.EncodingParameters, 2000)
+                .map(safeTokenString)
+                .filter((x) => x);
+            for (let i = 0; i < ep.length - 1; i++) {
+                const t = String(ep[i] || '');
+                if (t === '-vf' || t.startsWith('-filter:v')) {
+                    const val = String(ep[i + 1] || '').trim();
+                    if (val) filters.push(val);
+                }
+            }
+        } catch (err) {}
+
+        if (filters.length === 0) return '';
+
+        // De-dupe while preserving order.
+        const seen = {};
+        const deduped = [];
+        for (let i = 0; i < filters.length; i++) {
+            const f = filters[i];
+            if (seen[f]) continue;
+            seen[f] = true;
+            deduped.push(f);
+        }
+
+        return deduped.join(',');
     }
 
     function logResultsTable(results, bestCrf, target, metric) {

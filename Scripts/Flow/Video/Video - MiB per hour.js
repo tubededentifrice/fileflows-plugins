@@ -1,3 +1,5 @@
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
+
 /**
  * @description Check the size in MiB per hour of the input by checking the full file size and dividing by the video duration.
  * @author Vincent Courcelle
@@ -7,6 +9,7 @@
  * @output Unable to get video duration or other problem
  */
 function Script(MaxMiBPerHour) {
+    const helpers = new ScriptHelpers();
     const OUTPUT_BELOW = 1;
     const OUTPUT_ABOVE = 2;
     const OUTPUT_UNABLE = 3;
@@ -27,18 +30,14 @@ function Script(MaxMiBPerHour) {
         return OUTPUT_UNABLE;
     }
 
-    const gb = function (bytes) {
-        return Math.round((bytes / 1024 / 1024 / 1024) * 100) / 100;
-    };
-
-    const mibPerHour = ((fileSize / duration) * 3600) / 1024 / 1024;
+    const mibPerHour = helpers.calculateMiBPerHour(fileSize, duration);
     Logger.ILog(
         'File size is ' +
             fileSize +
             ' (' +
-            gb(fileSize) +
+            helpers.bytesToGb(fileSize) +
             ' GB) and should be below: ' +
-            gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
+            helpers.bytesToGb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
             ' GB'
     );
     Logger.ILog('Duration: ' + duration + ' seconds');
