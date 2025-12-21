@@ -112,15 +112,12 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     function quoteForAudit(arg) {
-        const s = String(arg === undefined || arg === null ? '' : arg);
-        if (s.length === 0) return '""';
-        if (!/[\s"]/g.test(s)) return s;
-        return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+        return helpers.quoteProcessArg(arg);
     }
 
     function buildAuditCommandLine(executable, args) {
-        const tokens = [quoteForAudit(executable)];
-        for (let i = 0; i < (args || []).length; i++) tokens.push(quoteForAudit(args[i]));
+        const tokens = [helpers.quoteProcessArg(executable)];
+        for (let i = 0; i < (args || []).length; i++) tokens.push(helpers.quoteProcessArg(args[i]));
         return tokens.join(' ');
     }
 
@@ -507,74 +504,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return 0;
     }
 
-    function humanTimeToSeconds(text) {
-        return parseDurationSeconds(text);
-    }
-
-    function quoteProcessArg(arg) {
-        const s = String(arg === undefined || arg === null ? '' : arg);
-        if (s.length === 0) return '""';
-        if (!/[\s"]/g.test(s)) return s;
-        return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-    }
-
-    function probeDurationSeconds(ffmpegPath, inputFile) {
-        const file = String(inputFile || '').trim();
-        if (!file) return 0;
-        try {
-            const psi = new System.Diagnostics.ProcessStartInfo();
-            psi.FileName = String(ffmpegPath);
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
-
-            const args = ['-hide_banner', '-i', file];
-            let usedArgumentList = false;
-            try {
-                if (psi.ArgumentList) {
-                    for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
-                    usedArgumentList = true;
-                }
-            } catch (e) {}
-            if (!usedArgumentList) {
-                psi.Arguments = args.map(quoteProcessArg).join(' ');
-            }
-
-            const p = new System.Diagnostics.Process();
-            p.StartInfo = psi;
-            const started = p.Start();
-            if (!started) return 0;
-
-            // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
-            let exited = true;
-            try {
-                exited = p.WaitForExit(15000);
-            } catch (err) {
-                exited = true;
-            }
-            if (exited === false) {
-                try {
-                    p.Kill();
-                } catch (err) {}
-                return 0;
-            }
-
-            let text = '';
-            try {
-                text += String(p.StandardError.ReadToEnd() || '');
-            } catch (err) {}
-            try {
-                text += '\n' + String(p.StandardOutput.ReadToEnd() || '');
-            } catch (err) {}
-
-            const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
-            if (!m) return 0;
-            const d = humanTimeToSeconds(m[1]);
-            return d > 0 ? d : 0;
-        } catch (err) {
-            return 0;
-        }
+    function buildAuditCommandLine(executable, args) {
+        const tokens = [helpers.quoteProcessArg(executable)];
+        for (let i = 0; i < (args || []).length; i++) tokens.push(helpers.quoteProcessArg(args[i]));
+        return tokens.join(' ');
     }
 
     function createFfmpegProgressHandler(durationSeconds) {
@@ -640,7 +573,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             if (duration && duration > 0) return;
             const m = String(line || '').match(/Duration:\s*([0-9:.]+)/i);
             if (!m) return;
-            const d = humanTimeToSeconds(m[1]);
+            const d = helpers.parseDurationSeconds(m[1]);
             if (d > 0) duration = d;
         }
 
@@ -671,7 +604,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             // -progress style output: out_time=00:00:12.34
             m = s.match(/out_time=([0-9:.]+)/i);
             if (m) {
-                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                tryUpdateFromSeconds(helpers.parseDurationSeconds(m[1]));
                 maybeUpdateAdditionalInfo(false);
                 return;
             }
@@ -697,7 +630,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             // -stats style output: time=00:00:12.34
             m = s.match(/time=([.:0-9]+)/i);
             if (m) {
-                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
+                tryUpdateFromSeconds(helpers.parseDurationSeconds(m[1]));
                 maybeUpdateAdditionalInfo(false);
                 return;
             }
@@ -967,7 +900,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     args.push(outFile);
 
     // ===== LOG + EXECUTE =====
-    const argsLine = (args || []).map(quoteForAudit).join(' ');
+    const argsLine = (args || []).map((x) => helpers.quoteProcessArg(x)).join(' ');
     const audit = buildAuditCommandLine(ffmpegPath, args);
     Variables['FFmpegExecutor.LastCommandLine'] = audit;
     Variables['FFmpegExecutor.LastArgumentsLine'] = argsLine;
@@ -988,7 +921,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     if (!durationSeconds || durationSeconds <= 0) {
         // Some flows don't run the Video File node, so Duration variables may be missing.
         // Do a fast probe to get Duration from ffmpeg headers so progress still works.
-        durationSeconds = probeDurationSeconds(ffmpegPath, inputFiles.length ? inputFiles[0] : '');
+        durationSeconds = helpers.probeDurationSeconds(ffmpegPath, inputFiles.length ? inputFiles[0] : '');
     }
     const progress = createFfmpegProgressHandler(durationSeconds);
     try {

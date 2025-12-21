@@ -44,226 +44,12 @@ function Script(
         return parseDurationSeconds(text);
     }
 
-    function quoteProcessArg(arg) {
-        // Fallback quoting when ProcessStartInfo.ArgumentList isn't available.
-        // Keep it simple: quote args containing whitespace or quotes.
-        const s = String(arg === undefined || arg === null ? '' : arg);
-        if (
-            s.indexOf(' ') === -1 &&
-            s.indexOf('\t') === -1 &&
-            s.indexOf('\r') === -1 &&
-            s.indexOf('\n') === -1 &&
-            s.indexOf('"') === -1
-        )
-            return s;
-        return '"' + s.replace(/"/g, '\\"') + '"';
-    }
-
     function escapeFfmpegFilterArgValue(value) {
         // ffmpeg filter args use ':' as a separator, so escape it for Windows drive letters.
         // Use forward slashes to avoid backslash escaping rules.
         return String(value === undefined || value === null ? '' : value)
             .replace(/\\/g, '/')
             .replace(/:/g, '\\:');
-    }
-
-    function createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan) {
-        let duration = parseFloat(durationSeconds || 0);
-        const base = parseFloat(progressBase || 0);
-        const span = parseFloat(progressSpan || 100);
-
-        let lastPercent = -1;
-        let lastUpdateMs = 0;
-
-        function updatePercent(percent, force) {
-            const p = clampNumber(percent, 0, 100);
-            const now = Date.now();
-            const shouldUpdate = force || (p !== lastPercent && now - lastUpdateMs >= 750);
-            if (!shouldUpdate) return;
-            lastPercent = p;
-            lastUpdateMs = now;
-
-            const mapped = clampNumber(base + span * (p / 100.0), 0, 100);
-            try {
-                if (typeof Flow.PartPercentageUpdate === 'function') {
-                    Flow.PartPercentageUpdate(mapped);
-                }
-            } catch (err) {}
-        }
-
-        function tryUpdateFromSeconds(seconds) {
-            if (!duration || duration <= 0) return;
-            if (seconds === null || seconds === undefined) return;
-            const s = parseFloat(seconds);
-            if (isNaN(s) || s < 0) return;
-            updatePercent((100.0 / duration) * s, false);
-        }
-
-        function maybeSetDurationFromLine(line) {
-            if (duration && duration > 0) return;
-            const m = String(line || '').match(/Duration:\s*([0-9:.]+)/i);
-            if (!m) return;
-            const d = humanTimeToSeconds(m[1]);
-            if (d > 0) duration = d;
-        }
-
-        function handleLine(line) {
-            const s = String(line || '');
-            if (!s) return;
-
-            maybeSetDurationFromLine(s);
-
-            // -progress style output: out_time_ms=12345678
-            let m = s.match(/out_time_ms=([0-9]+)/i);
-            if (m) {
-                const ms = parseInt(m[1], 10);
-                if (!isNaN(ms) && ms >= 0) tryUpdateFromSeconds(ms / 1000000.0);
-                return;
-            }
-
-            // -stats style output: time=00:00:12.34
-            m = s.match(/time=([.:0-9]+)/i);
-            if (m) {
-                tryUpdateFromSeconds(humanTimeToSeconds(m[1]));
-                return;
-            }
-
-            if (s.indexOf('progress=end') >= 0) updatePercent(100, true);
-        }
-
-        function complete() {
-            updatePercent(100, true);
-        }
-
-        return { handleLine, complete };
-    }
-
-    function executeFfmpegWithProgress(
-        command,
-        argumentList,
-        timeoutSeconds,
-        durationSeconds,
-        progressBase,
-        progressSpan
-    ) {
-        let executeArgs = null;
-        try {
-            executeArgs = new ExecuteArgs();
-        } catch (err) {
-            executeArgs = null;
-        }
-
-        const handler = createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan);
-
-        // Collect output in-memory for parsing (VMAF/SSIM), but cap it.
-        let collected = '';
-        const maxCollected = 250000;
-        function capture(line) {
-            if (!line) return;
-            if (collected.length >= maxCollected) return;
-            const s = String(line);
-            collected += s + '\n';
-            if (collected.length > maxCollected) collected = collected.substring(0, maxCollected);
-        }
-
-        if (executeArgs) {
-            executeArgs.command = command;
-            executeArgs.argumentList = argumentList;
-            try {
-                if (timeoutSeconds > 0) executeArgs.timeout = timeoutSeconds;
-            } catch (err) {}
-            try {
-                if (timeoutSeconds > 0) executeArgs.Timeout = timeoutSeconds;
-            } catch (err) {}
-            try {
-                if (timeoutSeconds > 0) executeArgs.TimeoutSeconds = timeoutSeconds;
-            } catch (err) {}
-
-            try {
-                executeArgs.add_Error((line) => {
-                    handler.handleLine(line);
-                    capture(line);
-                });
-            } catch (err) {}
-            try {
-                executeArgs.add_Output((line) => {
-                    handler.handleLine(line);
-                    capture(line);
-                });
-            } catch (err) {}
-
-            const r = Flow.Execute(executeArgs);
-            if (r && r.exitCode === 0) handler.complete();
-
-            // Keep behavior similar to Flow.Execute results, but include collected output for parsing.
-            if (r && !r.output && collected) {
-                try {
-                    r.output = collected;
-                } catch (err) {}
-            }
-            return r;
-        }
-
-        // Fallback: no streaming support available in this runner.
-        return Flow.Execute({ command: command, argumentList: argumentList, timeout: timeoutSeconds });
-    }
-
-    function executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
-        // Use runProcess from ScriptHelpers for standard execution, but we need custom handling for silent execution
-        // to avoid logging to Flow UI (which runProcess/Flow.Execute usually does).
-        // Since we want to parse output without spamming the UI logs, we use System.Diagnostics.Process directly.
-        const psi = new System.Diagnostics.ProcessStartInfo();
-        psi.FileName = String(command);
-        psi.UseShellExecute = false;
-        psi.CreateNoWindow = true;
-        psi.RedirectStandardOutput = true;
-        psi.RedirectStandardError = true;
-        if (workingDirectory) psi.WorkingDirectory = String(workingDirectory);
-
-        let usedArgumentList = false;
-        try {
-            if (psi.ArgumentList) {
-                for (let i = 0; i < argumentList.length; i++) {
-                    psi.ArgumentList.Add(String(argumentList[i]));
-                }
-                usedArgumentList = true;
-            }
-        } catch (e) {
-            // Some runtimes may not expose ArgumentList; fall back to Arguments string.
-        }
-
-        if (!usedArgumentList) {
-            psi.Arguments = (argumentList || []).map(quoteProcessArg).join(' ');
-        }
-
-        const process = new System.Diagnostics.Process();
-        process.StartInfo = psi;
-
-        const started = process.Start();
-        if (!started) {
-            return { exitCode: -1, standardOutput: '', standardError: 'Failed to start process', completed: false };
-        }
-
-        const timeoutMs = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
-        if (timeoutMs > 0) {
-            const exited = process.WaitForExit(timeoutMs);
-            if (!exited) {
-                try {
-                    process.Kill(true);
-                } catch (e) {
-                    try {
-                        process.Kill();
-                    } catch (e2) {}
-                }
-                return { exitCode: -1, standardOutput: '', standardError: 'Process timed out', completed: false };
-            }
-        } else {
-            process.WaitForExit();
-        }
-
-        const stdout = process.StandardOutput.ReadToEnd() || '';
-        const stderr = process.StandardError.ReadToEnd() || '';
-        return { exitCode: process.ExitCode, standardOutput: stdout, standardError: stderr, completed: true };
     }
 
     // ===== DEFAULTS =====
@@ -339,7 +125,11 @@ function Script(
         // Use a targeted check to avoid printing the full `-filters` output to logs.
         let vmafCheck = null;
         try {
-            vmafCheck = executeSilently(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'], 30);
+            vmafCheck = helpers.executeSilently(
+                ffmpegPath,
+                ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'],
+                30
+            );
         } catch (e) {
             // If silent exec isn't available, fall back to Flow.Execute (output is small for this command).
             vmafCheck = Flow.Execute({
@@ -985,7 +775,7 @@ function Script(
                     samplePath
                 ];
 
-                const r = executeFfmpegWithProgress(ffmpegExtract, args, 120, sampleDur, 0, 100);
+                const r = helpers.executeFfmpegWithProgress(ffmpegExtract, args, 120, sampleDur, 0, 100);
                 if (r && r.exitCode === 0 && System.IO.File.Exists(samplePath)) {
                     extracted = true;
                 }
@@ -1055,7 +845,7 @@ function Script(
 
                     let result = null;
                     try {
-                        result = executeSilently(ffmpeg, args, 60);
+                        result = helpers.executeSilently(ffmpeg, args, 60);
                         if (!result || result.completed === false)
                             throw new Error((result && result.standardError) || 'silent execute failed');
                         output = (result.standardOutput || '') + '\n' + (result.standardError || '');
@@ -1380,7 +1170,7 @@ function Script(
             let filterMode = 'upstream';
 
             try {
-                let refResult = executeFfmpegWithProgress(
+                let refResult = helpers.executeFfmpegWithProgress(
                     ffmpegEncode,
                     buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
                     600,
@@ -1395,7 +1185,7 @@ function Script(
                     );
                     activeFilters = softwareFilters;
                     filterMode = 'software-fallback';
-                    refResult = executeFfmpegWithProgress(
+                    refResult = helpers.executeFfmpegWithProgress(
                         ffmpegEncode,
                         buildEncodeArgs(sample, referenceQuality, referencePath, activeFilters),
                         600,
@@ -1720,7 +1510,7 @@ function Script(
 
             try {
                 const encStepBase = pb + stepSpan * (i * 2 + 0);
-                const encResult = executeFfmpegWithProgress(
+                const encResult = helpers.executeFfmpegWithProgress(
                     ffmpegEncode,
                     buildEncodeArgs(sample, qualityValue, encodedSample, activeFilters),
                     600,
@@ -1775,7 +1565,7 @@ function Script(
                 metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
 
                 const metricStepBase = pb + stepSpan * (i * 2 + 1);
-                const qualityResult = executeFfmpegWithProgress(
+                const qualityResult = helpers.executeFfmpegWithProgress(
                     ffmpegMetric,
                     metricArgs,
                     300,

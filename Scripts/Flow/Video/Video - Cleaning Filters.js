@@ -569,14 +569,10 @@ function Script(
         args.push('null');
         args.push('-');
 
-        const process = Flow.Execute({
-            command: ffmpegPath,
-            argumentList: args,
-            timeout: 180
-        });
+        const result = helpers.executeSilently(ffmpegPath, args, 180);
 
-        if (!process || process.exitCode !== 0) return null;
-        const combined = (process.standardOutput || '') + '\n' + (process.standardError || '');
+        if (!result || result.exitCode !== 0) return null;
+        const combined = (result.standardOutput || '') + '\n' + (result.standardError || '');
         const frames = parseProgressFrameCount(combined);
         if (!frames || frames <= 0) return null;
         return frames;
@@ -704,9 +700,9 @@ function Script(
         for (let i = 0; i < timeSamples.length; i++) {
             const ss = timeSamples[i];
 
-            const process = Flow.Execute({
-                command: ffmpegPath,
-                argumentList: [
+            const result = helpers.executeSilently(
+                ffmpegPath,
+                [
                     '-hide_banner',
                     '-nostats',
                     '-ss',
@@ -723,10 +719,10 @@ function Script(
                     'null',
                     '-'
                 ],
-                timeout: 300
-            });
+                300
+            );
 
-            const output = (process.standardError || '') + '\n' + (process.standardOutput || '');
+            const output = (result.standardError || '') + '\n' + (result.standardOutput || '');
             const match = output.match(
                 /Multi frame detection:\s*TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)\s*Undetermined:\s*(\d+)/i
             );
