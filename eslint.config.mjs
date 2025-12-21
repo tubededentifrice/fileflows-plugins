@@ -6,6 +6,7 @@ export default [
     js.configs.recommended,
     prettier,
     {
+        files: ['Scripts/**/*.js'],
         languageOptions: {
             ecmaVersion: 2015,
             sourceType: 'module',
@@ -41,6 +42,13 @@ export default [
             'no-undef': 'error',
             'no-empty': ['error', { allowEmptyCatch: true }],
             'no-useless-escape': 'error'
+        }
+    },
+    {
+        files: ['*.mjs'],
+        languageOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module'
         }
     }
 ];
