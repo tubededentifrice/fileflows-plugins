@@ -73,6 +73,17 @@ export class RadarrVc {
 
 Scripts for scheduled tasks or pre-execute tasks. Return truthy/falsey values - falsey stops the action.
 
+## Documentation Maintenance
+
+**CRITICAL**: When creating new scripts or modifying script parameters/behavior, you MUST update the [README.md](./README.md) file.
+
+1.  **New Scripts**: Add a new section under the appropriate category. Include:
+    - Description.
+    - Configuration (Inputs/Arguments) using a `<details>` block.
+    - Variables read/written.
+    - Pros/Cons of key settings.
+2.  **Modified Scripts**: Update the existing section to reflect changes in parameters, default values, or logic.
+
 ## Script Format
 
 ### Comment Block Metadata ([docs](https://fileflows.com/docs/scripting/javascript/flow-scripts/))
