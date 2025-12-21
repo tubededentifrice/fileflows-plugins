@@ -848,7 +848,7 @@ function Script(
     function getCRFArgument(codec) {
         if (codec.includes('_vaapi')) return '-qp';
         if (codec.includes('_nvenc')) return '-cq';
-        if (codec.includes('_qsv')) return '-global_quality';
+        if (codec.includes('_qsv')) return '-global_quality:v';
         if (codec.includes('_amf')) return '-qp_i';
         return '-crf';
     }
@@ -2026,18 +2026,22 @@ function Script(
             const arg = args[i];
             const lower = arg.toLowerCase();
 
-            if (
+            const isKnownQualityArg =
                 lower === '-crf' ||
+                lower.startsWith('-crf:') ||
                 lower === '-cq' ||
+                lower.startsWith('-cq:') ||
                 lower === '-qp' ||
+                lower.startsWith('-qp:') ||
                 lower === '-qp_i' ||
+                lower.startsWith('-qp_i:') ||
                 lower === '-global_quality' ||
-                lower === '-global_quality:v'
-            ) {
+                lower.startsWith('-global_quality:');
+
+            if (isKnownQualityArg || lower === crfArg || lower.startsWith(crfArg + ':')) {
                 skipNext = true;
                 continue;
             }
-            if (lower.startsWith(crfArg)) continue; // handle -crf:v etc
 
             if (lower === '-preset') {
                 skipNext = true;
