@@ -116,6 +116,8 @@ function Script(
     // Test if FFmpeg has libvmaf compiled in, fall back to SSIM if not
     let qualityMetric = 'SSIM'; // Default to SSIM (always available)
     try {
+        Logger.ILog(`Checking for libvmaf support in: ${ffmpegPath}`);
+
         // Use a targeted check to avoid printing the full `-filters` output to logs.
         let vmafCheck = null;
         try {
@@ -125,7 +127,13 @@ function Script(
                 30
             );
         } catch (e) {
-            // If silent exec isn't available, fall back to Flow.Execute (output is small for this command).
+            // This catch block might not be reached if executeSilently swallows exceptions,
+            // so we handle exitCode -1 below.
+        }
+
+        // Fallback if executeSilently failed (e.g. .NET types not available)
+        if (!vmafCheck || vmafCheck.exitCode === -1) {
+            Logger.DLog('executeSilently failed or returned -1, falling back to Flow.Execute');
             vmafCheck = Flow.Execute({
                 command: ffmpegPath,
                 argumentList: ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'],
@@ -137,7 +145,13 @@ function Script(
         if (vmafCheck.exitCode === 0 && /libvmaf/i.test(vmafOut)) {
             qualityMetric = 'VMAF';
         } else {
-            Logger.DLog(`libvmaf not available (exitCode=${vmafCheck.exitCode}, output=${vmafOut.length} chars)`);
+            const msg = `libvmaf not available. ExitCode: ${vmafCheck.exitCode}. Output: ${vmafOut.trim()}`;
+            if (customFfmpeg) {
+                // User explicitly requested this binary, so warn them loudly if it fails
+                Logger.WLog(msg);
+            } else {
+                Logger.DLog(msg);
+            }
         }
     } catch (e) {
         Logger.WLog(`Could not check for libvmaf support: ${e}`);
