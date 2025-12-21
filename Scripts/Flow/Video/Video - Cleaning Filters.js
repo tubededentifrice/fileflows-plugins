@@ -3,12 +3,13 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 40
+ * @revision 41
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
  * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (advanced; may break hardware pipelines depending on runner settings)
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable QSV deinterlacing (uses a quick `idet` probe)
+ * @param {bool} AutoNoiseDenoise Probe video noise/grain level and nudge denoise strength (bounded adjustment)
  * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
  * @output Cleaned video
  */
@@ -18,14 +19,16 @@ function Script(
     UseCPUFilters,
     AllowCpuFiltersWithHardwareEncode,
     AutoDeinterlace,
+    AutoNoiseDenoise,
     MpDecimateAnimation
 ) {
-    Logger.ILog('Cleaning filters.js revision 40 loaded');
+    Logger.ILog('Cleaning filters.js revision 41 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
     const safeString = (v) => helpers.safeString(v);
     const truthy = (v) => helpers.truthy(v);
+    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
 
     const listAdd = (l, i) => helpers.listAdd(l, i);
     const listAddUnique = (l, i) => helpers.listAddUnique(l, i);
@@ -45,6 +48,7 @@ function Script(
     AllowCpuFiltersWithHardwareEncode =
         truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
     AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
+    AutoNoiseDenoise = truthy(AutoNoiseDenoise) || truthy(Variables.AutoNoiseDenoise);
     MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
 
     function normalizeBitrateToKbps(value) {
@@ -949,6 +953,94 @@ function Script(
             }
             // 2019+: Skip
         }
+    }
+
+    // ===== AUTO NOISE-BASED DENOISE NUDGE (optional) =====
+    // This is intentionally a bounded adjustment to the heuristic denoiseLevel above (year/genre/bitrate based).
+    // It can be misled by very fast motion or heavy scene changes, so we never let it fully decide denoise.
+    let denoiseLevelBase = denoiseLevel;
+    Variables.denoiseLevel_base = denoiseLevelBase;
+
+    if (AutoNoiseDenoise && !SkipDenoise && !forceVppQsv && !forceHqdn3d) {
+        try {
+            const ffmpegPath = Flow.GetToolPath('FFmpeg') || Flow.GetToolPath('ffmpeg') || Variables.ffmpeg;
+            const inputFile =
+                (fileVar && fileVar.Orig && fileVar.Orig.FullName) || (fileVar && fileVar.FullName) || Flow.WorkingFile;
+
+            if (ffmpegPath && inputFile) {
+                const framesPerSample =
+                    parseInt(Variables['NoiseProbe.FramesPerSample'], 10) ||
+                    parseInt(Variables.NoiseProbeFramesPerSample, 10) ||
+                    180;
+                const timeoutSeconds =
+                    parseInt(Variables['NoiseProbe.TimeoutSeconds'], 10) ||
+                    parseInt(Variables.NoiseProbeTimeoutSeconds, 10) ||
+                    300;
+
+                const probe = helpers.probeTemporalNoiseScore(ffmpegPath, inputFile, duration, {
+                    framesPerSample: framesPerSample,
+                    timeoutSeconds: timeoutSeconds
+                });
+
+                Variables.noise_probe_ok = !!(probe && probe.ok);
+                Variables.noise_probe_reason = probe ? probe.reason : 'no-probe';
+                Variables.noise_probe_offsets = probe && probe.offsets ? safeTokenString(probe.offsets.join(',')) : '';
+                Variables.noise_probe_samples =
+                    probe && probe.samples ? safeTokenString(probe.samples.map((x) => String(x)).join(',')) : '';
+
+                if (probe && probe.ok && probe.score !== null && probe.score !== undefined && !isNaN(probe.score)) {
+                    const score = Math.round(parseFloat(probe.score) * 1000) / 1000;
+                    Variables.noise_probe_score = score;
+
+                    let adjust = 0;
+                    if (score >= 4.5) adjust = 25;
+                    else if (score >= 3.6) adjust = 18;
+                    else if (score >= 2.8) adjust = 10;
+                    else if (score < 2.0) adjust = -10;
+
+                    let maxIncrease =
+                        parseInt(Variables['NoiseProbe.MaxIncrease'], 10) ||
+                        parseInt(Variables.NoiseProbeMaxIncrease, 10) ||
+                        25;
+                    let maxDecrease =
+                        parseInt(Variables['NoiseProbe.MaxDecrease'], 10) ||
+                        parseInt(Variables.NoiseProbeMaxDecrease, 10) ||
+                        10;
+
+                    // Preserve intentional grain for doc/horror, and be conservative for very modern content.
+                    if (isDocumentary || isHorror) maxIncrease = Math.min(maxIncrease, 10);
+                    if (year >= 2019) maxIncrease = Math.min(maxIncrease, 10);
+
+                    if (adjust > 0) adjust = Math.min(adjust, maxIncrease);
+                    if (adjust < 0) adjust = -Math.min(Math.abs(adjust), maxDecrease);
+
+                    Variables.noise_probe_adjust = adjust;
+                    denoiseLevel = clampNumber(denoiseLevelBase + adjust, 0, 100);
+                    Variables.denoiseLevel = denoiseLevel;
+
+                    Logger.ILog(
+                        `Noise probe: score=${score} -> denoise adjust ${adjust} (base ${denoiseLevelBase} => ${denoiseLevel})`
+                    );
+                } else {
+                    Variables.noise_probe_adjust = 0;
+                    Logger.WLog(`Noise probe enabled but no usable samples (${Variables.noise_probe_reason})`);
+                }
+            } else {
+                Variables.noise_probe_ok = false;
+                Variables.noise_probe_reason = 'missing-ffmpeg-or-input';
+                Variables.noise_probe_adjust = 0;
+                Logger.WLog('Noise probe enabled but ffmpeg path or input file missing; skipping');
+            }
+        } catch (err) {
+            Variables.noise_probe_ok = false;
+            Variables.noise_probe_reason = `error:${err}`;
+            Variables.noise_probe_adjust = 0;
+            Logger.WLog(`Noise probe failed: ${err}`);
+        }
+    } else {
+        Variables.noise_probe_ok = false;
+        Variables.noise_probe_reason = AutoNoiseDenoise ? 'skipped (forced denoise or SkipDenoise)' : 'disabled';
+        Variables.noise_probe_adjust = 0;
     }
 
     // Store computed values for downstream nodes
