@@ -1,17 +1,10 @@
-import {
-    toEnumerableArray,
-    safeString,
-    parseDurationSeconds,
-    runProcess,
-    clampNumber,
-    truthy
-} from 'Shared/ScriptHelpers';
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
  * @description Detect missing audio track languages (empty/und) and tag them using heuristics + offline models (SpeechBrain LID, with whisper.cpp fallback).
  * @help Run after a "Video File" node so `vi.VideoInfo` is available. For MKV outputs, `mkvpropedit` is used for instant in-place tagging (sets both legacy `language` and modern `language-ietf`/BCP47 when possible); otherwise an ffmpeg stream-copy remux is done.
  * @author Vincent Courcelle
- * @revision 12
+ * @revision 13
  * @minimumVersion 24.0.0.0
  * @param {bool} DryRun Log what would change, but do not modify the file. Default: false
  * @param {bool} UseHeuristics Infer language from track title / filename tags (e.g. "English", "[jpn]"). Default: true
@@ -37,7 +30,15 @@ function Script(
     PreferMkvPropEdit,
     ForceRetag
 ) {
-    Logger.ILog('Audio - Auto tag missing language.js revision 12 loaded');
+    Logger.ILog('Audio - Auto tag missing language.js revision 13 loaded');
+
+    const helpers = new ScriptHelpers();
+    const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
+    const safeString = (v) => helpers.safeString(v);
+    const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
+    const runProcess = (c, a, t) => helpers.runProcess(c, a, t);
+    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
+    const truthy = (v) => helpers.truthy(v);
 
     function toInt(value, fallback) {
         const n = parseInt(value, 10);
