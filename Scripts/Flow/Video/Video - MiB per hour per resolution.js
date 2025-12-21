@@ -58,6 +58,11 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     }
 
     const mibPerHour = helpers.calculateMiBPerHour(fileSize, duration);
+
+    const maxSizeBytes = (duration * MaxMiBPerHour * 1024 * 1024) / 3600;
+    Variables.MaxFileSize = Math.floor(maxSizeBytes);
+    Logger.ILog('Setting Variables.MaxFileSize to: ' + Variables.MaxFileSize);
+
     Logger.ILog(
         'File size is ' +
             fileSize +

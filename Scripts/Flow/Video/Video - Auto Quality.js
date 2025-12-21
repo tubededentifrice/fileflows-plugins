@@ -17,6 +17,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
  * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
  * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: 2
+ * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -31,7 +32,8 @@ function Script(
     UseTags,
     Preset,
     MinSizeReduction,
-    MaxParallel
+    MaxParallel,
+    EnforceMaxSize
 ) {
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -77,6 +79,9 @@ function Script(
             MaxParallel = 2;
         }
     }
+
+    if (EnforceMaxSize === undefined || EnforceMaxSize === null) EnforceMaxSize = false;
+
     if (Variables.AutoQualityPreset) {
         const preset = Variables.AutoQualityPreset.toLowerCase();
         if (preset === 'quality') {
@@ -516,16 +521,44 @@ function Script(
             const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GB';
             Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
 
-            if (qualityScore >= effectiveTarget) {
-                bestCRF = testCRF;
-                bestScore = qualityScore;
-                if (PreferSmaller) {
+            const maxSize = parseInt(Variables.MaxFileSize || 0);
+            const useMaxSize = EnforceMaxSize && maxSize > 0;
+
+            if (useMaxSize) {
+                if (estimatedSize > maxSize) {
+                    Logger.ILog(
+                        `CRF ${testCRF} size (${helpers.bytesToGb(estimatedSize).toFixed(2)} GB) exceeds limit (${helpers
+                            .bytesToGb(maxSize)
+                            .toFixed(2)} GB). Increasing CRF.`
+                    );
                     lowCRF = testCRF + 1;
                 } else {
-                    break;
+                    if (qualityScore >= effectiveTarget) {
+                        bestCRF = testCRF;
+                        bestScore = qualityScore;
+                        if (PreferSmaller) {
+                            lowCRF = testCRF + 1;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        bestCRF = testCRF;
+                        bestScore = qualityScore;
+                        highCRF = testCRF - 1;
+                    }
                 }
             } else {
-                highCRF = testCRF - 1;
+                if (qualityScore >= effectiveTarget) {
+                    bestCRF = testCRF;
+                    bestScore = qualityScore;
+                    if (PreferSmaller) {
+                        lowCRF = testCRF + 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    highCRF = testCRF - 1;
+                }
             }
         }
     } finally {
@@ -2067,11 +2100,15 @@ function Script(
         };
 
         const targetStr = metric === 'SSIM' ? target.toFixed(4) : target.toFixed(2);
+        const maxSize = parseInt(Variables.MaxFileSize || 0);
 
         Logger.ILog('');
         Logger.ILog('========================================================================================');
         Logger.ILog(` Auto Quality Results (${metric})`);
         Logger.ILog(` Target: ${targetStr}`);
+        if (maxSize > 0) {
+            Logger.ILog(` Max Size: ${helpers.bytesToGb(maxSize).toFixed(2)} GB`);
+        }
         Logger.ILog('----------------------------------------------------------------------------------------');
         Logger.ILog(' CRF  | Score      | Min        | Max        | Avg        | Diff       | Est. Size  | Status');
         Logger.ILog(
