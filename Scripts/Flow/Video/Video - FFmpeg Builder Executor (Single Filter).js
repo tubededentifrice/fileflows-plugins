@@ -1,12 +1,5 @@
 import { FfmpegBuilderDefaults } from 'Shared/FfmpegBuilderDefaults';
-import {
-    toEnumerableArray,
-    safeString,
-    clampNumber,
-    truthy,
-    parseDurationSeconds,
-    secondsToClock
-} from 'Shared/ScriptHelpers';
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
@@ -21,6 +14,16 @@ import {
  * @output Skipped (no changes)
  */
 function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCommentLength) {
+    const helpers = new ScriptHelpers();
+    const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
+    const safeString = (v) => helpers.safeString(v);
+    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
+    const truthy = (v) => helpers.truthy(v);
+    const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
+    const secondsToClock = (v) => helpers.secondsToClock(v);
+
+    const builderDefaults = new FfmpegBuilderDefaults();
+
     // Shared helpers are imported, but we can alias them if we want to match existing code exactly
     // or just use them directly. The existing code uses `safeTokenString` which is identical to `safeString`.
     const safeTokenString = safeString;
@@ -656,7 +659,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
             if (speedParts.length > 0) {
                 try {
-                    Flow.AdditionalInfoRecorder?.('Speed', speedParts.join(' '), 1);
+                    if (typeof Flow.AdditionalInfoRecorder === 'function') {
+                        Flow.AdditionalInfoRecorder('Speed', speedParts.join(' '), 1);
+                    }
                 } catch (err) {}
             }
 
@@ -664,7 +669,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 const remaining = Math.max(0, duration - lastOutSeconds);
                 const etaSeconds = remaining / lastSpeed;
                 try {
-                    Flow.AdditionalInfoRecorder?.('Time Left', secondsToClock(etaSeconds), 2);
+                    if (typeof Flow.AdditionalInfoRecorder === 'function') {
+                        Flow.AdditionalInfoRecorder('Time Left', secondsToClock(etaSeconds), 2);
+                    }
                 } catch (err) {}
             }
         }
@@ -819,7 +826,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     // ===== GLOBAL ARGS =====
     // Match FFmpeg Builder executor defaults as closely as possible.
     // Note: These are placed before inputs so they apply as input options.
-    let args = FfmpegBuilderDefaults.ApplyFfmpegBuilderExecutorDefaults([]);
+    let args = builderDefaults.ApplyFfmpegBuilderExecutorDefaults([]);
 
     // Include model custom parameters early so input options (probesize/analyzeduration/etc) still apply.
     const customTokens0 = flattenTokenList(model.CustomParameters);

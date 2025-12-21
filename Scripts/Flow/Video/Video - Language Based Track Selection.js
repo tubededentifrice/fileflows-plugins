@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString as _safeString } from 'Shared/ScriptHelpers';
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
  * @description Keeps only audio tracks matching the original language or specified additional languages.
@@ -21,6 +21,9 @@ import { toEnumerableArray, safeString as _safeString } from 'Shared/ScriptHelpe
 function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIfNoneMatch, ReorderTracks) {
     Logger.ILog('Video - Language Based Track Selection.js revision 4 loaded');
 
+    const helpers = new ScriptHelpers();
+    const toArray = (v, m) => helpers.toEnumerableArray(v, m);
+
     // =========================================================================
     // CONFIGURATION DEFAULTS
     // =========================================================================
@@ -32,9 +35,6 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     // =========================================================================
     // HELPER FUNCTIONS
     // =========================================================================
-
-    // toArray is now toEnumerableArray from Shared/ScriptHelpers
-    const toArray = toEnumerableArray;
 
     /**
      * Normalize language code to ISO 639-2/B (3-letter) using FileFlows helper.
@@ -122,7 +122,8 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
     // =========================================================================
     // GET ORIGINAL LANGUAGE
     // =========================================================================
-    const originalLang = Variables.OriginalLanguage || Variables.VideoMetadata?.OriginalLanguage;
+    const videoMetadata = Variables.VideoMetadata;
+    const originalLang = Variables.OriginalLanguage || (videoMetadata && videoMetadata.OriginalLanguage);
     if (!originalLang) {
         Logger.ELog(
             'No original language found. Ensure "Movie Lookup" or "TV Show Lookup" node runs before this script.'
@@ -161,9 +162,14 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         Logger.ILog(`Additional language: ${raw} -> ${iso2}`);
     }
 
-    // Build allowed languages set (original + additional)
-    const allowedLangs = new Set([originalLangIso2, ...additionalLangs]);
-    Logger.ILog(`Allowed languages (ISO-2): ${Array.from(allowedLangs).join(', ')}`);
+    // Build allowed languages list (original + additional)
+    const allowedLangs = [originalLangIso2];
+    for (let i = 0; i < additionalLangs.length; i++) {
+        if (allowedLangs.indexOf(additionalLangs[i]) === -1) {
+            allowedLangs.push(additionalLangs[i]);
+        }
+    }
+    Logger.ILog(`Allowed languages (ISO-2): ${allowedLangs.join(', ')}`);
 
     // =========================================================================
     // GET FFMPEG BUILDER MODEL
@@ -218,7 +224,14 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
             }
 
             const iso2 = normalizeToIso2(lang);
-            if (allowedLangs.has(iso2)) {
+            let isAllowed = false;
+            for (let i = 0; i < allowedLangs.length; i++) {
+                if (allowedLangs[i] === iso2) {
+                    isAllowed = true;
+                    break;
+                }
+            }
+            if (isAllowed) {
                 toKeep.push(audio);
             } else {
                 toDelete.push(audio);
@@ -226,7 +239,13 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         }
 
         if (toKeep.length === 0 && KeepFirstIfNoneMatch) {
-            const firstAudio = audioStreams.find((a) => !!a);
+            let firstAudio = null;
+            for (let i = 0; i < audioStreams.length; i++) {
+                if (audioStreams[i]) {
+                    firstAudio = audioStreams[i];
+                    break;
+                }
+            }
             if (firstAudio) {
                 Logger.WLog('No audio tracks match allowed languages; keeping first audio track');
                 const idx = toDelete.indexOf(firstAudio);
@@ -254,7 +273,9 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         }
 
         if (ReorderTracks && sortedKeep.length > 1) {
-            const orderedAll = [...sortedKeep, ...toDelete];
+            const orderedAll = [];
+            for (let i = 0; i < sortedKeep.length; i++) orderedAll.push(sortedKeep[i]);
+            for (let i = 0; i < toDelete.length; i++) orderedAll.push(toDelete[i]);
             if (tryReorderNetList(ffModel.AudioStreams, orderedAll)) {
                 totalReordered += sortedKeep.length;
                 Logger.ILog(`  Reordered ${sortedKeep.length} audio streams`);
@@ -323,7 +344,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
 
     Variables['TrackSelection.OriginalLanguage'] = originalLangIso2;
     Variables['TrackSelection.AdditionalLanguages'] = additionalLangs.join(',');
-    Variables['TrackSelection.AllowedLanguages'] = Array.from(allowedLangs).join(',');
+    Variables['TrackSelection.AllowedLanguages'] = allowedLangs.join(',');
     Variables['TrackSelection.DeletedCount'] = totalDeleted;
     Variables['TrackSelection.UndeletedCount'] = totalUndeleted;
     Variables['TrackSelection.ReorderedCount'] = totalReordered;

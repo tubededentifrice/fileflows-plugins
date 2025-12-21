@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString, truthy } from 'Shared/ScriptHelpers';
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
@@ -21,6 +21,11 @@ function Script(
     MpDecimateAnimation
 ) {
     Logger.ILog('Cleaning filters.js revision 40 loaded');
+
+    const helpers = new ScriptHelpers();
+    const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
+    const safeString = (v) => helpers.safeString(v);
+    const truthy = (v) => helpers.truthy(v);
 
     // Parameter normalization
     SkipDenoise = truthy(SkipDenoise) || truthy(Variables.SkipDenoise);
@@ -909,13 +914,18 @@ function Script(
         return { interlaced, reason: 'idet', tff, bff, progressive, undetermined };
     }
 
-    const workingFile = Variables.file?.FullName || Flow.WorkingFile;
+    const fileVar = Variables.file;
+    const videoMetadata = Variables.VideoMetadata;
+    const viVar = Variables.vi;
+    const videoVar = Variables.video;
+
+    const workingFile = (fileVar && fileVar.FullName) || Flow.WorkingFile;
     const filenameYear = extractYearFromFilename(workingFile);
-    const year = Variables.VideoMetadata?.Year || filenameYear || 2012;
-    if (!Variables.VideoMetadata?.Year && filenameYear) {
+    const year = (videoMetadata && videoMetadata.Year) || filenameYear || 2012;
+    if (!(videoMetadata && videoMetadata.Year) && filenameYear) {
         Logger.ILog(`Year extracted from filename: ${filenameYear}`);
     }
-    const genres = Variables.VideoMetadata?.Genres || [];
+    const genres = toEnumerableArray(videoMetadata && videoMetadata.Genres, 100);
 
     // Override variables (set these in upstream nodes to force specific filter values)
     const forceVppQsv = Variables.vpp_qsv; // e.g., "50" (Intel QSV vpp denoise, 0-64)
@@ -936,11 +946,12 @@ function Script(
     }
 
     // Get video info for bitrate detection
-    const videoInfo = Variables.vi?.VideoInfo || ffmpeg.VideoInfo;
-    const sourceBitrateKbps = normalizeBitrateToKbps(videoInfo?.Bitrate || 0);
-    const duration = Variables.video?.Duration || videoInfo?.VideoStreams?.[0]?.Duration || 0;
-    const sourceFps = videoInfo?.VideoStreams?.[0]?.FramesPerSecond || 0;
-    const fileSizeMB = Variables.file?.Orig?.Size ? Variables.file.Orig.Size / (1024 * 1024) : 0;
+    const videoInfo = (viVar && viVar.VideoInfo) || ffmpeg.VideoInfo;
+    const vs0 = videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0];
+    const sourceBitrateKbps = normalizeBitrateToKbps((videoInfo && videoInfo.Bitrate) || 0);
+    const duration = (videoVar && videoVar.Duration) || (vs0 && vs0.Duration) || 0;
+    const sourceFps = (vs0 && vs0.FramesPerSecond) || 0;
+    const fileSizeMB = fileVar && fileVar.Orig && fileVar.Orig.Size ? fileVar.Orig.Size / (1024 * 1024) : 0;
 
     // Detect if content is likely a modern restoration/remaster of old content
     // High bitrate (>15 Mbps) + old year (pre-2000) = probably restored from film
@@ -951,9 +962,9 @@ function Script(
     const isRestoredContent = year <= 2000 && (isHighBitrate || isVeryHighBitrate);
 
     // Content type detection
-    const isAnimation = genres !== null && (genres.includes('Animation') || genres.includes('Anime'));
-    const isDocumentary = genres !== null && genres.includes('Documentary');
-    const isHorror = genres !== null && (genres.includes('Horror') || genres.includes('Thriller'));
+    const isAnimation = genres !== null && (genres.indexOf('Animation') >= 0 || genres.indexOf('Anime') >= 0);
+    const isDocumentary = genres !== null && genres.indexOf('Documentary') >= 0;
+    const isHorror = genres !== null && (genres.indexOf('Horror') >= 0 || genres.indexOf('Thriller') >= 0);
     const isOldCelAnimation = isAnimation && year <= 1995; // Cel animation era (hand-drawn on film)
 
     // Detect encoder type (best-effort) so we can avoid breaking hardware pipelines
@@ -989,10 +1000,10 @@ function Script(
             Logger.DLog(`Unable to ensure QSV Main10 profile: ${err}`);
         }
     }
-    const sourceBits = videoInfo?.VideoStreams?.[0]?.Bits || (videoInfo?.VideoStreams?.[0]?.Is10Bit ? 10 : 0);
+    const sourceBits = (vs0 && vs0.Bits) || (vs0 && vs0.Is10Bit ? 10 : 0);
     Variables.source_bit_depth = sourceBits || 'unknown';
-    const isHDR = Variables.video?.HDR || videoInfo?.VideoStreams?.[0]?.HDR || false;
-    const isDolbyVision = videoInfo?.VideoStreams?.[0]?.DolbyVision || false;
+    const isHDR = (videoVar && videoVar.HDR) || (vs0 && vs0.HDR) || false;
+    const isDolbyVision = (vs0 && vs0.DolbyVision) || false;
     Variables.is_hdr = isHDR;
     Variables.is_dolby_vision = isDolbyVision;
 
@@ -1148,7 +1159,10 @@ function Script(
         } else {
             try {
                 const ffmpegPath = Flow.GetToolPath('FFmpeg') || Flow.GetToolPath('ffmpeg') || Variables.ffmpeg;
-                const inputFile = Variables.file?.Orig?.FullName || Variables.file?.FullName || Flow.WorkingFile;
+                const inputFile =
+                    (fileVar && fileVar.Orig && fileVar.Orig.FullName) ||
+                    (fileVar && fileVar.FullName) ||
+                    Flow.WorkingFile;
                 const decision = shouldEnableMpDecimateAuto(
                     ffmpegPath,
                     inputFile,
@@ -1187,7 +1201,8 @@ function Script(
     if (AutoDeinterlace) {
         try {
             const ffmpegPath = Flow.GetToolPath('FFmpeg') || Flow.GetToolPath('ffmpeg') || Variables.ffmpeg;
-            const inputFile = Variables.file?.Orig?.FullName || Variables.file?.FullName || Flow.WorkingFile;
+            const inputFile =
+                (fileVar && fileVar.Orig && fileVar.Orig.FullName) || (fileVar && fileVar.FullName) || Flow.WorkingFile;
             if (ffmpegPath && inputFile) {
                 const idet = detectInterlacedWithIdet(ffmpegPath, inputFile, duration);
                 Variables.interlace_detect_reason = idet.reason;
@@ -1694,10 +1709,10 @@ function Script(
             } else {
                 const fps =
                     parseFloat(
-                        Variables.video?.FramesPerSecond ||
-                            Variables.vi?.FramesPerSecond ||
-                            Variables.vi?.FPS ||
-                            Variables.video?.FPS ||
+                        (videoVar && videoVar.FramesPerSecond) ||
+                            (viVar && viVar.FramesPerSecond) ||
+                            (viVar && viVar.FPS) ||
+                            (videoVar && videoVar.FPS) ||
                             24
                     ) || 24;
                 const gop = Math.max(48, Math.min(300, Math.round(fps * 5))); // ~5 seconds keyframe interval

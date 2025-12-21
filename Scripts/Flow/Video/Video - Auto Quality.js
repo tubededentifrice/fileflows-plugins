@@ -1,4 +1,4 @@
-import { toEnumerableArray, safeString, parseDurationSeconds, clampNumber } from 'Shared/ScriptHelpers';
+import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
@@ -29,6 +29,12 @@ function Script(
     UseTags,
     Preset
 ) {
+    const helpers = new ScriptHelpers();
+    const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
+    const safeString = (v) => helpers.safeString(v);
+    const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
+    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
+
     // Local alias for safeString to match previous code style if preferred, or just use safeString directly.
     const safeTokenString = safeString;
 
@@ -77,7 +83,9 @@ function Script(
 
             const mapped = clampNumber(base + span * (p / 100.0), 0, 100);
             try {
-                Flow.PartPercentageUpdate?.(mapped);
+                if (typeof Flow.PartPercentageUpdate === 'function') {
+                    Flow.PartPercentageUpdate(mapped);
+                }
             } catch (err) {}
         }
 
@@ -297,7 +305,7 @@ function Script(
         return -1;
     }
 
-    const video = ffmpegModel.VideoStreams?.[0];
+    const video = ffmpegModel.VideoStreams && ffmpegModel.VideoStreams[0];
     if (!video) {
         Logger.ELog('Auto quality: No video stream found in FFmpeg Builder model.');
         return -1;
@@ -358,45 +366,50 @@ function Script(
     Variables.AutoQuality_Metric = qualityMetric;
 
     // ===== GATHER VIDEO INFO =====
-    const videoInfo = Variables.vi?.VideoInfo || ffmpegModel.VideoInfo;
+    const viVar = Variables.vi;
+    const videoInfo = (viVar && viVar.VideoInfo) || ffmpegModel.VideoInfo;
     if (!videoInfo) {
         Logger.ELog('Auto quality: VideoInfo not available. Ensure Video File node ran before this.');
         return -1;
     }
 
-    const sourceFile = Variables.file?.FullName || Flow.WorkingFile;
-    const originalFile = Variables.file?.Orig?.FullName || sourceFile;
+    const fileVar = Variables.file;
+    const videoVar = Variables.video;
+
+    const sourceFile = (fileVar && fileVar.FullName) || Flow.WorkingFile;
+    const originalFile = (fileVar && fileVar.Orig && fileVar.Orig.FullName) || sourceFile;
 
     // Get duration from multiple sources - FileFlows stores it in various places
     let duration = 0;
+    const videoStream0 = videoInfo.VideoStreams && videoInfo.VideoStreams[0];
     // Try video stream duration first
-    if (videoInfo.VideoStreams?.[0]?.Duration > 0) {
+    if (videoStream0 && videoStream0.Duration > 0) {
         duration = videoInfo.VideoStreams[0].Duration;
     }
     // Try Variables.video.Duration (set by Video File node)
-    else if (Variables.video?.Duration > 0) {
-        duration = Variables.video.Duration;
+    else if (videoVar && videoVar.Duration > 0) {
+        duration = videoVar.Duration;
     }
     // Try overall VideoInfo duration
     else if (videoInfo.Duration > 0) {
         duration = videoInfo.Duration;
     }
     // Estimate from file size and bitrate as last resort
-    else if (videoInfo.Bitrate > 0 && Variables.file?.Size > 0) {
-        duration = (Variables.file.Size * 8) / videoInfo.Bitrate;
+    else if (videoInfo.Bitrate > 0 && fileVar && fileVar.Size > 0) {
+        duration = (fileVar.Size * 8) / videoInfo.Bitrate;
         Logger.WLog(`Estimated duration from filesize/bitrate: ${Math.round(duration)}s`);
     }
 
-    const videoCodec = videoInfo.VideoStreams?.[0]?.Codec?.toLowerCase() || '';
+    const videoCodec = videoStream0 && videoStream0.Codec ? String(videoStream0.Codec).toLowerCase() : '';
     const videoBitrate = getVideoBitrate(videoInfo);
-    const width = videoInfo.VideoStreams?.[0]?.Width || Variables.video?.Width || 1920;
-    const height = videoInfo.VideoStreams?.[0]?.Height || Variables.video?.Height || 1080;
-    const fps = videoInfo.VideoStreams?.[0]?.FramesPerSecond || 24;
-    const is10Bit = videoInfo.VideoStreams?.[0]?.Is10Bit || videoInfo.VideoStreams?.[0]?.Bits === 10;
+    const width = (videoStream0 && videoStream0.Width) || (videoVar && videoVar.Width) || 1920;
+    const height = (videoStream0 && videoStream0.Height) || (videoVar && videoVar.Height) || 1080;
+    const fps = (videoStream0 && videoStream0.FramesPerSecond) || 24;
+    const is10Bit = (videoStream0 && videoStream0.Is10Bit) || (videoStream0 && videoStream0.Bits === 10);
     const targetBitDepth = detectTargetBitDepth(video);
     const use10BitForTests = is10Bit || targetBitDepth >= 10;
-    const isHDR = videoInfo.VideoStreams?.[0]?.HDR || false;
-    const isDolbyVision = videoInfo.VideoStreams?.[0]?.DolbyVision || false;
+    const isHDR = (videoStream0 && videoStream0.HDR) || false;
+    const isDolbyVision = (videoStream0 && videoStream0.DolbyVision) || false;
 
     Logger.ILog(
         `Source: ${width}x${height}, ${fps}fps, ${Math.round(videoBitrate / 1000)}kbps, codec=${videoCodec}, HDR=${isHDR}, 10bit=${use10BitForTests}, duration=${Math.round(duration)}s`
@@ -404,8 +417,10 @@ function Script(
 
     // Validate duration - must be a positive number
     if (!duration || isNaN(duration) || duration <= 0) {
+        const streamDuration = videoStream0 ? videoStream0.Duration : null;
+        const varDuration = videoVar ? videoVar.Duration : null;
         Logger.ELog(
-            `Auto quality: Could not determine video duration. VideoInfo.Duration=${videoInfo.Duration}, VideoStream.Duration=${videoInfo.VideoStreams?.[0]?.Duration}, Variables.video.Duration=${Variables.video?.Duration}`
+            `Auto quality: Could not determine video duration. VideoInfo.Duration=${videoInfo.Duration}, VideoStream.Duration=${streamDuration}, Variables.video.Duration=${varDuration}`
         );
         Logger.WLog('Leaving quality settings unchanged.');
         Variables.AutoQuality_CRF = 'unchanged';
@@ -508,7 +523,9 @@ function Script(
             Logger.ILog(`Video already in ${videoCodec} at acceptable bitrate. Skipping encode.`);
             Variables.AutoQuality_CRF = 'copy';
             Variables.AutoQuality_Reason = 'already_optimal';
-            if (UseTags) Flow.AddTags?.(['Copy']);
+            if (UseTags && typeof Flow.AddTags === 'function') {
+                Flow.AddTags(['Copy']);
+            }
             return 2;
         }
     }
@@ -655,11 +672,15 @@ function Script(
             }
 
             Logger.ILog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
-            Flow.AdditionalInfoRecorder?.('Auto Quality', `CRF ${testCRF}`, 1);
+            if (typeof Flow.AdditionalInfoRecorder === 'function') {
+                Flow.AdditionalInfoRecorder('Auto Quality', `CRF ${testCRF}`, 1);
+            }
 
             const iterBase = ((iterations - 1) / MaxSearchIterations) * 100.0;
             const iterSpan = (1.0 / MaxSearchIterations) * 100.0;
-            Flow.PartPercentageUpdate?.(iterBase);
+            if (typeof Flow.PartPercentageUpdate === 'function') {
+                Flow.PartPercentageUpdate(iterBase);
+            }
 
             const qualityScore = measureQualityAtQualityValue(
                 ffmpegEncodePath,
@@ -738,12 +759,16 @@ function Script(
     Variables.AutoQuality_Results = JSON.stringify(searchResults);
 
     const finalScoreDisplay = qualityMetric === 'SSIM' ? bestScore.toFixed(4) : bestScore.toFixed(1);
-    Flow.AdditionalInfoRecorder?.('CRF', bestCRF, 1000);
-    Flow.AdditionalInfoRecorder?.(qualityMetric, finalScoreDisplay, 1000);
+    if (typeof Flow.AdditionalInfoRecorder === 'function') {
+        Flow.AdditionalInfoRecorder('CRF', bestCRF, 1000);
+        Flow.AdditionalInfoRecorder(qualityMetric, finalScoreDisplay, 1000);
+    }
 
     if (UseTags) {
         const tagScore = qualityMetric === 'SSIM' ? bestScore.toFixed(3) : Math.round(bestScore);
-        Flow.AddTags?.([`CRF ${bestCRF}`, `${qualityMetric} ${tagScore}`]);
+        if (typeof Flow.AddTags === 'function') {
+            Flow.AddTags([`CRF ${bestCRF}`, `${qualityMetric} ${tagScore}`]);
+        }
     }
 
     Logger.ILog(
@@ -754,13 +779,17 @@ function Script(
     // ===== HELPER FUNCTIONS =====
 
     function getVideoBitrate(vi) {
-        let bitrate = vi.VideoStreams?.[0]?.Bitrate;
+        const videoStream0 = vi && vi.VideoStreams && vi.VideoStreams[0];
+        let bitrate = videoStream0 ? videoStream0.Bitrate : 0;
         if (!bitrate || bitrate <= 0) {
             let overall = vi.Bitrate || 0;
             if (overall > 0) {
                 let calculated = overall;
-                if (vi.AudioStreams?.length) {
-                    for (let audio of vi.AudioStreams) {
+                const audioStreams = toEnumerableArray(vi.AudioStreams, 64);
+                if (audioStreams.length) {
+                    for (let i = 0; i < audioStreams.length; i++) {
+                        const audio = audioStreams[i];
+                        if (!audio) continue;
                         if (audio.Bitrate > 0) calculated -= audio.Bitrate;
                         else calculated -= overall * 0.05;
                     }
@@ -917,7 +946,7 @@ function Script(
         // In FFmpeg Builder "New mode" the executor may rely on filters being present in EncodingParameters
         // (eg: '-filter:v:0 <chain>'). Prefer this chain for sampling when available so tests match the final pass.
         try {
-            const ep = toEnumerableArray(videoStream?.EncodingParameters, 2000)
+            const ep = toEnumerableArray(videoStream && videoStream.EncodingParameters, 2000)
                 .map(safeTokenString)
                 .filter((x) => x);
             Logger.DLog(`getVideoFilterFromEncodingParameters: found ${ep.length} tokens in EncodingParameters`);
@@ -950,7 +979,7 @@ function Script(
 
     function getCropFilterFromModel(videoStream) {
         try {
-            const crop = videoStream?.Crop;
+            const crop = videoStream && videoStream.Crop;
             if (crop && crop.Width > 0 && crop.Height > 0) {
                 const cx = crop.X !== null && crop.X !== undefined ? crop.X : 0;
                 const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
@@ -1182,7 +1211,7 @@ function Script(
                     try {
                         result = executeSilently(ffmpeg, args, 60);
                         if (!result || result.completed === false)
-                            throw new Error(result?.standardError || 'silent execute failed');
+                            throw new Error((result && result.standardError) || 'silent execute failed');
                         output = (result.standardOutput || '') + '\n' + (result.standardError || '');
                     } catch (e) {
                         // Fallback: still keep output quiet by writing metadata to a file.
@@ -1264,7 +1293,7 @@ function Script(
         const qualityArg = getQualityArgForSampling(encoder);
 
         function buildBaseEncodeTokens() {
-            const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000)
+            const raw = toEnumerableArray(videoStream && videoStream.EncodingParameters, 5000)
                 .map(safeTokenString)
                 .filter((x) => x);
             const kept = [];
@@ -1594,7 +1623,7 @@ function Script(
         const qualityArg = getQualityArgForSampling(encoder);
 
         function buildBaseEncodeTokens() {
-            const raw = toEnumerableArray(videoStream?.EncodingParameters, 5000)
+            const raw = toEnumerableArray(videoStream && videoStream.EncodingParameters, 5000)
                 .map(safeTokenString)
                 .filter((x) => x);
             const kept = [];
@@ -1840,8 +1869,8 @@ function Script(
             const encodedSample = `${tempDir}/${sample.key}_encoded_quality_${qualityValue}.mkv`;
 
             const ref = refByKey[sample.key];
-            const activeFilters = ref?.activeFilters || upstreamFiltersStr;
-            const filterMode = ref?.filterMode || (upstreamFiltersStr ? 'upstream' : 'none');
+            const activeFilters = (ref && ref.activeFilters) || upstreamFiltersStr;
+            const filterMode = (ref && ref.filterMode) || (upstreamFiltersStr ? 'upstream' : 'none');
 
             try {
                 const encStepBase = pb + stepSpan * (i * 2 + 0);
@@ -1884,7 +1913,7 @@ function Script(
                 ];
 
                 if (referenceMode === 'encoded') {
-                    const referencePath = ref?.path;
+                    const referencePath = ref && ref.path;
                     if (!referencePath) {
                         Logger.WLog(`Missing reference for sample ${sample.key}`);
                         continue;
