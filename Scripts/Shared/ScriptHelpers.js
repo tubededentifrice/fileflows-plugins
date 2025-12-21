@@ -945,6 +945,14 @@ export class ScriptHelpers {
 
             perOffsetCounts.push(values.length);
             if (values.length < 10) {
+                Logger.WLog(
+                    `Noise probe failed at offset ${ss}s: found ${values.length} samples (needed 10). ExitCode: ${
+                        result ? result.exitCode : 'null'
+                    }`
+                );
+                if (output && output.length > 0) {
+                    Logger.DLog(`Noise probe output (first 1000 chars): ${output.substring(0, 1000)}`);
+                }
                 perOffsetMeans.push(null);
                 continue;
             }

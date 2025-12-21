@@ -82,6 +82,16 @@ function Script(
 
     if (EnforceMaxSize === undefined || EnforceMaxSize === null) EnforceMaxSize = false;
 
+    const varMaxFileSize = parseInt(Variables.MaxFileSize || 0);
+    if (varMaxFileSize > 0) {
+        if (!EnforceMaxSize) {
+            Logger.ILog(
+                `Auto-enabling MaxFileSize enforcement due to Variables.MaxFileSize = ${helpers.bytesToGb(varMaxFileSize).toFixed(2)} GB`
+            );
+            EnforceMaxSize = true;
+        }
+    }
+
     if (Variables.AutoQualityPreset) {
         const preset = Variables.AutoQualityPreset.toLowerCase();
         if (preset === 'quality') {
@@ -2175,7 +2185,7 @@ function Script(
             const pMax = padRight(maxStr, 10);
             const pAvg = padRight(avgStr, 10);
             const pDiff = padRight(diffStr, 10);
-            const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size) + ' GB' : '-', 10);
+            const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size).toFixed(2) + ' GB' : '-', 10);
 
             Logger.ILog(` ${pCrf} | ${pScore} | ${pMin} | ${pMax} | ${pAvg} | ${pDiff} | ${pSize} | ${status}`);
         }
