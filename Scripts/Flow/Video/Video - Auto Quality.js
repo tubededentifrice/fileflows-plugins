@@ -492,7 +492,14 @@ function Script(
             const qualityScore = result.score;
             const estimatedSize = result.bitrate > 0 ? result.bitrate * duration : 0;
 
-            searchResults.push({ crf: testCRF, score: qualityScore, size: estimatedSize });
+            searchResults.push({
+                crf: testCRF,
+                score: qualityScore,
+                min: result.min,
+                max: result.max,
+                avg: result.avg,
+                size: estimatedSize
+            });
             const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
             const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GB';
             Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
@@ -815,9 +822,7 @@ function Script(
                     '-loglevel',
                     'error',
                     '-y',
-                    '-progress',
-                    'pipe:2',
-                    '-nostats',
+                    '-stats',
                     '-ss',
                     String(sec),
                     '-i',
@@ -1203,7 +1208,7 @@ function Script(
         Logger.ILog(`Pre-encoding ${samples.length} reference samples at quality ${referenceQuality} (${encoder})...`);
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-stats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) {
                 args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
@@ -1517,7 +1522,7 @@ function Script(
         }
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:2', '-nostats', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-stats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) {
                 args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
@@ -1606,17 +1611,7 @@ function Script(
                     : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
                 const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
 
-                const metricArgs = [
-                    '-hide_banner',
-                    '-loglevel',
-                    'info',
-                    '-progress',
-                    'pipe:2',
-                    '-nostats',
-                    '-y',
-                    '-i',
-                    encodedSample
-                ];
+                const metricArgs = ['-hide_banner', '-loglevel', 'info', '-stats', '-y', '-i', encodedSample];
 
                 if (referenceMode === 'encoded') {
                     const referencePath = ref && ref.path;
@@ -1682,10 +1677,12 @@ function Script(
 
         if (scores.length === 0) return null;
 
-        const avgScore = scores.reduce((min, val) => (val < min ? val : min), scores[0]);
+        const min = scores.reduce((m, val) => (val < m ? val : m), scores[0]);
+        const max = scores.reduce((m, val) => (val > m ? val : m), scores[0]);
+        const avg = scores.reduce((s, val) => s + val, 0) / scores.length;
         const bitrate = totalEncodedSeconds > 0 ? totalEncodedBytes / totalEncodedSeconds : 0;
 
-        return { score: avgScore, bitrate: bitrate };
+        return { score: min, min: min, max: max, avg: avg, bitrate: bitrate };
     }
 
     function cleanupFiles(files) {
@@ -1891,17 +1888,27 @@ function Script(
         const targetStr = metric === 'SSIM' ? target.toFixed(4) : target.toFixed(2);
 
         Logger.ILog('');
-        Logger.ILog('=====================================================');
+        Logger.ILog('========================================================================================');
         Logger.ILog(` Auto Quality Results (${metric})`);
         Logger.ILog(` Target: ${targetStr}`);
-        Logger.ILog('----------------------------------------------------------------------');
-        Logger.ILog(' CRF  | Score      | Diff       | Est. Size  | Status');
-        Logger.ILog('------|------------|------------|------------|--------------------');
+        Logger.ILog('----------------------------------------------------------------------------------------');
+        Logger.ILog(' CRF  | Score      | Min        | Max        | Avg        | Diff       | Est. Size  | Status');
+        Logger.ILog(
+            '------|------------|------------|------------|------------|------------|------------|--------------------'
+        );
 
         for (const r of results) {
             const isBest = r.crf === bestCrf;
             const meets = r.score >= target;
             const scoreStr = metric === 'SSIM' ? r.score.toFixed(4) : r.score.toFixed(2);
+
+            const minVal = r.min !== undefined ? r.min : r.score;
+            const maxVal = r.max !== undefined ? r.max : r.score;
+            const avgVal = r.avg !== undefined ? r.avg : r.score;
+
+            const minStr = metric === 'SSIM' ? minVal.toFixed(4) : minVal.toFixed(2);
+            const maxStr = metric === 'SSIM' ? maxVal.toFixed(4) : maxVal.toFixed(2);
+            const avgStr = metric === 'SSIM' ? avgVal.toFixed(4) : avgVal.toFixed(2);
 
             let diff = r.score - target;
             let diffSign = diff > 0 ? '+' : '';
@@ -1912,12 +1919,15 @@ function Script(
 
             const pCrf = padRight(r.crf, 4);
             const pScore = padRight(scoreStr, 10);
+            const pMin = padRight(minStr, 10);
+            const pMax = padRight(maxStr, 10);
+            const pAvg = padRight(avgStr, 10);
             const pDiff = padRight(diffStr, 10);
             const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size) + ' GB' : '-', 10);
 
-            Logger.ILog(` ${pCrf} | ${pScore} | ${pDiff} | ${pSize} | ${status}`);
+            Logger.ILog(` ${pCrf} | ${pScore} | ${pMin} | ${pMax} | ${pAvg} | ${pDiff} | ${pSize} | ${status}`);
         }
-        Logger.ILog('======================================================================');
+        Logger.ILog('========================================================================================');
         Logger.ILog('');
     }
 }
