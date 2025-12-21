@@ -15,7 +15,10 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     const OUTPUT_UNABLE = 3;
 
     let MaxMiBPerHour = null;
-    switch (getResolution(Variables.video?.Width, Variables.video?.Height)) {
+    const videoVar = Variables.video;
+    const width = videoVar && videoVar.Width;
+    const height = videoVar && videoVar.Height;
+    switch (getResolution(width, height)) {
         case '4K':
             MaxMiBPerHour = MaxMiBPerHour4K;
             break;
@@ -31,7 +34,7 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     }
 
     if (MaxMiBPerHour === null) {
-        Logger.ILog(`No MaxMiBPerHour was provided for the resolution, failing: ${MaxMiBPerHour}`);
+        Logger.ILog('No MaxMiBPerHour was provided for the resolution, failing: ' + MaxMiBPerHour);
         return OUTPUT_UNABLE;
     }
 
@@ -39,12 +42,12 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     MaxMiBPerHour = parseInt(MaxMiBPerHour);
 
     if (!MaxMiBPerHour) {
-        Logger.ILog(`No MaxMiBPerHour was provided or is invalid number, failing: ${MaxMiBPerHour}`);
+        Logger.ILog('No MaxMiBPerHour was provided or is invalid number, failing: ' + MaxMiBPerHour);
         return OUTPUT_UNABLE;
     }
 
     const fileSize = Variables.file.Size;
-    const duration = Variables.video?.Duration;
+    const duration = videoVar && videoVar.Duration;
     if (!duration) {
         Logger.ILog('No duration found');
         return OUTPUT_UNABLE;
@@ -56,17 +59,23 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
 
     const mibPerHour = ((fileSize / duration) * 3600) / 1024 / 1024;
     Logger.ILog(
-        `File size is ${fileSize} (${gb(fileSize)} GB) and should be below: ${gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600)} GB`
+        'File size is ' +
+            fileSize +
+            ' (' +
+            gb(fileSize) +
+            ' GB) and should be below: ' +
+            gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
+            ' GB'
     );
-    Logger.ILog(`Duration: ${duration} seconds`);
-    Logger.ILog(`Detected mibPerHour: ${mibPerHour}`);
+    Logger.ILog('Duration: ' + duration + ' seconds');
+    Logger.ILog('Detected mibPerHour: ' + mibPerHour);
 
     if (mibPerHour <= MaxMiBPerHour) {
-        Logger.ILog(`Below threshold of ${MaxMiBPerHour}`);
+        Logger.ILog('Below threshold of ' + MaxMiBPerHour);
         return OUTPUT_BELOW;
     }
     if (mibPerHour > MaxMiBPerHour) {
-        Logger.ILog(`Above threshold of ${MaxMiBPerHour}`);
+        Logger.ILog('Above threshold of ' + MaxMiBPerHour);
         return OUTPUT_ABOVE;
     }
 
@@ -81,20 +90,20 @@ function getResolution(width, height) {
     }
 
     if (width >= 2592 || height >= 2160) {
-        Logger.ILog(`4K video detected: ${width}x${height}`);
+        Logger.ILog('4K video detected: ' + width + 'x' + height);
         return '4K';
     }
 
     if (width >= 1800 || height >= 1080) {
-        Logger.ILog(`1080p video detected: ${width}x${height}`);
+        Logger.ILog('1080p video detected: ' + width + 'x' + height);
         return '1080p';
     }
 
     if (width >= 1200 || height >= 720) {
-        Logger.ILog(`720p video detected: ${width}x${height}`);
+        Logger.ILog('720p video detected: ' + width + 'x' + height);
         return '720p';
     }
 
-    Logger.ILog(`SD video detected: ${width}x${height}`);
+    Logger.ILog('SD video detected: ' + width + 'x' + height);
     return 'SD';
 }

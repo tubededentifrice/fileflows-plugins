@@ -15,12 +15,13 @@ function Script(MaxMiBPerHour) {
     MaxMiBPerHour = parseInt(MaxMiBPerHour);
 
     if (!MaxMiBPerHour) {
-        Logger.ILog(`No MaxMiBPerHour was provided or is invalid number, failing: ${MaxMiBPerHour}`);
+        Logger.ILog('No MaxMiBPerHour was provided or is invalid number, failing: ' + MaxMiBPerHour);
         return OUTPUT_UNABLE;
     }
 
     const fileSize = Variables.file.Size;
-    const duration = Variables.video?.Duration;
+    const videoVar = Variables.video;
+    const duration = videoVar && videoVar.Duration;
     if (!duration) {
         Logger.ILog('No duration found');
         return OUTPUT_UNABLE;
@@ -32,17 +33,23 @@ function Script(MaxMiBPerHour) {
 
     const mibPerHour = ((fileSize / duration) * 3600) / 1024 / 1024;
     Logger.ILog(
-        `File size is ${fileSize} (${gb(fileSize)} GB) and should be below: ${gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600)} GB`
+        'File size is ' +
+            fileSize +
+            ' (' +
+            gb(fileSize) +
+            ' GB) and should be below: ' +
+            gb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
+            ' GB'
     );
-    Logger.ILog(`Duration: ${duration} seconds`);
-    Logger.ILog(`Detected mibPerHour: ${mibPerHour}`);
+    Logger.ILog('Duration: ' + duration + ' seconds');
+    Logger.ILog('Detected mibPerHour: ' + mibPerHour);
 
     if (mibPerHour <= MaxMiBPerHour) {
-        Logger.ILog(`Below threshold of ${MaxMiBPerHour}`);
+        Logger.ILog('Below threshold of ' + MaxMiBPerHour);
         return OUTPUT_BELOW;
     }
     if (mibPerHour > MaxMiBPerHour) {
-        Logger.ILog(`Above threshold of ${MaxMiBPerHour}`);
+        Logger.ILog('Above threshold of ' + MaxMiBPerHour);
         return OUTPUT_ABOVE;
     }
 
