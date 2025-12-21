@@ -20,7 +20,7 @@ function Script(URI, ApiKey) {
     // Find movie name from radarr
     let movieId = Variables['movie.RadarrId'];
     if (!movieId) {
-        Logger.WLog(`This script requires the Radarr - Movie search script to be run first`);
+        Logger.WLog('This script requires the Radarr - Movie search script to be run first');
         return 2;
 
         // let [movie, basePath] = findMovie(folderPath, radarr);
@@ -33,12 +33,12 @@ function Script(URI, ApiKey) {
         // movieId = movie.id;
     }
 
-    Logger.ILog(`Refreshing movie ${movieId}`);
+    Logger.ILog('Refreshing movie ' + movieId);
 
     // Get Movie File info
     let movieFiles = radarr.findMovieFiles(movieId);
     if (!movieFiles) {
-        Logger.ILog(`No files found for movie ${movieId}`);
+        Logger.ILog('No files found for movie ' + movieId);
         return 2;
     }
 
@@ -48,7 +48,7 @@ function Script(URI, ApiKey) {
             isNewMovie: false
         };
         let refreshData = radarr.sendCommand('RefreshMovie', refreshBody);
-        Logger.ILog(`Movie refreshed: ${JSON.stringify(refreshData)}`);
+        Logger.ILog('Movie refreshed: ' + JSON.stringify(refreshData));
 
         return 1;
     } catch (error) {

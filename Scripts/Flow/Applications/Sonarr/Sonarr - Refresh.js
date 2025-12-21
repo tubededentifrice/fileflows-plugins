@@ -22,19 +22,20 @@ function Script(URI, ApiKey) {
     const series = Variables['TVShowInfo'];
     let seriesId = Variables['movie.SonarrId'];
     if (!seriesId) {
-        Logger.WLog(`This script requires the Radarr - Movie search script to be run first`);
+        Logger.WLog('This script requires the Radarr - Movie search script to be run first');
         return 2;
     }
 
-    Logger.ILog(`Refreshing serie ${seriesId}`);
+    Logger.ILog('Refreshing serie ' + seriesId);
 
     // Fetch the episode of the serie before touching anything
     // Logic moved to Shared/SonarrVc.js
-    let [_ogEpisodeFile, episode] = sonarr.fetchEpisode(ogFullName, series);
-    if (episode?.id !== undefined) {
-        Logger.ILog(`Original episode found: Season ${episode.seasonNumber} Episode: ${episode.episodeNumber}`);
+    let episodeResult = sonarr.fetchEpisode(ogFullName, series);
+    let episode = episodeResult && episodeResult[1];
+    if (episode && episode.id !== undefined) {
+        Logger.ILog('Original episode found: Season ' + episode.seasonNumber + ' Episode: ' + episode.episodeNumber);
     } else {
-        Logger.WLog(`Episode could not be extracted from series`);
+        Logger.WLog('Episode could not be extracted from series');
     }
 
     // Ensure series is refreshed before renaming
@@ -45,7 +46,7 @@ function Script(URI, ApiKey) {
         return 2;
     }
 
-    if (episode?.id) {
+    if (episode && episode.id) {
         // Sometimes sonarr doesn't autodetect the transcoded files so we need to manually import it for Sonarr to rename it
         let manualImport = sonarr.fetchManualImportFile(ogFileName, seriesId, episode.seasonNumber);
         if (manualImport) {
@@ -66,7 +67,7 @@ function Script(URI, ApiKey) {
                 return 2;
             }
         } else {
-            Logger.ILog(`Manual import not needed`);
+            Logger.ILog('Manual import not needed');
         }
     }
 

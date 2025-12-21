@@ -22,8 +22,8 @@ function Script(URL, ApiKey, UseFolderName) {
     const folderPath = Variables.folder.Orig.FullName;
     const searchPattern = UseFolderName ? getMovieFolderName(folderPath) : Variables.file.Orig.FileNameNoExtension;
 
-    Logger.ILog(`Radarr URL: ${URL}`);
-    Logger.ILog(`Lookup name: ${searchPattern}`);
+    Logger.ILog('Radarr URL: ' + URL);
+    Logger.ILog('Lookup name: ' + searchPattern);
 
     // Search for the movie in Radarr by path, queue, or download history
     // Logic moved to Shared/RadarrVc.js to enforce DRY
@@ -33,7 +33,7 @@ function Script(URL, ApiKey, UseFolderName) {
         radarr.searchInDownloadHistory(searchPattern);
 
     if (!movie) {
-        Logger.ILog(`No result found for: ${searchPattern}`);
+        Logger.ILog('No result found for: ' + searchPattern);
         return 2; // Movie not found
     }
 
@@ -63,9 +63,9 @@ function updateMovieMetadata(movie) {
     Variables.MovieInfo = movie;
     Variables.OriginalLanguage = language;
 
-    Logger.ILog(`Detected VideoMetadata: ${JSON.stringify(Variables.VideoMetadata, null, 2)}`);
-    Logger.ILog(`Detected MovieInfo: ${JSON.stringify(Variables.MovieInfo, null, 2)}`);
-    Logger.ILog(`Detected Original Language: ${language}`);
+    Logger.ILog('Detected VideoMetadata: ' + JSON.stringify(Variables.VideoMetadata));
+    Logger.ILog('Detected MovieInfo: ' + JSON.stringify(Variables.MovieInfo));
+    Logger.ILog('Detected Original Language: ' + language);
 }
 
 /**

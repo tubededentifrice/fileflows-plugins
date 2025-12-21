@@ -25,8 +25,8 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
         ? getSeriesFolderName(folderPath, IgnoredFoldersRegex)
         : Variables.file.Orig.FileNameNoExtension;
 
-    Logger.ILog(`Sonarr URL: ${URL}`);
-    Logger.ILog(`Lookup TV Show: ${searchPattern}`);
+    Logger.ILog('Sonarr URL: ' + URL);
+    Logger.ILog('Lookup TV Show: ' + searchPattern);
 
     // Search for the series in Sonarr by path, queue, or download history
     // Logic moved to Shared/SonarrVc.js to enforce DRY
@@ -36,7 +36,7 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
         sonarr.searchInDownloadHistory(searchPattern);
 
     if (!series) {
-        Logger.ILog(`No result found for: ${searchPattern}`);
+        Logger.ILog('No result found for: ' + searchPattern);
         return 2; // TV Show not found
     }
 
@@ -66,9 +66,9 @@ function updateSeriesMetadata(series) {
     Variables.TVShowInfo = series;
     Variables.OriginalLanguage = language;
 
-    Logger.ILog(`Detected VideoMetadata: ${JSON.stringify(Variables.VideoMetadata, null, 2)}`);
-    Logger.ILog(`Detected TVShowInfo: ${JSON.stringify(Variables.TVShowInfo, null, 2)}`);
-    Logger.ILog(`Detected Original Language: ${language}`);
+    Logger.ILog('Detected VideoMetadata: ' + JSON.stringify(Variables.VideoMetadata));
+    Logger.ILog('Detected TVShowInfo: ' + JSON.stringify(Variables.TVShowInfo));
+    Logger.ILog('Detected Original Language: ' + language);
 }
 
 /**
@@ -83,13 +83,13 @@ function getSeriesFolderName(folderPath, ignoredFoldersRegex) {
     const regex = new RegExp(ignoredFoldersRegex, 'i');
 
     let folder = System.IO.Path.GetFileName(folderPath);
-    Logger.ILog(`If folder ${folder} matches regex ${ignoredFoldersRegex}, it will be ignored`);
+    Logger.ILog('If folder ' + folder + ' matches regex ' + ignoredFoldersRegex + ', it will be ignored');
     if (regex.test(folder)) {
         folderPath = System.IO.Path.GetDirectoryName(folderPath);
         folder = System.IO.Path.GetFileName(folderPath);
-        Logger.ILog(`Using ${folder} instead, as parent matched ${ignoredFoldersRegex}`);
+        Logger.ILog('Using ' + folder + ' instead, as parent matched ' + ignoredFoldersRegex);
     }
 
-    Logger.ILog(`getSeriesFolderName = ${folder}`);
+    Logger.ILog('getSeriesFolderName = ' + folder);
     return folder;
 }
