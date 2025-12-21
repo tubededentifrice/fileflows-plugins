@@ -673,6 +673,40 @@ function Script(
         if (!tasks || tasks.length === 0) return {};
 
         const results = {};
+
+        let canUseProcess = false;
+        try {
+            new System.Diagnostics.ProcessStartInfo();
+            canUseProcess = true;
+        } catch (e) {
+            canUseProcess = false;
+        }
+
+        if (!canUseProcess) {
+            Logger.DLog(
+                'System.Diagnostics.ProcessStartInfo not available; falling back to sequential execution via Flow.Execute'
+            );
+            for (let i = 0; i < tasks.length; i++) {
+                const task = tasks[i];
+                const startTime = Date.now();
+                try {
+                    const r = Flow.Execute({
+                        command: task.command,
+                        argumentList: task.args,
+                        timeout: 3600
+                    });
+                    results[task.id] = {
+                        exitCode: r.exitCode,
+                        output: (r.standardOutput || '') + '\n' + (r.standardError || '') + '\n' + (r.output || ''),
+                        duration: Date.now() - startTime
+                    };
+                } catch (e) {
+                    results[task.id] = { exitCode: -1, output: String(e) };
+                }
+            }
+            return results;
+        }
+
         const queue = tasks.slice();
         const running = [];
 
