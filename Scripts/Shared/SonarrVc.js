@@ -16,7 +16,7 @@ export class SonarrVc {
     }
 
     getUrl(endpoint, queryParameters) {
-        var url = '' + this.BaseUrl;
+        let url = '' + this.BaseUrl;
         if (url.endsWith('/') === false) url += '/';
         url = url + 'api/v3/' + endpoint + '?apikey=' + this.ApiKey;
         if (queryParameters) url += '&' + queryParameters;
@@ -25,8 +25,8 @@ export class SonarrVc {
 
     fetchString(url) {
         try {
-            var response = http.GetAsync(url).Result;
-            var body = response.Content.ReadAsStringAsync().Result;
+            const response = http.GetAsync(url).Result;
+            const body = response.Content.ReadAsStringAsync().Result;
             if (!response.IsSuccessStatusCode) {
                 Logger.WLog(
                     'Unable to fetch ' +
@@ -48,8 +48,8 @@ export class SonarrVc {
     }
 
     fetchJson(endpoint, queryParameters) {
-        var url = this.getUrl(endpoint, queryParameters);
-        var json = this.fetchString(url);
+        const url = this.getUrl(endpoint, queryParameters);
+        const json = this.fetchString(url);
         if (!json) return null;
         try {
             return JSON.parse(json);
@@ -60,20 +60,20 @@ export class SonarrVc {
     }
 
     sendCommand(commandName, commandBody) {
-        var endpoint = this.BaseUrl + '/api/v3/command';
+        let endpoint = this.BaseUrl + '/api/v3/command';
         if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/command';
         commandBody['name'] = commandName;
-        var jsonData = JSON.stringify(commandBody);
+        const jsonData = JSON.stringify(commandBody);
         try {
             http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
-            var response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
+            const response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
             http.DefaultRequestHeaders.Remove('X-API-Key');
             if (response.IsSuccessStatusCode) {
-                var responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
+                const responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
                 Logger.ILog(commandName + ' command sent successfully to ' + this.ServiceName);
                 return responseData;
             } else {
-                var error = response.Content.ReadAsStringAsync().Result;
+                const error = response.Content.ReadAsStringAsync().Result;
                 Logger.WLog(this.ServiceName + ' API error: ' + error);
                 return null;
             }
@@ -84,11 +84,11 @@ export class SonarrVc {
     }
 
     waitForCompletion(commandId, timeoutMs) {
-        var startTime = new Date().getTime();
-        var timeout = timeoutMs || 30000;
-        var endpoint = 'command/' + commandId;
+        const startTime = new Date().getTime();
+        const timeout = timeoutMs || 30000;
+        const endpoint = 'command/' + commandId;
         while (new Date().getTime() - startTime <= timeout) {
-            var response = this.fetchJson(endpoint, '');
+            const response = this.fetchJson(endpoint, '');
             if (response) {
                 if (response.status === 'completed') {
                     Logger.ILog(this.ServiceName + ' command completed!');
@@ -108,8 +108,8 @@ export class SonarrVc {
     }
 
     buildQueryParams(params) {
-        var parts = [];
-        for (var key in params) {
+        const parts = [];
+        for (const key in params) {
             if (Object.prototype.hasOwnProperty.call(params, key)) {
                 parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
             }
@@ -118,7 +118,7 @@ export class SonarrVc {
     }
 
     getAllShows() {
-        var shows = this.fetchJson('series');
+        const shows = this.fetchJson('series');
         if (!shows || !shows.length) {
             Logger.WLog('No shows found');
             return [];
@@ -128,11 +128,11 @@ export class SonarrVc {
 
     getShowByPath(path) {
         if (!path) return null;
-        var shows = this.getAllShows();
+        const shows = this.getAllShows();
         if (!shows || !shows.length) return null;
-        var cp = path.toString().toLowerCase();
-        for (var i = 0; i < shows.length; i++) {
-            var x = shows[i];
+        const cp = path.toString().toLowerCase();
+        for (let i = 0; i < shows.length; i++) {
+            const x = shows[i];
             if (x.path && x.path.toLowerCase().indexOf(cp) !== -1) {
                 Logger.ILog('Found show: ' + x.id);
                 return x;
@@ -142,7 +142,7 @@ export class SonarrVc {
     }
 
     getFilesInShow(show) {
-        var files = this.fetchJson('episodefile', 'seriesId=' + show.id);
+        const files = this.fetchJson('episodefile', 'seriesId=' + show.id);
         if (!files || !files.length) {
             Logger.WLog('No files in show: ' + show.title);
             return [];
@@ -151,13 +151,13 @@ export class SonarrVc {
     }
 
     getAllFiles() {
-        var shows = this.getAllShows();
-        var files = [];
-        for (var i = 0; i < shows.length; i++) {
-            var show = shows[i];
-            var sfiles = this.getFilesInShow(show);
+        const shows = this.getAllShows();
+        const files = [];
+        for (let i = 0; i < shows.length; i++) {
+            const show = shows[i];
+            const sfiles = this.getFilesInShow(show);
             if (sfiles && sfiles.length) {
-                for (var j = 0; j < sfiles.length; j++) {
+                for (let j = 0; j < sfiles.length; j++) {
                     sfiles[j].show = show;
                     files.push(sfiles[j]);
                 }
@@ -169,11 +169,11 @@ export class SonarrVc {
 
     getShowFileByPath(path) {
         if (!path) return null;
-        var files = this.getAllFiles();
+        const files = this.getAllFiles();
         if (!files || !files.length) return null;
-        var cp = path.toString().toLowerCase();
-        for (var i = 0; i < files.length; i++) {
-            var x = files[i];
+        const cp = path.toString().toLowerCase();
+        for (let i = 0; i < files.length; i++) {
+            const x = files[i];
             if (x.path && x.path.toLowerCase().indexOf(cp) !== -1) {
                 Logger.ILog('Found show file: ' + x.id);
                 return x;
@@ -184,28 +184,28 @@ export class SonarrVc {
 
     getImdbIdFromPath(path) {
         if (!path) return null;
-        var showfile = this.getShowFileByPath(path.toString());
+        const showfile = this.getShowFileByPath(path.toString());
         if (showfile && showfile.show) return showfile.show.imdbId;
         return null;
     }
 
     getTVDbIdFromPath(path) {
         if (!path) return null;
-        var showfile = this.getShowFileByPath(path.toString());
+        const showfile = this.getShowFileByPath(path.toString());
         if (showfile && showfile.show) return showfile.show.tvdbId;
         return null;
     }
 
     getOriginalLanguageFromPath(path) {
         if (!path) return null;
-        var showfile = this.getShowFileByPath(path.toString());
+        const showfile = this.getShowFileByPath(path.toString());
         if (!showfile || !showfile.show || !showfile.show.imdbId) return null;
-        var imdbId = showfile.show.imdbId;
-        var html = this.fetchString('https://www.imdb.com/title/' + imdbId + '/');
+        const imdbId = showfile.show.imdbId;
+        const html = this.fetchString('https://www.imdb.com/title/' + imdbId + '/');
         if (!html) return null;
-        var languages = html.match(/title-details-languages(.*?)<\/li>/);
+        const languages = html.match(/title-details-languages(.*?)<\/li>/);
         if (!languages) return null;
-        var languageMatch = languages[1].match(/primary_language=([\w]+)&/);
+        const languageMatch = languages[1].match(/primary_language=([\w]+)&/);
         return languageMatch ? languageMatch[1] : null;
     }
 
@@ -214,17 +214,17 @@ export class SonarrVc {
     }
 
     toggleMonitored(episodeIds, monitored) {
-        var isMonitored = monitored === undefined ? true : monitored;
-        var endpoint = this.BaseUrl + '/api/v3/episode/monitor';
+        const isMonitored = monitored === undefined ? true : monitored;
+        let endpoint = this.BaseUrl + '/api/v3/episode/monitor';
         if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/episode/monitor';
-        var jsonData = JSON.stringify({ episodeIds: episodeIds, monitored: isMonitored });
+        const jsonData = JSON.stringify({ episodeIds: episodeIds, monitored: isMonitored });
         try {
             http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
-            var response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
+            const response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
             http.DefaultRequestHeaders.Remove('X-API-Key');
             if (response.IsSuccessStatusCode) {
                 Logger.ILog('Monitored toggled for ' + episodeIds);
-                var responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
+                const responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
                 return responseData;
             }
             return null;
@@ -239,7 +239,7 @@ export class SonarrVc {
     }
 
     fetchEpisodeFromFileId(episodeFileId) {
-        var response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
+        const response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
         return response && response.length ? response[0] : null;
     }
 
@@ -248,14 +248,14 @@ export class SonarrVc {
     }
 
     searchInQueue(searchPattern) {
-        var sp = (searchPattern || '').toLowerCase();
+        const sp = (searchPattern || '').toLowerCase();
         if (!sp) return null;
-        var queryParams = 'includeSeries=true';
-        var json = this.fetchJson('queue', queryParams);
+        const queryParams = 'includeSeries=true';
+        const json = this.fetchJson('queue', queryParams);
         if (!json || !json.records) return null;
-        var items = json.records;
-        for (var i = 0; i < items.length; i++) {
-            var item = items[i];
+        const items = json.records;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
             if (item.outputPath && item.outputPath.toLowerCase().indexOf(sp) !== -1) {
                 Logger.ILog('Found TV Show in Queue: ' + item.series.title);
                 return item.series;
@@ -265,16 +265,16 @@ export class SonarrVc {
     }
 
     searchInDownloadHistory(searchPattern) {
-        var sp = (searchPattern || '').toLowerCase();
+        const sp = (searchPattern || '').toLowerCase();
         if (!sp) return null;
-        var page = 1;
+        let page = 1;
         while (true) {
-            var queryParams = 'page=' + page + '&pageSize=1000&eventType=3&includeSeries=true';
-            var json = this.fetchJson('history', queryParams);
+            const queryParams = 'page=' + page + '&pageSize=1000&eventType=3&includeSeries=true';
+            const json = this.fetchJson('history', queryParams);
             if (!json || !json.records || json.records.length === 0) break;
-            var items = json.records;
-            for (var i = 0; i < items.length; i++) {
-                var item = items[i];
+            const items = json.records;
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
                 if (item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().indexOf(sp) !== -1) {
                     Logger.ILog('Found TV Show in History: ' + item.series.title);
                     return item.series;
@@ -290,7 +290,7 @@ export class SonarrVc {
     }
 
     manuallyImportFile(fileToImport, episodeId) {
-        var body = {
+        const body = {
             files: [
                 {
                     path: fileToImport.path,
@@ -310,11 +310,11 @@ export class SonarrVc {
     }
 
     fetchManualImportFile(currentFileName, seriesId, seasonNumber) {
-        var queryParams = 'seriesId=' + seriesId + '&filterExistingFiles=true&seasonNumber=' + seasonNumber;
-        var response = this.fetchJson('manualimport', queryParams);
+        const queryParams = 'seriesId=' + seriesId + '&filterExistingFiles=true&seasonNumber=' + seasonNumber;
+        const response = this.fetchJson('manualimport', queryParams);
         if (!response || !Array.isArray(response)) return null;
-        for (var i = 0; i < response.length; i++) {
-            var file = response[i];
+        for (let i = 0; i < response.length; i++) {
+            const file = response[i];
             if (
                 file.path &&
                 (file.path.endsWith(currentFileName) ||
@@ -329,9 +329,9 @@ export class SonarrVc {
     }
 
     fetchEpisodeFile(path, series) {
-        var allFiles = this.getFilesInShow(series);
-        for (var i = 0; i < allFiles.length; i++) {
-            var file = allFiles[i];
+        const allFiles = this.getFilesInShow(series);
+        for (let i = 0; i < allFiles.length; i++) {
+            const file = allFiles[i];
             if (
                 file.path &&
                 (file.path.endsWith(path) || file.path.endsWith('\\' + path) || file.path.endsWith('/' + path))
@@ -343,12 +343,12 @@ export class SonarrVc {
     }
 
     fetchEpisodeFromId(episodeFileId) {
-        var response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
+        const response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
         return response && response.length ? response[0] : null;
     }
 
     fetchEpisode(currentFileName, series) {
-        var episodeFile = this.fetchEpisodeFile(currentFileName, series);
+        const episodeFile = this.fetchEpisodeFile(currentFileName, series);
         if (!episodeFile) return [null, null];
         return [episodeFile, this.fetchEpisodeFromId(episodeFile.id)];
     }
@@ -358,7 +358,7 @@ export class SonarrVc {
      * @param {Object} series - Series object returned from Sonarr API
      */
     updateMetadata(series) {
-        const language = LanguageHelper.GetIso1Code(series.originalLanguage.name);
+        const language = series.originalLanguage ? LanguageHelper.GetIso1Code(series.originalLanguage.name) : 'en';
 
         Variables['movie.Title'] = series.title;
         Variables['movie.Year'] = series.year;

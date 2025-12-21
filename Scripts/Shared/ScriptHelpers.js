@@ -150,7 +150,7 @@ export class ScriptHelpers {
         const m = Math.floor((total % 3600) / 60);
         const s = Math.floor(total % 60);
 
-        var pad = function (n) {
+        const pad = function (n) {
             return n < 10 ? '0' + n : '' + n;
         };
         return pad(h) + ':' + pad(m) + ':' + pad(s);
@@ -557,5 +557,311 @@ export class ScriptHelpers {
             height: height > 0 ? height : 0,
             duration: duration > 0 ? parseFloat(duration) : 0
         };
+    }
+
+    /**
+     * Quotes a process argument if it contains spaces or quotes
+     * @param {string} arg
+     * @returns {string} Quoted argument
+     */
+    quoteProcessArg(arg) {
+        const s = String(arg === undefined || arg === null ? '' : arg);
+        if (
+            s.indexOf(' ') === -1 &&
+            s.indexOf('\t') === -1 &&
+            s.indexOf('\r') === -1 &&
+            s.indexOf('\n') === -1 &&
+            s.indexOf('"') === -1
+        )
+            return s;
+        return '"' + s.replace(/"/g, '\\"') + '"';
+    }
+
+    /**
+     * Creates a progress handler for FFmpeg execution
+     * @param {number} durationSeconds Total duration
+     * @param {number} progressBase Base percentage (0-100)
+     * @param {number} progressSpan Span percentage (0-100)
+     * @returns {Object} { handleLine, complete }
+     */
+    createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan) {
+        let duration = parseFloat(durationSeconds || 0);
+        const base = parseFloat(progressBase || 0);
+        const span = parseFloat(progressSpan || 100);
+
+        let lastPercent = -1;
+        let lastUpdateMs = 0;
+
+        const updatePercent = (percent, force) => {
+            const p = this.clampNumber(percent, 0, 100);
+            const now = Date.now();
+            const shouldUpdate = force || (p !== lastPercent && now - lastUpdateMs >= 750);
+            if (!shouldUpdate) return;
+            lastPercent = p;
+            lastUpdateMs = now;
+
+            const mapped = this.clampNumber(base + span * (p / 100.0), 0, 100);
+            try {
+                if (typeof Flow.PartPercentageUpdate === 'function') {
+                    Flow.PartPercentageUpdate(mapped);
+                }
+            } catch (err) {}
+        };
+
+        const tryUpdateFromSeconds = (seconds) => {
+            if (!duration || duration <= 0) return;
+            if (seconds === null || seconds === undefined) return;
+            const s = parseFloat(seconds);
+            if (isNaN(s) || s < 0) return;
+            updatePercent((100.0 / duration) * s, false);
+        };
+
+        const maybeSetDurationFromLine = (line) => {
+            if (duration && duration > 0) return;
+            const m = String(line || '').match(/Duration:\s*([0-9:.]+)/i);
+            if (!m) return;
+            const d = this.parseDurationSeconds(m[1]);
+            if (d > 0) duration = d;
+        };
+
+        const handleLine = (line) => {
+            const s = String(line || '');
+            if (!s) return;
+
+            maybeSetDurationFromLine(s);
+
+            // -progress style output: out_time_ms=12345678
+            let m = s.match(/out_time_ms=([0-9]+)/i);
+            if (m) {
+                const ms = parseInt(m[1], 10);
+                if (!isNaN(ms) && ms >= 0) tryUpdateFromSeconds(ms / 1000000.0);
+                return;
+            }
+
+            // -stats style output: time=00:00:12.34
+            m = s.match(/time=([.:0-9]+)/i);
+            if (m) {
+                tryUpdateFromSeconds(this.parseDurationSeconds(m[1]));
+                return;
+            }
+
+            if (s.indexOf('progress=end') >= 0) updatePercent(100, true);
+        };
+
+        const complete = () => {
+            updatePercent(100, true);
+        };
+
+        return { handleLine, complete };
+    }
+
+    /**
+     * Executes FFmpeg with progress tracking
+     * @param {string} command FFmpeg path
+     * @param {Array} argumentList Arguments
+     * @param {number} timeoutSeconds Timeout
+     * @param {number} durationSeconds Duration for progress calculation
+     * @param {number} progressBase Base progress
+     * @param {number} progressSpan Progress span
+     * @returns {Object} Flow.Execute result
+     */
+    executeFfmpegWithProgress(command, argumentList, timeoutSeconds, durationSeconds, progressBase, progressSpan) {
+        let executeArgs = null;
+        try {
+            executeArgs = new ExecuteArgs();
+        } catch (err) {
+            executeArgs = null;
+        }
+
+        const handler = this.createFfmpegProgressHandler(durationSeconds, progressBase, progressSpan);
+
+        let collected = '';
+        const maxCollected = 250000;
+        const capture = (line) => {
+            if (!line) return;
+            if (collected.length >= maxCollected) return;
+            const s = String(line);
+            collected += s + '\n';
+            if (collected.length > maxCollected) collected = collected.substring(0, maxCollected);
+        };
+
+        if (executeArgs) {
+            executeArgs.command = command;
+            executeArgs.argumentList = argumentList;
+            try {
+                if (timeoutSeconds > 0) executeArgs.timeout = timeoutSeconds;
+            } catch (err) {}
+            try {
+                if (timeoutSeconds > 0) executeArgs.Timeout = timeoutSeconds;
+            } catch (err) {}
+            try {
+                if (timeoutSeconds > 0) executeArgs.TimeoutSeconds = timeoutSeconds;
+            } catch (err) {}
+
+            try {
+                executeArgs.add_Error((line) => {
+                    handler.handleLine(line);
+                    capture(line);
+                });
+            } catch (err) {}
+            try {
+                executeArgs.add_Output((line) => {
+                    handler.handleLine(line);
+                    capture(line);
+                });
+            } catch (err) {}
+
+            const r = Flow.Execute(executeArgs);
+            if (r && r.exitCode === 0) handler.complete();
+
+            if (r && !r.output && collected) {
+                try {
+                    r.output = collected;
+                } catch (err) {}
+            }
+            return r;
+        }
+
+        return Flow.Execute({ command: command, argumentList: argumentList, timeout: timeoutSeconds });
+    }
+
+    /**
+     * Executes a process silently (no UI logs)
+     * @param {string} command Command path
+     * @param {Array} argumentList Arguments
+     * @param {number} timeoutSeconds Timeout
+     * @param {string} workingDirectory Working directory
+     * @returns {Object} { exitCode, standardOutput, standardError, completed }
+     */
+    executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
+        try {
+            const psi = new System.Diagnostics.ProcessStartInfo();
+            psi.FileName = String(command);
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            if (workingDirectory) psi.WorkingDirectory = String(workingDirectory);
+
+            let usedArgumentList = false;
+            try {
+                if (psi.ArgumentList) {
+                    for (let i = 0; i < argumentList.length; i++) {
+                        psi.ArgumentList.Add(String(argumentList[i]));
+                    }
+                    usedArgumentList = true;
+                }
+            } catch (e) {}
+
+            if (!usedArgumentList) {
+                psi.Arguments = (argumentList || []).map((a) => this.quoteProcessArg(a)).join(' ');
+            }
+
+            const process = new System.Diagnostics.Process();
+            process.StartInfo = psi;
+
+            const started = process.Start();
+            if (!started) {
+                return {
+                    exitCode: -1,
+                    standardOutput: '',
+                    standardError: 'Failed to start process',
+                    completed: false
+                };
+            }
+
+            const timeoutMs = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
+            if (timeoutMs > 0) {
+                const exited = process.WaitForExit(timeoutMs);
+                if (!exited) {
+                    try {
+                        process.Kill(true);
+                    } catch (e) {
+                        try {
+                            process.Kill();
+                        } catch (e2) {}
+                    }
+                    return { exitCode: -1, standardOutput: '', standardError: 'Process timed out', completed: false };
+                }
+            } else {
+                process.WaitForExit();
+            }
+
+            const stdout = process.StandardOutput.ReadToEnd() || '';
+            const stderr = process.StandardError.ReadToEnd() || '';
+            return { exitCode: process.ExitCode, standardOutput: stdout, standardError: stderr, completed: true };
+        } catch (err) {
+            return {
+                exitCode: -1,
+                standardOutput: '',
+                standardError: String(err),
+                completed: false
+            };
+        }
+    }
+
+    /**
+     * Probes video duration using FFmpeg
+     * @param {string} ffmpegPath FFmpeg executable path
+     * @param {string} inputFile Input file path
+     * @returns {number} Duration in seconds
+     */
+    probeDurationSeconds(ffmpegPath, inputFile) {
+        const file = String(inputFile || '').trim();
+        if (!file) return 0;
+        try {
+            const psi = new System.Diagnostics.ProcessStartInfo();
+            psi.FileName = String(ffmpegPath);
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+
+            const args = ['-hide_banner', '-i', file];
+            let usedArgumentList = false;
+            try {
+                if (psi.ArgumentList) {
+                    for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
+                    usedArgumentList = true;
+                }
+            } catch (e) {}
+            if (!usedArgumentList) {
+                psi.Arguments = args.map((a) => this.quoteProcessArg(a)).join(' ');
+            }
+
+            const p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            const started = p.Start();
+            if (!started) return 0;
+
+            // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
+            let exited = true;
+            try {
+                exited = p.WaitForExit(15000);
+            } catch (err) {
+                exited = true;
+            }
+            if (exited === false) {
+                try {
+                    p.Kill();
+                } catch (err) {}
+                return 0;
+            }
+
+            let text = '';
+            try {
+                text += String(p.StandardError.ReadToEnd() || '');
+            } catch (err) {}
+            try {
+                text += '\n' + String(p.StandardOutput.ReadToEnd() || '');
+            } catch (err) {}
+
+            const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
+            if (!m) return 0;
+            const d = this.parseDurationSeconds(m[1]);
+            return d > 0 ? d : 0;
+        } catch (err) {
+            return 0;
+        }
     }
 }

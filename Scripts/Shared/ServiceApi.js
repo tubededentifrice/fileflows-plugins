@@ -14,9 +14,9 @@ export class ServiceApi {
 
         // Auto-resolve from variables if not passed
         if (!this.BaseUrl) {
-            var keys = [this.ServiceName + '.Url', this.ServiceName + '.URI'];
-            for (var i = 0; i < keys.length; i++) {
-                var key = keys[i];
+            const keys = [this.ServiceName + '.Url', this.ServiceName + '.URI'];
+            for (let i = 0; i < keys.length; i++) {
+                const key = keys[i];
                 if (Variables[key]) {
                     this.BaseUrl = Variables[key];
                     break;
@@ -129,8 +129,8 @@ export class ServiceApi {
     }
 
     buildQueryParams(params) {
-        var parts = [];
-        for (var key in params) {
+        const parts = [];
+        for (const key in params) {
             if (Object.prototype.hasOwnProperty.call(params, key)) {
                 parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
             }
@@ -158,12 +158,12 @@ export class ServiceApi {
 
         try {
             while (true) {
-                var paramsToBuild = {
+                const paramsToBuild = {
                     page: page,
                     pageSize: pageSize
                 };
                 if (extraParams) {
-                    for (var key in extraParams) {
+                    for (const key in extraParams) {
                         if (Object.prototype.hasOwnProperty.call(extraParams, key)) {
                             paramsToBuild[key] = extraParams[key];
                         }
