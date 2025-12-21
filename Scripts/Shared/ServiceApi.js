@@ -131,7 +131,7 @@ export class ServiceApi {
     buildQueryParams(params) {
         var parts = [];
         for (var key in params) {
-            if (params.hasOwnProperty(key)) {
+            if (Object.prototype.hasOwnProperty.call(params, key)) {
                 parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
             }
         }
@@ -164,7 +164,7 @@ export class ServiceApi {
                 };
                 if (extraParams) {
                     for (var key in extraParams) {
-                        if (extraParams.hasOwnProperty(key)) {
+                        if (Object.prototype.hasOwnProperty.call(extraParams, key)) {
                             paramsToBuild[key] = extraParams[key];
                         }
                     }

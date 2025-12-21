@@ -1,316 +1,296 @@
-import { ServiceApi } from 'Shared/ServiceApi';
-
 /**
  * @name SonarrVc
  * @uid 7035484E-138F-4C2D-8D33-235744A27C35
  * @description Class that interacts with Sonarr
  * @author Vincent Courcelle
- * @revision 10
+ * @revision 12
  * @minimumVersion 1.0.0.0
  */
-export class SonarrVc extends ServiceApi {
-    constructor(URL, ApiKey) {
-        super(URL, ApiKey, 'Sonarr');
+export class SonarrVc {
+    constructor(BaseUrl, ApiKey) {
+        this.ServiceName = 'Sonarr';
+        this.BaseUrl = BaseUrl || Variables['Sonarr.Url'];
+        this.ApiKey = ApiKey || Variables['Sonarr.ApiKey'];
+        if (!this.BaseUrl) MissingVariable('Sonarr.Url');
+        if (!this.ApiKey) MissingVariable('Sonarr.ApiKey');
     }
 
-    /**
-     * Gets all shows in Sonarr
-     * @returns {object[]} a list of shows in the Sonarr
-     */
+    getUrl(endpoint, queryParameters) {
+        var url = '' + this.BaseUrl;
+        if (url.endsWith('/') === false) url += '/';
+        url = url + 'api/v3/' + endpoint + '?apikey=' + this.ApiKey;
+        if (queryParameters) url += '&' + queryParameters;
+        return url;
+    }
+
+    fetchString(url) {
+        try {
+            var response = http.GetAsync(url).Result;
+            var body = response.Content.ReadAsStringAsync().Result;
+            if (!response.IsSuccessStatusCode) {
+                Logger.WLog(
+                    'Unable to fetch ' +
+                        this.ServiceName +
+                        ' API: ' +
+                        url +
+                        '\nStatus: ' +
+                        response.StatusCode +
+                        '\n' +
+                        body
+                );
+                return null;
+            }
+            return body;
+        } catch (err) {
+            Logger.ELog('Exception fetching ' + this.ServiceName + ' API: ' + err);
+            return null;
+        }
+    }
+
+    fetchJson(endpoint, queryParameters) {
+        var url = this.getUrl(endpoint, queryParameters);
+        var json = this.fetchString(url);
+        if (!json) return null;
+        try {
+            return JSON.parse(json);
+        } catch (err) {
+            Logger.ELog('Failed to parse JSON from ' + this.ServiceName + ' API: ' + err);
+            return null;
+        }
+    }
+
+    sendCommand(commandName, commandBody) {
+        var endpoint = this.BaseUrl + '/api/v3/command';
+        if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/command';
+        commandBody['name'] = commandName;
+        var jsonData = JSON.stringify(commandBody);
+        try {
+            http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
+            var response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
+            http.DefaultRequestHeaders.Remove('X-API-Key');
+            if (response.IsSuccessStatusCode) {
+                var responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
+                Logger.ILog(commandName + ' command sent successfully to ' + this.ServiceName);
+                return responseData;
+            } else {
+                var error = response.Content.ReadAsStringAsync().Result;
+                Logger.WLog(this.ServiceName + ' API error: ' + error);
+                return null;
+            }
+        } catch (err) {
+            Logger.ELog('Exception sending command to ' + this.ServiceName + ': ' + err);
+            return null;
+        }
+    }
+
+    waitForCompletion(commandId, timeoutMs) {
+        var startTime = new Date().getTime();
+        var timeout = timeoutMs || 30000;
+        var endpoint = 'command/' + commandId;
+        while (new Date().getTime() - startTime <= timeout) {
+            var response = this.fetchJson(endpoint, '');
+            if (response) {
+                if (response.status === 'completed') {
+                    Logger.ILog(this.ServiceName + ' command completed!');
+                    return true;
+                } else if (response.status === 'failed') {
+                    Logger.WLog(this.ServiceName + ' command ' + commandId + ' failed');
+                    return false;
+                }
+                Logger.ILog('Checking ' + this.ServiceName + ' status: ' + response.status);
+            }
+            Sleep(500);
+        }
+        Logger.WLog(
+            'Timeout: ' + this.ServiceName + ' command ' + commandId + ' did not complete within ' + timeout + 'ms.'
+        );
+        return false;
+    }
+
+    buildQueryParams(params) {
+        var parts = [];
+        for (var key in params) {
+            if (Object.prototype.hasOwnProperty.call(params, key)) {
+                parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+            }
+        }
+        return parts.join('&');
+    }
+
     getAllShows() {
-        let shows = this.fetchJson('series');
-        if (!shows.length) {
+        var shows = this.fetchJson('series');
+        if (!shows || !shows.length) {
             Logger.WLog('No shows found');
             return [];
         }
         return shows;
     }
 
-    /**
-     * Gets a show from Sonarr by its full path
-     * @param {string} path the full path of the movie to lookup
-     * @returns {object} a show object if found, otherwise null
-     */
     getShowByPath(path) {
-        if (!path) {
-            Logger.WLog('No path passed in to find show');
-            return null;
-        }
-        let shows = this.getAllShows();
+        if (!path) return null;
+        var shows = this.getAllShows();
         if (!shows || !shows.length) return null;
-
-        let cp = path.toString().toLowerCase();
-        let show = shows.filter((x) => {
-            let sp = x.path.toLowerCase();
-            if (!sp) return false;
-            return sp.includes(cp);
-        });
-        if (show && show.length === 1) {
-            show = show[0];
-            Logger.ILog('Found show: ' + show.id);
-            return show;
+        var cp = path.toString().toLowerCase();
+        for (var i = 0; i < shows.length; i++) {
+            var x = shows[i];
+            if (x.path && x.path.toLowerCase().indexOf(cp) !== -1) {
+                Logger.ILog('Found show: ' + x.id);
+                return x;
+            }
         }
-        Logger.WLog('Unable to find show file at path: ' + path);
         return null;
     }
 
     getFilesInShow(show) {
-        let files = this.fetchJson('episodefile', 'seriesId=' + show.id);
-        if (!files.length) {
+        var files = this.fetchJson('episodefile', 'seriesId=' + show.id);
+        if (!files || !files.length) {
             Logger.WLog('No files in show: ' + show.title);
             return [];
         }
         return files;
     }
 
-    /**
-     * Gets all files in Sonarr
-     * @returns {object[]} all files in the Sonarr
-     */
     getAllFiles() {
-        let shows = this.getAllShows();
-        let files = [];
-        for (let show of shows) {
-            let sfiles = this.getFilesInShow(show);
-            if (sfiles.length) {
-                for (let sfile of sfiles) sfile.show = show;
-                files = files.concat(sfiles);
+        var shows = this.getAllShows();
+        var files = [];
+        for (var i = 0; i < shows.length; i++) {
+            var show = shows[i];
+            var sfiles = this.getFilesInShow(show);
+            if (sfiles && sfiles.length) {
+                for (var j = 0; j < sfiles.length; j++) {
+                    sfiles[j].show = show;
+                    files.push(sfiles[j]);
+                }
             }
         }
         Logger.ILog('Number of show files found: ' + files.length);
         return files;
     }
 
-    /**
-     * Gets a show file from Sonarr by its full path
-     * @param {string} path the full path of the movie to lookup
-     * @returns {object} a show file object if found, otherwise null
-     */
     getShowFileByPath(path) {
-        if (!path) {
-            Logger.WLog('No path passed in to find show file');
-            return null;
-        }
-        let files = this.getAllFiles();
+        if (!path) return null;
+        var files = this.getAllFiles();
         if (!files || !files.length) return null;
-
-        let cp = path.toString().toLowerCase();
-        let showfile = files.filter((x) => {
-            let sp = x.path.toLowerCase();
-            if (!sp) return false;
-            return sp.includes(cp);
-        });
-        if (showfile && showfile.length) {
-            showfile = showfile[0];
-            Logger.ILog('Found show file: ' + showfile.id);
-            return showfile;
+        var cp = path.toString().toLowerCase();
+        for (var i = 0; i < files.length; i++) {
+            var x = files[i];
+            if (x.path && x.path.toLowerCase().indexOf(cp) !== -1) {
+                Logger.ILog('Found show file: ' + x.id);
+                return x;
+            }
         }
-        Logger.WLog('Unable to find show file at path: ' + path);
         return null;
     }
 
-    /**
-     * Gets the IMDb id of a show from its full file path
-     * @param {string} path the full path of the show to lookup
-     * @returns the IMDb id if found, otherwise null
-     */
     getImdbIdFromPath(path) {
         if (!path) return null;
-        let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile) {
-            Logger.WLog('Unable to get IMDb ID for path: ' + path);
-            return null;
-        }
-        return showfile.show.imdbId;
+        var showfile = this.getShowFileByPath(path.toString());
+        if (showfile && showfile.show) return showfile.show.imdbId;
+        return null;
     }
 
-    /**
-     * Gets the TVDb id of a show from its full file path
-     * @param {string} path the full path of the show to lookup
-     * @returns the TVdb id if found, otherwise null
-     */
     getTVDbIdFromPath(path) {
         if (!path) return null;
-        let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile) {
-            Logger.WLog('Unable to get TMDb ID for path: ' + path);
-            return null;
-        }
-        return showfile.show.tvdbId;
+        var showfile = this.getShowFileByPath(path.toString());
+        if (showfile && showfile.show) return showfile.show.tvdbId;
+        return null;
     }
 
-    /**
-     * Gets the language of a show from its full file path
-     * @param {string} path the full path of the show to lookup
-     * @returns the language of the show if found, otherwise null
-     */
     getOriginalLanguageFromPath(path) {
         if (!path) return null;
-        let showfile = this.getShowFileByPath(path.toString());
-        if (!showfile) {
-            Logger.WLog('Unable to get language for path: ' + path);
-            return null;
-        }
-        let imdbId = showfile.show.imdbId;
-
-        let html = this.fetchString('https://www.imdb.com/title/' + imdbId + '/');
-        let languages = html.match(/title-details-languages(.*?)<\/li>/);
-        if (!languages) {
-            Logger.WLog('Failed to lookup IMDb language for ' + imdbId);
-            return null;
-        }
-        languages = languages[1];
-        let language = languages.match(/primary_language=([\w]+)&/);
-        if (!language) {
-            Logger.WLog('Failed to lookup IMDb primary language for ' + imdbId);
-            return null;
-        }
-        return language[1];
+        var showfile = this.getShowFileByPath(path.toString());
+        if (!showfile || !showfile.show || !showfile.show.imdbId) return null;
+        var imdbId = showfile.show.imdbId;
+        var html = this.fetchString('https://www.imdb.com/title/' + imdbId + '/');
+        if (!html) return null;
+        var languages = html.match(/title-details-languages(.*?)<\/li>/);
+        if (!languages) return null;
+        var languageMatch = languages[1].match(/primary_language=([\w]+)&/);
+        return languageMatch ? languageMatch[1] : null;
     }
 
-    /**
-     * Fetches files Sonarr marks as able to rename
-     * @param {int} seriesId ID series to fetch files for
-     * @returns List of Sonarr rename objects for each file
-     */
     fetchRenamedFiles(seriesId) {
-        let endpoint = 'rename';
-        let queryParams = `seriesId=${seriesId}`;
-        let response = this.fetchJson(endpoint, queryParams);
-        return response;
+        return this.fetchJson('rename', 'seriesId=' + seriesId);
     }
 
-    /**
-     * Toggles 'monitored' for episodes
-     * @param {list} episodeIds IDs of episodes to toggle
-     * @returns Response if ran successfully otherwise null
-     */
-    toggleMonitored(episodeIds, monitored = true) {
-        let endpoint = this.BaseUrl + '/api/v3/episode/monitor';
+    toggleMonitored(episodeIds, monitored) {
+        var isMonitored = monitored === undefined ? true : monitored;
+        var endpoint = this.BaseUrl + '/api/v3/episode/monitor';
         if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/episode/monitor';
-
-        let jsonData = JSON.stringify({
-            episodeIds: episodeIds,
-            monitored: monitored
-        });
-
+        var jsonData = JSON.stringify({ episodeIds: episodeIds, monitored: isMonitored });
         try {
             http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
-            let response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
+            var response = http.PutAsync(endpoint, JsonContent(jsonData)).Result;
             http.DefaultRequestHeaders.Remove('X-API-Key');
-
             if (response.IsSuccessStatusCode) {
-                let responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
                 Logger.ILog('Monitored toggled for ' + episodeIds);
+                var responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
                 return responseData;
-            } else {
-                let error = response.Content.ReadAsStringAsync().Result;
-                Logger.WLog('API error: ' + error);
-                return null;
             }
+            return null;
         } catch (err) {
             Logger.ELog('Exception toggling monitor: ' + err);
             return null;
         }
     }
 
-    /**
-     * Rescans all files for a series
-     * @param {int} seriesId ID series to rescan
-     * @returns Response of the rescan or null if unsuccessful
-     */
     rescanSeries(seriesId) {
-        let refreshBody = {
-            seriesId: seriesId
-        };
-        return this.sendCommand('RescanSeries', refreshBody);
+        return this.sendCommand('RescanSeries', { seriesId: seriesId });
     }
 
-    /**
-     * Fetches an episode object from its file ID
-     * @param {int} fileId ID of file
-     * @returns Sonarr episode object
-     */
     fetchEpisodeFromFileId(episodeFileId) {
-        let endpoint = 'episode';
-        let queryParams = `episodeFileId=${episodeFileId}`;
-        let response = this.fetchJson(endpoint, queryParams);
-
+        var response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
         return response && response.length ? response[0] : null;
     }
 
-    /**
-     * Searches for a series by file or folder path in Sonarr
-     * @param {string} searchPattern - The search string to use (from the folder or file name)
-     * @returns {Object|null} Series object if found, or null if not found
-     */
     searchSeriesByPath(searchPattern) {
-        try {
-            const series = this.getShowByPath(searchPattern);
-            return series || null;
-        } catch (error) {
-            Logger.ELog(`Error searching series by path: ${error.message}`);
-            return null;
-        }
+        return this.getShowByPath(searchPattern);
     }
 
-    /**
-     * Searches the Sonarr queue for a series based on the search pattern
-     * @param {string} searchPattern - The search string (file or folder name)
-     * @returns {Object|null} Series object if found, or null if not found
-     */
     searchInQueue(searchPattern) {
-        return this.searchApi(
-            'queue',
-            searchPattern,
-            (item, sp) => item.outputPath && item.outputPath.toLowerCase().indexOf(sp) !== -1,
-            { includeSeries: 'true' },
-            (item) => {
+        var sp = (searchPattern || '').toLowerCase();
+        if (!sp) return null;
+        var queryParams = 'includeSeries=true';
+        var json = this.fetchJson('queue', queryParams);
+        if (!json || !json.records) return null;
+        var items = json.records;
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.outputPath && item.outputPath.toLowerCase().indexOf(sp) !== -1) {
                 Logger.ILog('Found TV Show in Queue: ' + item.series.title);
                 return item.series;
             }
-        );
+        }
+        return null;
     }
 
-    /**
-     * Searches the Sonarr download history for a series based on the search pattern
-     * @param {string} searchPattern - The search string (file or folder name)
-     * @returns {Object|null} Series object if found, or null if not found
-     */
     searchInDownloadHistory(searchPattern) {
-        return this.searchApi(
-            'history',
-            searchPattern,
-            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().indexOf(sp) !== -1,
-            { eventType: 3, includeSeries: 'true' },
-            (item) => {
-                Logger.ILog('Found TV Show in History: ' + item.series.title);
-                return item.series;
+        var sp = (searchPattern || '').toLowerCase();
+        if (!sp) return null;
+        var page = 1;
+        while (true) {
+            var queryParams = 'page=' + page + '&pageSize=1000&eventType=3&includeSeries=true';
+            var json = this.fetchJson('history', queryParams);
+            if (!json || !json.records || json.records.length === 0) break;
+            var items = json.records;
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().indexOf(sp) !== -1) {
+                    Logger.ILog('Found TV Show in History: ' + item.series.title);
+                    return item.series;
+                }
             }
-        );
+            page++;
+        }
+        return null;
     }
 
-    /**
-     * Refresh a series
-     * @param {int} seriesId The ID of the series to refresh
-     * @returns {object} The command response
-     */
     refreshSeries(seriesId) {
-        let refreshBody = {
-            seriesIds: [seriesId],
-            isNewSeries: false
-        };
-        return this.sendCommand('RefreshSeries', refreshBody);
+        return this.sendCommand('RefreshSeries', { seriesIds: [seriesId], isNewSeries: false });
     }
 
-    /**
-     * Manually imports a file into Sonarr
-     * @param {object} fileToImport The file object to import (from manualimport endpoint)
-     * @param {int} episodeId The ID of the episode to map to
-     * @returns {object} The command response
-     */
     manuallyImportFile(fileToImport, episodeId) {
-        let body = {
+        var body = {
             files: [
                 {
                     path: fileToImport.path,
@@ -326,26 +306,15 @@ export class SonarrVc extends ServiceApi {
             ],
             importMode: 'auto'
         };
-
         return this.sendCommand('manualImport', body);
     }
 
-    /**
-     * Fetches files available for manual import
-     * @param {string} currentFileName The name of the file to look for
-     * @param {int} seriesId The series ID
-     * @param {int} seasonNumber The season number
-     * @returns {object} The file object if found, otherwise null
-     */
     fetchManualImportFile(currentFileName, seriesId, seasonNumber) {
-        let endpoint = 'manualimport';
-        let queryParams = `seriesId=${seriesId}&filterExistingFiles=true&seasonNumber=${seasonNumber}`;
-        let response = this.fetchJson(endpoint, queryParams);
-
+        var queryParams = 'seriesId=' + seriesId + '&filterExistingFiles=true&seasonNumber=' + seasonNumber;
+        var response = this.fetchJson('manualimport', queryParams);
         if (!response || !Array.isArray(response)) return null;
-
-        for (let file of response) {
-            // Check if path ends with filename (handling potential path separators)
+        for (var i = 0; i < response.length; i++) {
+            var file = response[i];
             if (
                 file.path &&
                 (file.path.endsWith(currentFileName) ||
@@ -356,21 +325,13 @@ export class SonarrVc extends ServiceApi {
                 return file;
             }
         }
-
         return null;
     }
 
-    /**
-     * Fetches an episode file object by path
-     * @param {string} path The path of the episode file
-     * @param {object} series The series object
-     * @returns {object} The episode file object or null
-     */
     fetchEpisodeFile(path, series) {
-        Logger.ILog(`Searching for ${path}`);
-        let allFiles = this.getFilesInShow(series);
-
-        for (let file of allFiles) {
+        var allFiles = this.getFilesInShow(series);
+        for (var i = 0; i < allFiles.length; i++) {
+            var file = allFiles[i];
             if (
                 file.path &&
                 (file.path.endsWith(path) || file.path.endsWith('\\' + path) || file.path.endsWith('/' + path))
@@ -378,39 +339,17 @@ export class SonarrVc extends ServiceApi {
                 return file;
             }
         }
-        Logger.WLog(`Episode file not found in series ${series.title}`);
         return null;
     }
 
-    /**
-     * Fetches an episode object by its ID
-     * @param {int} episodeFileId The episode file ID
-     * @returns {object} The episode object
-     */
     fetchEpisodeFromId(episodeFileId) {
-        let endpoint = 'episode';
-        let queryParams = `episodeFileId=${episodeFileId}`;
-        let response = this.fetchJson(endpoint, queryParams);
-
+        var response = this.fetchJson('episode', 'episodeFileId=' + episodeFileId);
         return response && response.length ? response[0] : null;
     }
 
-    /**
-     * Helper to fetch both episode file and episode details
-     * @param {string} currentFileName The current file name/path
-     * @param {object} series The series object
-     * @returns {Array} [episodeFile, episode]
-     */
     fetchEpisode(currentFileName, series) {
-        let episodeFile = this.fetchEpisodeFile(currentFileName, series);
-
-        if (!episodeFile) {
-            return [null, null];
-        }
-
-        let episodeFileId = episodeFile.id;
-        let episode = this.fetchEpisodeFromId(episodeFileId);
-
-        return [episodeFile, episode];
+        var episodeFile = this.fetchEpisodeFile(currentFileName, series);
+        if (!episodeFile) return [null, null];
+        return [episodeFile, this.fetchEpisodeFromId(episodeFile.id)];
     }
 }

@@ -1,193 +1,224 @@
-import { ServiceApi } from 'Shared/ServiceApi';
-
 /**
  * @name RadarrVc
- * @uid 37C89BDA-3B3B-4348-AA23-E04C83D9B0F0
+ * @uid CA7865F9-894B-2788-5E6E-34004FC2847A
  * @description Class that interacts with Radarr
  * @author Vincent Courcelle
- * @revision 8
+ * @revision 21
  * @minimumVersion 1.0.0.0
  */
-export class RadarrVc extends ServiceApi {
-    constructor(URL, ApiKey) {
-        super(URL, ApiKey, 'Radarr');
+export class RadarrVc {
+    constructor(BaseUrl, ApiKey) {
+        this.ServiceName = 'Radarr';
+        this.BaseUrl = BaseUrl || Variables['Radarr.Url'];
+        this.ApiKey = ApiKey || Variables['Radarr.ApiKey'];
+        if (!this.BaseUrl) MissingVariable('Radarr.Url');
+        if (!this.ApiKey) MissingVariable('Radarr.ApiKey');
     }
 
-    /**
-     * Gets a movie from Radarr by its file name
-     * @param {string} file the file name of the movie to lookup
-     * @returns {object} a movie object if found, otherwise null
-     */
+    getUrl(endpoint, queryParameters) {
+        var url = '' + this.BaseUrl;
+        if (url.endsWith('/') === false) url += '/';
+        url = url + 'api/v3/' + endpoint + '?apikey=' + this.ApiKey;
+        if (queryParameters) url += '&' + queryParameters;
+        return url;
+    }
+
+    fetchString(url) {
+        try {
+            var response = http.GetAsync(url).Result;
+            var body = response.Content.ReadAsStringAsync().Result;
+            if (!response.IsSuccessStatusCode) {
+                Logger.WLog(
+                    'Unable to fetch ' +
+                        this.ServiceName +
+                        ' API: ' +
+                        url +
+                        '\nStatus: ' +
+                        response.StatusCode +
+                        '\n' +
+                        body
+                );
+                return null;
+            }
+            return body;
+        } catch (err) {
+            Logger.ELog('Exception fetching ' + this.ServiceName + ' API: ' + err);
+            return null;
+        }
+    }
+
+    fetchJson(endpoint, queryParameters) {
+        var url = this.getUrl(endpoint, queryParameters);
+        var json = this.fetchString(url);
+        if (!json) return null;
+        try {
+            return JSON.parse(json);
+        } catch (err) {
+            Logger.ELog('Failed to parse JSON from ' + this.ServiceName + ' API: ' + err);
+            return null;
+        }
+    }
+
+    sendCommand(commandName, commandBody) {
+        var endpoint = this.BaseUrl + '/api/v3/command';
+        if (this.BaseUrl.endsWith('/')) endpoint = this.BaseUrl + 'api/v3/command';
+        commandBody['name'] = commandName;
+        var jsonData = JSON.stringify(commandBody);
+        try {
+            http.DefaultRequestHeaders.Add('X-API-Key', this.ApiKey);
+            var response = http.PostAsync(endpoint, JsonContent(jsonData)).Result;
+            http.DefaultRequestHeaders.Remove('X-API-Key');
+            if (response.IsSuccessStatusCode) {
+                var responseData = JSON.parse(response.Content.ReadAsStringAsync().Result);
+                Logger.ILog(commandName + ' command sent successfully to ' + this.ServiceName);
+                return responseData;
+            } else {
+                var error = response.Content.ReadAsStringAsync().Result;
+                Logger.WLog(this.ServiceName + ' API error: ' + error);
+                return null;
+            }
+        } catch (err) {
+            Logger.ELog('Exception sending command to ' + this.ServiceName + ': ' + err);
+            return null;
+        }
+    }
+
+    waitForCompletion(commandId, timeoutMs) {
+        var startTime = new Date().getTime();
+        var timeout = timeoutMs || 30000;
+        var endpoint = 'command/' + commandId;
+        while (new Date().getTime() - startTime <= timeout) {
+            var response = this.fetchJson(endpoint, '');
+            if (response) {
+                if (response.status === 'completed') {
+                    Logger.ILog(this.ServiceName + ' command completed!');
+                    return true;
+                } else if (response.status === 'failed') {
+                    Logger.WLog(this.ServiceName + ' command ' + commandId + ' failed');
+                    return false;
+                }
+                Logger.ILog('Checking ' + this.ServiceName + ' status: ' + response.status);
+            }
+            Sleep(500);
+        }
+        Logger.WLog(
+            'Timeout: ' + this.ServiceName + ' command ' + commandId + ' did not complete within ' + timeout + 'ms.'
+        );
+        return false;
+    }
+
+    buildQueryParams(params) {
+        var parts = [];
+        for (var key in params) {
+            if (Object.prototype.hasOwnProperty.call(params, key)) {
+                parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+            }
+        }
+        return parts.join('&');
+    }
+
     getMovieByFile(file) {
-        if (!file) {
-            Logger.WLog('No file name passed in to find movie');
-            return null;
-        }
-        let movies = this.fetchJson('movie');
+        if (!file) return null;
+        var movies = this.fetchJson('movie');
         if (!movies || !movies.length) return null;
-
-        let cp = file.toLowerCase();
-        let movie = movies.filter((x) => {
-            let mp = x.movieFile && x.movieFile.relativePath;
-            if (!mp) return false;
-            return mp.split('.')[0].toLowerCase().includes(cp.split('.')[0]);
-        });
-        if (movie && movie.length) {
-            movie = movie[0];
-            Logger.ILog('Found movie: ' + movie.title);
-            return movie;
+        var cp = file.toLowerCase();
+        for (var i = 0; i < movies.length; i++) {
+            var x = movies[i];
+            var mp = x.movieFile && x.movieFile.relativePath;
+            if (mp && mp.split('.')[0].toLowerCase().indexOf(cp.split('.')[0]) !== -1) {
+                Logger.ILog('Found movie: ' + x.title);
+                return x;
+            }
         }
-        Logger.WLog('Unable to find movie file name: ' + file);
         return null;
     }
 
-    /**
-     * Gets a movie from Radarr by its path
-     * @param {string} path the path of the movie to lookup
-     * @returns {object} a movie object if found, otherwise null
-     */
     getMovieByPath(path) {
-        if (!path) {
-            Logger.WLog('No path passed in to find movie');
-            return null;
-        }
-        let movies = this.fetchJson('movie');
+        if (!path) return null;
+        var movies = this.fetchJson('movie');
         if (!movies || !movies.length) return null;
-
-        let cp = path.toLowerCase();
-        let movie = movies.filter((x) => {
-            let mp = x.movieFile && x.movieFile.path;
-            if (!mp) return false;
-            return mp.toLowerCase().includes(cp);
-        });
-        if (movie && movie.length) {
-            movie = movie[0];
-            Logger.ILog('Found movie: ' + movie.title);
-            return movie;
+        var cp = path.toLowerCase();
+        for (var i = 0; i < movies.length; i++) {
+            var x = movies[i];
+            var mp = x.movieFile && x.movieFile.path;
+            if (mp && mp.toLowerCase().indexOf(cp) !== -1) {
+                Logger.ILog('Found movie: ' + x.title);
+                return x;
+            }
         }
-        Logger.WLog('Unable to find movie at path: ' + path);
         return null;
     }
 
-    /**
-     * Gets the IMDb id of a movie from its full file path
-     * @param {string} path the full path of the movie to lookup
-     * @returns the IMDb id if found, otherwise null
-     */
     getImdbIdFromPath(path) {
         if (!path) return null;
-        let movie = this.getMovieByPath(path.toString());
-        if (!movie) {
-            Logger.WLog('Unable to get IMDb ID for path: ' + path);
-            return null;
-        }
-        return movie.imdbId;
+        var movie = this.getMovieByPath(path.toString());
+        if (movie) return movie.imdbId;
+        return null;
     }
 
-    /**
-     * Gets the TMDb (TheMovieDb) id of a movie from its full file path
-     * @param {string} path the full path of the movie to lookup
-     * @returns the TMDb id if found, otherwise null
-     */
     getTMDbIdFromPath(path) {
         if (!path) return null;
-        let movie = this.getMovieByPath(path.toString());
-        if (!movie) {
-            Logger.WLog('Unable to get TMDb ID for path: ' + path);
-            return null;
-        }
-        return movie.tmdbId;
+        var movie = this.getMovieByPath(path.toString());
+        if (movie) return movie.tmdbId;
+        return null;
     }
 
-    /**
-     * Gets the original language of a movie from its full file path
-     * @param {string} path the full path of the movie to lookup
-     * @returns the original language of the movie if found, otherwise null
-     */
     getOriginalLanguageFromPath(path) {
         if (!path) return null;
-        let movie = this.getMovieByPath(path.toString());
-        if (!movie) {
-            Logger.WLog('Unable to get original language for path: ' + path);
-            return null;
-        }
-        return movie.originalLanguage && movie.originalLanguage.name;
+        var movie = this.getMovieByPath(path.toString());
+        if (movie && movie.originalLanguage) return movie.originalLanguage.name;
+        return null;
     }
 
-    /**
-     * Returns movie files info for an already identified movie
-     * @param {int} movieId ID of previously identified movie
-     * @returns list of radarr movieFile objects
-     */
     findMovieFiles(movieId) {
-        let endpoint = 'moviefile';
-        let queryParams = `movieId=${movieId}`;
-        let response = this.fetchJson(endpoint, queryParams);
-
-        Logger.ILog(`Movie found: ${movieId}`);
+        var response = this.fetchJson('moviefile', 'movieId=' + movieId);
+        Logger.ILog('Movie found: ' + movieId);
         return response;
     }
 
-    /**
-     * Returns files under a movie that need to be renamed
-     * @param {int} movieId Previously determined ID of the movie
-     * @returns list of radarr rename movie objects
-     */
     fetchRenamedMovies(movieId) {
-        let endpoint = 'rename';
-        let queryParams = `movieId=${movieId}`;
-        let response = this.fetchJson(endpoint, queryParams);
-        return response;
+        return this.fetchJson('rename', 'movieId=' + movieId);
     }
 
-    /**
-     * Searches for a movie by file or folder path in Radarr
-     * @param {string} searchPattern - The search string to use (from the folder or file name)
-     * @returns {Object|null} Movie object if found, or null if not found
-     */
     searchMovieByPath(searchPattern) {
-        try {
-            const movie = this.getMovieByPath(searchPattern);
-            return movie || null;
-        } catch (error) {
-            Logger.ELog(`Error searching movie by path: ${error.message}`);
-            return null;
-        }
+        return this.getMovieByPath(searchPattern);
     }
 
-    /**
-     * Searches the Radarr queue for a movie based on the search pattern
-     * @param {string} searchPattern - The search string (file or folder name)
-     * @returns {Object|null} Movie object if found, or null if not found
-     */
     searchInQueue(searchPattern) {
-        return this.searchApi(
-            'queue',
-            searchPattern,
-            (item, sp) => item.outputPath && item.outputPath.toLowerCase().includes(sp),
-            { includeMovie: 'true' },
-            (item) => {
-                Logger.ILog(`Found Movie in Queue: ${item.movie.title}`);
+        var sp = (searchPattern || '').toLowerCase();
+        if (!sp) return null;
+        var queryParams = 'includeMovie=true';
+        var json = this.fetchJson('queue', queryParams);
+        if (!json || !json.records) return null;
+        var items = json.records;
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.outputPath && item.outputPath.toLowerCase().indexOf(sp) !== -1) {
+                Logger.ILog('Found Movie in Queue: ' + item.movie.title);
                 return item.movie;
             }
-        );
+        }
+        return null;
     }
 
-    /**
-     * Searches the Radarr download history for a movie based on the search pattern
-     * @param {string} searchPattern - The search string (file or folder name)
-     * @returns {Object|null} Movie object if found, or null if not found
-     */
     searchInDownloadHistory(searchPattern) {
-        return this.searchApi(
-            'history',
-            searchPattern,
-            (item, sp) => item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().includes(sp),
-            { eventType: 3, includeMovie: 'true' },
-            (item) => {
-                Logger.ILog(`Found Movie in History: ${item.movie.title}`);
-                return item.movie;
+        var sp = (searchPattern || '').toLowerCase();
+        if (!sp) return null;
+        var page = 1;
+        while (true) {
+            var queryParams = 'page=' + page + '&pageSize=1000&eventType=3&includeMovie=true';
+            var json = this.fetchJson('history', queryParams);
+            if (!json || !json.records || json.records.length === 0) break;
+            var items = json.records;
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (item.data && item.data.droppedPath && item.data.droppedPath.toLowerCase().indexOf(sp) !== -1) {
+                    Logger.ILog('Found Movie in History: ' + item.movie.title);
+                    return item.movie;
+                }
             }
-        );
+            page++;
+        }
+        return null;
     }
 }

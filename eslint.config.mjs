@@ -7,7 +7,7 @@ export default [
     prettier,
     {
         languageOptions: {
-            ecmaVersion: 'latest',
+            ecmaVersion: 2015,
             sourceType: 'module',
             globals: {
                 ...globals.node,

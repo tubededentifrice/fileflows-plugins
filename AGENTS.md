@@ -39,12 +39,34 @@ Community scripts: [community-repository/Scripts/Flow](https://github.com/filefl
 
 Reusable libraries imported by other scripts. Use ES6 module syntax. Official examples: [community-repository/Scripts/Shared](https://github.com/fileflows/community-repository/tree/main/Scripts/Shared)
 
-```javascript
-// Export (in Scripts/Shared/RadarrVc.js):
-export class RadarrVc { ... }
+**CRITICAL GUIDELINES for Shared Scripts:**
 
-// Import (in other scripts):
-import { RadarrVc } from "Shared/RadarrVc";
+1.  **Mandatory Headers**: All Shared scripts MUST include `@name` and `@uid` in their header comment block. FileFlows uses these for registration.
+2.  **Avoid Cross-Script Imports**: Shared scripts often fail to import each other correctly (e.g., `import { A } from "Shared/A"` inside `B.js`). Prefer inlining necessary logic or creating standalone, self-contained classes.
+3.  **Jint Compatibility (Maximum Reliability)**:
+    - **NO Class Fields**: Do not declare properties at the top of a class. Initialize everything in the `constructor`.
+    - **NO Higher-Order Method Callbacks**: Avoid passing internal class methods as callbacks to generic search functions. Jint may struggle with the `this` binding or method reference. Use explicit `for` loops instead.
+    - **NO Anonymous Callbacks in Loops**: Jint can sometimes fail parsing anonymous functions inside complex loops or nested blocks. Prefer named methods or simple logic.
+    - **NO `extends`**: Inheritance between classes in separate files is unreliable. Use self-contained classes.
+    - **NO `static`**: Use instance methods instead.
+    - **NO Spread Operator (`...`)**: Use `Object.assign()` or manual loops.
+    - **NO Optional Chaining (`?.`)**: Use traditional `&&` null checks.
+    - **NO `padStart`**: String prototype `padStart` is often missing; use custom padding logic.
+    - **Prefer `indexOf` over `includes`**: For maximum string compatibility.
+    - **Wrapped Classes**: Always wrap helper functions in an `export class`, as bare function exports are not standard in community scripts.
+    - **ES2015 (ES6) Limit**: The linter is configured to `ecmaVersion: 2015`. Features from ES2016+ (like `?.`, `...`, or class fields) will trigger linting errors.
+
+```javascript
+// Correct Format (in Scripts/Shared/RadarrVc.js):
+/**
+ * @name RadarrVc
+ * @uid 37C89BDA-3B3B-4348-AA23-E04C83D9B0F0
+ */
+export class RadarrVc {
+    constructor() {
+        this.Prop = 'Value'; // Initialize here, not as a class field
+    }
+}
 ```
 
 ### System Scripts
