@@ -15,6 +15,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} PreferSmaller When two CRFs meet target, prefer the smaller file (higher CRF). Default: true
  * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
  * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
+ * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -27,7 +28,8 @@ function Script(
     MaxSearchIterations,
     PreferSmaller,
     UseTags,
-    Preset
+    Preset,
+    MinSizeReduction
 ) {
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -55,12 +57,14 @@ function Script(
     if (PreferSmaller === undefined || PreferSmaller === null) PreferSmaller = true;
     if (TargetVMAF === undefined || TargetVMAF === null) TargetVMAF = 0;
     if (!Preset) Preset = 'veryslow';
+    if (MinSizeReduction === undefined || MinSizeReduction === null) MinSizeReduction = 0;
 
     // Allow variable overrides
     if (Variables.TargetVMAF) TargetVMAF = parseInt(Variables.TargetVMAF);
     if (Variables.MinCRF) MinCRF = parseInt(Variables.MinCRF);
     if (Variables.MaxCRF) MaxCRF = parseInt(Variables.MaxCRF);
     if (Variables.Preset) Preset = String(Variables.Preset);
+    if (Variables.MinSizeReduction) MinSizeReduction = parseInt(Variables.MinSizeReduction);
     if (Variables.AutoQualityPreset) {
         const preset = Variables.AutoQualityPreset.toLowerCase();
         if (preset === 'quality') {
@@ -529,6 +533,50 @@ function Script(
     }
 
     logResultsTable(searchResults, bestCRF, effectiveTarget, qualityMetric);
+
+    // ===== CHECK SIZE REDUCTION =====
+    if (bestCRF !== null) {
+        const bestResult = searchResults.find((r) => r.crf === bestCRF);
+        const estimatedSize = bestResult ? bestResult.size : 0;
+        let currentSize = 0;
+        try {
+            if (fileVar && fileVar.Size) currentSize = fileVar.Size;
+            else {
+                const fi = new System.IO.FileInfo(sourceFile);
+                if (fi.Exists) currentSize = fi.Length;
+            }
+        } catch (e) {}
+
+        if (currentSize > 0 && estimatedSize > 0) {
+            const reduction = (1 - estimatedSize / currentSize) * 100;
+            const reductionDisplay = reduction.toFixed(1);
+
+            if (reduction < MinSizeReduction) {
+                Logger.WLog(
+                    `Auto quality: Estimated size reduction ${reductionDisplay}% is less than required ${MinSizeReduction}%. Skipping encode.`
+                );
+                Logger.ILog(
+                    `Estimated: ${helpers.bytesToGb(estimatedSize).toFixed(2)} GB, Current: ${helpers
+                        .bytesToGb(currentSize)
+                        .toFixed(2)} GB`
+                );
+
+                Variables.AutoQuality_CRF = 'copy';
+                Variables.AutoQuality_Reason = 'insufficient_reduction';
+                Variables.AutoQuality_Score = bestScore;
+                Variables.AutoQuality_Metric = qualityMetric;
+                Variables.AutoQuality_Target = effectiveTarget;
+                Variables.AutoQuality_EstimatedReduction = reduction;
+
+                if (UseTags && typeof Flow.AddTags === 'function') {
+                    Flow.AddTags(['Copy']);
+                }
+                return 2;
+            } else {
+                Logger.ILog(`Estimated size reduction: ${reductionDisplay}% (Target >= ${MinSizeReduction}%)`);
+            }
+        }
+    }
 
     // ===== APPLY CRF AND PRESET TO ENCODER =====
     applyCRF(video, bestCRF, targetCodec, Preset);
