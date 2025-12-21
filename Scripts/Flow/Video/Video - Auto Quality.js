@@ -462,7 +462,7 @@ function Script(
                 Flow.PartPercentageUpdate(iterBase);
             }
 
-            const qualityScore = measureQualityAtQualityValue(
+            const result = measureQualityAtQualityValue(
                 ffmpegEncodePath,
                 ffmpegPath,
                 samples,
@@ -479,15 +479,19 @@ function Script(
                 iterSpan
             );
 
-            if (qualityScore < 0) {
+            if (!result || result.score < 0) {
                 Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
                 lowCRF = testCRF + 1;
                 continue;
             }
 
-            searchResults.push({ crf: testCRF, score: qualityScore });
+            const qualityScore = result.score;
+            const estimatedSize = result.bitrate > 0 ? result.bitrate * duration : 0;
+
+            searchResults.push({ crf: testCRF, score: qualityScore, size: estimatedSize });
             const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
-            Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}`);
+            const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GB';
+            Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
 
             if (qualityScore >= effectiveTarget) {
                 bestCRF = testCRF;
@@ -1248,10 +1252,12 @@ function Script(
     ) {
         const tempDir = Flow.TempPath;
         const scores = [];
+        let totalEncodedBytes = 0;
+        let totalEncodedSeconds = 0;
 
         if (!samples || samples.length === 0) {
             Logger.ELog('No samples available for quality measurement');
-            return -1;
+            return null;
         }
 
         const upstreamFiltersStr = String(upstreamFilters || '').trim();
@@ -1532,6 +1538,14 @@ function Script(
                     continue;
                 }
 
+                try {
+                    const fi = new System.IO.FileInfo(encodedSample);
+                    if (fi.Exists) {
+                        totalEncodedBytes += fi.Length;
+                        totalEncodedSeconds += sampleDur;
+                    }
+                } catch (e) {}
+
                 if (filterMode === 'software-fallback') {
                     Variables.AutoQuality_FilterMode = 'software-fallback';
                 } else if (!Variables.AutoQuality_FilterMode) {
@@ -1618,8 +1632,12 @@ function Script(
             }
         }
 
-        if (scores.length === 0) return -1;
-        return scores.reduce((a, b) => a + b, 0) / scores.length;
+        if (scores.length === 0) return null;
+
+        const avgScore = scores.reduce((min, val) => (val < min ? val : min), scores[0]);
+        const bitrate = totalEncodedSeconds > 0 ? totalEncodedBytes / totalEncodedSeconds : 0;
+
+        return { score: avgScore, bitrate: bitrate };
     }
 
     function cleanupFiles(files) {
@@ -1828,9 +1846,9 @@ function Script(
         Logger.ILog('=====================================================');
         Logger.ILog(` Auto Quality Results (${metric})`);
         Logger.ILog(` Target: ${targetStr}`);
-        Logger.ILog('-----------------------------------------------------');
-        Logger.ILog(' CRF  | Score      | Diff       | Status');
-        Logger.ILog('------|------------|------------|--------------------');
+        Logger.ILog('----------------------------------------------------------------------');
+        Logger.ILog(' CRF  | Score      | Diff       | Est. Size  | Status');
+        Logger.ILog('------|------------|------------|------------|--------------------');
 
         for (const r of results) {
             const isBest = r.crf === bestCrf;
@@ -1844,14 +1862,14 @@ function Script(
             let status = meets ? 'Pass' : 'Fail';
             if (isBest) status += ' (Selected)';
 
-            // Padding: CRF (4), Score (10), Diff (10)
             const pCrf = padRight(r.crf, 4);
             const pScore = padRight(scoreStr, 10);
             const pDiff = padRight(diffStr, 10);
+            const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size) + ' GB' : '-', 10);
 
-            Logger.ILog(` ${pCrf} | ${pScore} | ${pDiff} | ${status}`);
+            Logger.ILog(` ${pCrf} | ${pScore} | ${pDiff} | ${pSize} | ${status}`);
         }
-        Logger.ILog('=====================================================');
+        Logger.ILog('======================================================================');
         Logger.ILog('');
     }
 }
