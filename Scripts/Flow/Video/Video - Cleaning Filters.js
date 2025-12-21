@@ -3,7 +3,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 42
+ * @revision 43
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -11,6 +11,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable QSV deinterlacing (uses a quick `idet` probe)
  * @param {bool} AutoNoiseDenoise Probe video noise/grain level and nudge denoise strength (bounded adjustment)
  * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
+ * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower, can improve compression/quality; requires FFmpeg/QSV support)
  * @output Cleaned video
  */
 function Script(
@@ -20,9 +21,10 @@ function Script(
     AllowCpuFiltersWithHardwareEncode,
     AutoDeinterlace,
     AutoNoiseDenoise,
-    MpDecimateAnimation
+    MpDecimateAnimation,
+    QsvLookAhead
 ) {
-    Logger.ILog('Cleaning filters.js revision 42 loaded');
+    Logger.ILog('Cleaning filters.js revision 43 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -50,6 +52,7 @@ function Script(
     AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
     AutoNoiseDenoise = truthy(AutoNoiseDenoise) || truthy(Variables.AutoNoiseDenoise);
     MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
+    QsvLookAhead = truthy(QsvLookAhead) || truthy(Variables['CleaningFilters.QsvTune.LookAhead']);
 
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
@@ -1752,6 +1755,21 @@ function Script(
                     if (override) removeArgWithValue(ep, isFlag('-extbrc'));
                     if (ensureArgWithValue(ep, '-extbrc', String(extBrc), isFlag('-extbrc')))
                         added.push(`-extbrc ${extBrc}`);
+
+                    // Lookahead (optional; can improve compression, but costs throughput and may be unsupported on some stacks).
+                    if (truthy(QsvLookAhead)) {
+                        if (override) removeArgWithValue(ep, isFlag('-look_ahead'));
+                        if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead')))
+                            added.push('-look_ahead 1');
+
+                        const ladRaw = firstDefinedVariableString(['CleaningFilters.QsvTune.LookAheadDepth'], '');
+                        const lad = ladRaw ? clampNumber(parseFloat(ladRaw), 1, 200) : null;
+                        if (lad && !isNaN(lad)) {
+                            if (override) removeArgWithValue(ep, isFlag('-look_ahead_depth'));
+                            if (ensureArgWithValue(ep, '-look_ahead_depth', String(lad), isFlag('-look_ahead_depth')))
+                                added.push(`-look_ahead_depth ${lad}`);
+                        }
+                    }
 
                     // B-frames / refs (mostly impacts compression at same quality).
                     if (override) removeArgWithValue(ep, isFlag('-bf'));
