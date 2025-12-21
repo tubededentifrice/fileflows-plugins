@@ -1815,17 +1815,43 @@ function Script(
         if (!results || results.length === 0) return;
         results.sort((a, b) => a.crf - b.crf);
 
-        const table = [];
-        table.push('CRF  | Score  | Status');
-        table.push('-----|--------|-------');
+        // Custom padRight to avoid dependency on String.prototype.padEnd (ES2017) which might be missing in some Jint versions
+        const padRight = (s, len) => {
+            s = String(s);
+            while (s.length < len) s += ' ';
+            return s;
+        };
+
+        const targetStr = metric === 'SSIM' ? target.toFixed(4) : target.toFixed(2);
+
+        Logger.ILog('');
+        Logger.ILog('=====================================================');
+        Logger.ILog(` Auto Quality Results (${metric})`);
+        Logger.ILog(` Target: ${targetStr}`);
+        Logger.ILog('-----------------------------------------------------');
+        Logger.ILog(' CRF  | Score      | Diff       | Status');
+        Logger.ILog('------|------------|------------|--------------------');
+
         for (const r of results) {
             const isBest = r.crf === bestCrf;
             const meets = r.score >= target;
             const scoreStr = metric === 'SSIM' ? r.score.toFixed(4) : r.score.toFixed(2);
+
+            let diff = r.score - target;
+            let diffSign = diff > 0 ? '+' : '';
+            let diffStr = diffSign + (metric === 'SSIM' ? diff.toFixed(4) : diff.toFixed(2));
+
             let status = meets ? 'Pass' : 'Fail';
             if (isBest) status += ' (Selected)';
-            table.push(`${String(r.crf).padEnd(4)} | ${scoreStr.padEnd(6)} | ${status}`);
+
+            // Padding: CRF (4), Score (10), Diff (10)
+            const pCrf = padRight(r.crf, 4);
+            const pScore = padRight(scoreStr, 10);
+            const pDiff = padRight(diffStr, 10);
+
+            Logger.ILog(` ${pCrf} | ${pScore} | ${pDiff} | ${status}`);
         }
-        Logger.ILog('\n' + table.join('\n'));
+        Logger.ILog('=====================================================');
+        Logger.ILog('');
     }
 }
