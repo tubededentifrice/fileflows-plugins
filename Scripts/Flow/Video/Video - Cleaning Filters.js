@@ -27,6 +27,17 @@ function Script(
     const safeString = (v) => helpers.safeString(v);
     const truthy = (v) => helpers.truthy(v);
 
+    const listAdd = (l, i) => helpers.listAdd(l, i);
+    const listAddUnique = (l, i) => helpers.listAddUnique(l, i);
+    const listCount = (l) => helpers.listCount(l);
+    const listRemoveAt = (l, idx) => helpers.listRemoveAt(l, idx);
+    const ensureArgWithValue = (l, f, v, p) => helpers.ensureArgWithValue(l, f, v, p);
+    const removeArgWithValue = (l, p) => helpers.removeArgWithValue(l, p);
+    const extractYearFromFilename = (f) => helpers.extractYearFromFilename(f);
+    const detectHardwareEncoder = (v) => helpers.detectHardwareEncoder(v);
+    const detectTargetBitDepth = (v) => helpers.detectTargetBitDepth(v);
+    const asJoinedString = (v) => helpers.asJoinedString(v);
+
     // Parameter normalization
     SkipDenoise = truthy(SkipDenoise) || truthy(Variables.SkipDenoise);
     AggressiveCompression = truthy(AggressiveCompression) || truthy(Variables.AggressiveCompression);
@@ -44,126 +55,6 @@ function Script(
     }
 
     const safeTokenString = safeString;
-
-    function asJoinedString(value) {
-        if (!value) return '';
-        const tokens = toEnumerableArray(value, 500)
-            .map(safeTokenString)
-            .filter((x) => x);
-        if (tokens.length) return tokens.join(' ');
-        return safeTokenString(value);
-    }
-
-    function listAdd(list, item) {
-        if (!list) return false;
-        if (Array.isArray(list)) {
-            list.push(item);
-            return true;
-        }
-        try {
-            if (typeof list.Add === 'function') {
-                list.Add(item);
-                return true;
-            }
-        } catch (err) {}
-        return false;
-    }
-
-    function listAddUnique(list, item) {
-        if (!list) return false;
-        try {
-            const existing = toEnumerableArray(list, 2000).map(safeTokenString);
-            if (existing.indexOf(item) >= 0) return true;
-        } catch (err) {}
-        return listAdd(list, item);
-    }
-
-    function _listSetAt(list, index, value) {
-        if (!list) return false;
-        try {
-            // JS array or .NET indexer
-            list[index] = value;
-            return true;
-        } catch (err) {}
-        try {
-            if (typeof list.RemoveAt === 'function' && typeof list.Insert === 'function') {
-                list.RemoveAt(index);
-                list.Insert(index, value);
-                return true;
-            }
-        } catch (err) {}
-        return false;
-    }
-
-    function listRemoveAt(list, index) {
-        if (!list) return false;
-        try {
-            if (Array.isArray(list)) {
-                list.splice(index, 1);
-                return true;
-            }
-        } catch (err) {}
-        try {
-            if (typeof list.RemoveAt === 'function') {
-                list.RemoveAt(index);
-                return true;
-            }
-        } catch (err) {}
-        return false;
-    }
-
-    function listCount(list) {
-        if (!list) return null;
-        if (Array.isArray(list)) return list.length;
-        try {
-            if (typeof list.Count === 'number') return list.Count;
-        } catch (err) {}
-        return null;
-    }
-
-    function findArgIndex(list, predicate) {
-        const count = listCount(list);
-        if (count === null) return -1;
-        for (let i = 0; i < count; i++) {
-            const t = String(safeTokenString(list[i]) || '').trim();
-            if (predicate(t, i)) return i;
-        }
-        return -1;
-    }
-
-    function hasArg(list, predicate) {
-        return findArgIndex(list, predicate) >= 0;
-    }
-
-    function removeArgWithValue(list, predicate) {
-        const count0 = listCount(list);
-        if (count0 === null) return { removed: false, removedCount: 0 };
-        let removedCount = 0;
-        let i = 0;
-        while (i < listCount(list)) {
-            const t = String(safeTokenString(list[i]) || '').trim();
-            if (!predicate(t, i)) {
-                i++;
-                continue;
-            }
-            if (i < listCount(list) - 1) {
-                if (listRemoveAt(list, i + 1)) removedCount++;
-            }
-            if (listRemoveAt(list, i)) removedCount++;
-            continue;
-        }
-        return { removed: removedCount > 0, removedCount };
-    }
-
-    function ensureArgWithValue(list, flag, value, predicate) {
-        const count0 = listCount(list);
-        if (count0 === null) return false;
-        const pred = predicate || ((t) => t === flag);
-        if (hasArg(list, pred)) return false;
-        listAdd(list, flag);
-        listAdd(list, value);
-        return true;
-    }
 
     function flattenFilterExpressions(filters) {
         const parts = [];
@@ -547,47 +438,6 @@ function Script(
         return removed;
     }
 
-    function detectHardwareEncoder(videoStream) {
-        const signature = [
-            asJoinedString(videoStream.EncodingParameters),
-            asJoinedString(videoStream.AdditionalParameters),
-            asJoinedString(videoStream.Codec)
-        ]
-            .join(' ')
-            .toLowerCase();
-
-        if (signature.includes('_qsv') || signature.includes(' qsv')) return 'qsv';
-        if (signature.includes('_vaapi') || signature.includes(' vaapi')) return 'vaapi';
-        if (signature.includes('_nvenc') || signature.includes(' nvenc')) return 'nvenc';
-        if (signature.includes('_amf') || signature.includes(' amf')) return 'amf';
-        return null;
-    }
-
-    function detectTargetBitDepth(videoStream) {
-        const signature = [
-            asJoinedString(videoStream.EncodingParameters),
-            asJoinedString(videoStream.AdditionalParameters),
-            asJoinedString(videoStream.Filter),
-            asJoinedString(videoStream.Filters),
-            asJoinedString(videoStream.OptionalFilter),
-            safeTokenString(videoStream.Codec)
-        ]
-            .join(' ')
-            .toLowerCase();
-
-        // Many FileFlows "10-bit" presets express the target bit depth via scale_qsv/vpp_qsv filters (format=p010le),
-        // not via explicit -pix_fmt/-profile args. Detect these too so we don't accidentally fall back to nv12.
-        if (
-            signature.includes('p010') ||
-            signature.includes('format=p010le') ||
-            signature.includes('main10') ||
-            signature.includes('10bit') ||
-            signature.includes('10-bit')
-        )
-            return 10;
-        return 8;
-    }
-
     function getCfrRateForMpDecimate(sourceFps) {
         const fps = parseFloat(sourceFps || 0) || 0;
 
@@ -831,23 +681,6 @@ function Script(
         return `vpp_qsv=${parts.join(':')}`;
     }
 
-    function extractYearFromFilename(filePath) {
-        if (!filePath) return null;
-        const filename = String(filePath).split('/').pop().split('\\').pop();
-        if (!filename) return null;
-
-        // Pattern: .YYYY. (year 1900-2099 enclosed in dots, common in scene releases)
-        const match = filename.match(/\.(19\d{2}|20\d{2})\./);
-        if (match) {
-            const year = parseInt(match[1], 10);
-            const currentYear = new Date().getFullYear();
-            if (year >= 1900 && year <= currentYear + 1) {
-                return year;
-            }
-        }
-        return null;
-    }
-
     function detectInterlacedWithIdet(ffmpegPath, inputFile, durationSeconds) {
         const framesPerSample = 250;
         const timeSamples = [];
@@ -895,7 +728,7 @@ function Script(
 
             const output = (process.standardError || '') + '\n' + (process.standardOutput || '');
             const match = output.match(
-                /Multi frame detection:\\s*TFF:\\s*(\\d+)\\s*BFF:\\s*(\\d+)\\s*Progressive:\\s*(\\d+)\\s*Undetermined:\\s*(\\d+)/i
+                /Multi frame detection:\s*TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)\s*Undetermined:\s*(\d+)/i
             );
             if (match) {
                 tff += parseInt(match[1]) || 0;

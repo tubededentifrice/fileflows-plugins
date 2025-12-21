@@ -40,35 +40,8 @@ function Script(URL, ApiKey, UseFolderName, IgnoredFoldersRegex) {
         return 2; // TV Show not found
     }
 
-    updateSeriesMetadata(series);
+    sonarr.updateMetadata(series);
     return 1; // TV Show found
-}
-
-/**
- * @description Updates the series metadata in the global variables based on the Sonarr series data
- * @param {Object} series - Series object returned from Sonarr API
- */
-function updateSeriesMetadata(series) {
-    const language = LanguageHelper.GetIso1Code(series.originalLanguage.name);
-
-    Variables['movie.Title'] = series.title;
-    Variables['movie.Year'] = series.year;
-    Variables['movie.SonarrId'] = series.id;
-    Variables.VideoMetadata = {
-        Title: series.title,
-        Description: series.overview,
-        Year: series.year,
-        ReleaseDate: series.firstAired,
-        OriginalLanguage: language,
-        Genres: series.genres
-    };
-
-    Variables.TVShowInfo = series;
-    Variables.OriginalLanguage = language;
-
-    Logger.ILog('Detected VideoMetadata: ' + JSON.stringify(Variables.VideoMetadata));
-    Logger.ILog('Detected TVShowInfo: ' + JSON.stringify(Variables.TVShowInfo));
-    Logger.ILog('Detected Original Language: ' + language);
 }
 
 /**

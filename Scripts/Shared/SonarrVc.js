@@ -352,4 +352,31 @@ export class SonarrVc {
         if (!episodeFile) return [null, null];
         return [episodeFile, this.fetchEpisodeFromId(episodeFile.id)];
     }
+
+    /**
+     * Updates the series metadata in the global variables based on the Sonarr series data
+     * @param {Object} series - Series object returned from Sonarr API
+     */
+    updateMetadata(series) {
+        const language = LanguageHelper.GetIso1Code(series.originalLanguage.name);
+
+        Variables['movie.Title'] = series.title;
+        Variables['movie.Year'] = series.year;
+        Variables['movie.SonarrId'] = series.id;
+        Variables.VideoMetadata = {
+            Title: series.title,
+            Description: series.overview,
+            Year: series.year,
+            ReleaseDate: series.firstAired,
+            OriginalLanguage: language,
+            Genres: series.genres
+        };
+
+        Variables.TVShowInfo = series;
+        Variables.OriginalLanguage = language;
+
+        Logger.ILog('Detected VideoMetadata: ' + JSON.stringify(Variables.VideoMetadata));
+        Logger.ILog('Detected TVShowInfo: ' + JSON.stringify(Variables.TVShowInfo));
+        Logger.ILog('Detected Original Language: ' + language);
+    }
 }

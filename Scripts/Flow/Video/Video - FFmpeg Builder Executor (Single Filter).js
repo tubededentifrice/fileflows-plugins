@@ -21,6 +21,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const truthy = (v) => helpers.truthy(v);
     const parseDurationSeconds = (v) => helpers.parseDurationSeconds(v);
     const secondsToClock = (v) => helpers.secondsToClock(v);
+    const hasArg = (l, f) => helpers.hasArg(l, (t) => t.toLowerCase() === String(f || '').toLowerCase());
 
     const builderDefaults = new FfmpegBuilderDefaults();
 
@@ -390,14 +391,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return Variables['ffmpeg'] || Variables['FFmpeg'] || Variables.ffmpeg || Variables.FFmpeg || '';
     }
 
-    function hasArg(tokens, flag) {
-        const f = String(flag || '').toLowerCase();
-        for (let i = 0; i < (tokens || []).length; i++) {
-            if (String(tokens[i] || '').toLowerCase() === f) return true;
-        }
-        return false;
-    }
-
     function isQsvCodec(codec) {
         const c = String(codec || '').toLowerCase();
         return c.indexOf('_qsv') >= 0;
@@ -508,42 +501,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return false;
     }
 
-    function tryGetDurationSeconds(model) {
-        // Prefer the duration already computed by FileFlows, but fall back to builder model and finally stderr parsing.
-        function tryParseDurationSeconds(value) {
-            return parseDurationSeconds(value);
-        }
-        try {
-            const d =
-                Variables.video && Variables.video.Duration !== undefined
-                    ? tryParseDurationSeconds(Variables.video.Duration)
-                    : NaN;
-            if (!isNaN(d) && d > 0) return d;
-        } catch (err) {}
-        try {
-            const d =
-                Variables.vi && Variables.vi.Duration !== undefined
-                    ? tryParseDurationSeconds(Variables.vi.Duration)
-                    : NaN;
-            if (!isNaN(d) && d > 0) return d;
-        } catch (err) {}
-        try {
-            const d =
-                model && model.VideoInfo && model.VideoInfo.VideoStreams && model.VideoInfo.VideoStreams.length
-                    ? tryParseDurationSeconds(model.VideoInfo.VideoStreams[0].Duration)
-                    : NaN;
-            if (!isNaN(d) && d > 0) return d;
-        } catch (err) {}
-        try {
-            const d =
-                Variables.vi &&
-                Variables.vi.VideoInfo &&
-                Variables.vi.VideoInfo.VideoStreams &&
-                Variables.vi.VideoInfo.VideoStreams.length
-                    ? tryParseDurationSeconds(Variables.vi.VideoInfo.VideoStreams[0].Duration)
-                    : NaN;
-            if (!isNaN(d) && d > 0) return d;
-        } catch (err) {}
+    function tryGetDurationSeconds() {
+        const metadata = helpers.getVideoMetadata();
+        if (metadata.duration > 0) return metadata.duration;
         return 0;
     }
 
@@ -1024,7 +984,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         executeArgs = null;
     }
 
-    let durationSeconds = tryGetDurationSeconds(model);
+    let durationSeconds = tryGetDurationSeconds();
     if (!durationSeconds || durationSeconds <= 0) {
         // Some flows don't run the Video File node, so Duration variables may be missing.
         // Do a fast probe to get Duration from ffmpeg headers so progress still works.
