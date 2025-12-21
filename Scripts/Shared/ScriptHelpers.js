@@ -735,7 +735,25 @@ export class ScriptHelpers {
      */
     executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
         try {
-            const psi = new System.Diagnostics.ProcessStartInfo();
+            let psi;
+            try {
+                psi = new System.Diagnostics.ProcessStartInfo();
+            } catch (err) {
+                // Fallback to Flow.Execute if ProcessStartInfo is not available
+                const r = Flow.Execute({
+                    command: command,
+                    argumentList: argumentList,
+                    timeout: timeoutSeconds || 60,
+                    workingDirectory: workingDirectory
+                });
+                return {
+                    exitCode: r.exitCode,
+                    standardOutput: r.standardOutput || '',
+                    standardError: r.standardError || '',
+                    completed: r.completed
+                };
+            }
+
             psi.FileName = String(command);
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
@@ -1004,7 +1022,25 @@ export class ScriptHelpers {
         const file = String(inputFile || '').trim();
         if (!file) return 0;
         try {
-            const psi = new System.Diagnostics.ProcessStartInfo();
+            let psi;
+            try {
+                psi = new System.Diagnostics.ProcessStartInfo();
+            } catch (e) {
+                // Fallback to Flow.Execute if ProcessStartInfo is not available
+                const args = ['-hide_banner', '-i', file];
+                const result = Flow.Execute({
+                    command: ffmpegPath,
+                    argumentList: args,
+                    timeout: 15
+                });
+
+                let text = (result.standardError || '') + '\n' + (result.standardOutput || '');
+                const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
+                if (!m) return 0;
+                const d = this.parseDurationSeconds(m[1]);
+                return d > 0 ? d : 0;
+            }
+
             psi.FileName = String(ffmpegPath);
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;

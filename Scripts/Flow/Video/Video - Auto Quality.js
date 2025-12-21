@@ -424,7 +424,7 @@ function Script(
             .trim()
             .toLowerCase();
         if (rm) referenceMode = rm;
-    } catch (e) {}
+    } catch (e) { }
     if (referenceMode === 'auto') {
         // Always use 'encoded' so both reference and test go through the same encoding pipeline.
         // This ensures the quality measurement reflects only the difference in quality settings,
@@ -438,15 +438,15 @@ function Script(
     const referenceSamples =
         referenceMode === 'encoded'
             ? encodeReferenceSamplesForAutoQuality(
-                  ffmpegEncodePath,
-                  samples,
-                  SampleDurationSec,
-                  use10BitForTests,
-                  video,
-                  targetCodec,
-                  upstreamVideoFilters,
-                  referenceQuality
-              )
+                ffmpegEncodePath,
+                samples,
+                SampleDurationSec,
+                use10BitForTests,
+                video,
+                targetCodec,
+                upstreamVideoFilters,
+                referenceQuality
+            )
             : [];
 
     if (referenceSamples.length === 0) {
@@ -607,7 +607,7 @@ function Script(
                 const fi = new System.IO.FileInfo(sourceFile);
                 if (fi.Exists) currentSize = fi.Length;
             }
-        } catch (e) {}
+        } catch (e) { }
 
         if (currentSize > 0 && estimatedSize > 0) {
             const reduction = (1 - estimatedSize / currentSize) * 100;
@@ -792,7 +792,7 @@ function Script(
                             output = System.IO.File.ReadAllText(r.logFile);
                             System.IO.File.Delete(r.logFile);
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     results[r.id] = {
                         exitCode: exitCode,
@@ -844,7 +844,7 @@ function Script(
                     for (let i = 0; i < ep.length; i++) params.push(String(ep[i]));
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         const signature = params.join(' ').toLowerCase();
 
@@ -1008,7 +1008,7 @@ function Script(
 
             try {
                 if (System.IO.File.Exists(samplePath)) System.IO.File.Delete(samplePath);
-            } catch (e) {}
+            } catch (e) { }
 
             const args = [
                 '-hide_banner',
@@ -1049,7 +1049,7 @@ function Script(
                 try {
                     const fi = new System.IO.FileInfo(t.samplePath);
                     if (fi.Length > 0) extracted = true;
-                } catch (e) {}
+                } catch (e) { }
             }
 
             if (extracted) {
@@ -1064,7 +1064,7 @@ function Script(
             } else {
                 try {
                     if (System.IO.File.Exists(t.samplePath)) System.IO.File.Delete(t.samplePath);
-                } catch (e) {}
+                } catch (e) { }
                 finalSamples.push({
                     pos: t.pos,
                     inputFile: inputFile,
@@ -1137,7 +1137,7 @@ function Script(
                 } finally {
                     try {
                         if (System.IO.File.Exists(metadataFile)) System.IO.File.Delete(metadataFile);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
 
                 // Parse YAVG values from output
@@ -1794,7 +1794,7 @@ function Script(
             if (metric === 'VMAF' && desired > 0 && fps > 0) {
                 vmafNSubsample = Math.max(1, Math.round(fps / desired));
             }
-        } catch (e) {}
+        } catch (e) { }
 
         const metricFilter =
             metric === 'VMAF'
@@ -1848,7 +1848,7 @@ function Script(
                     totalEncodedBytes += fi.Length;
                     totalEncodedSeconds += sampleDur;
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             const ref = task.ref;
             const filterMode = (ref && ref.filterMode) || (upstreamFiltersStr ? 'upstream' : 'none');
@@ -1949,7 +1949,7 @@ function Script(
                 if (System.IO.File.Exists(file)) {
                     System.IO.File.Delete(file);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
@@ -1973,7 +1973,7 @@ function Script(
                     }
                     return result;
                 }
-            } catch (e) {}
+            } catch (e) { }
             return [];
         }
 
@@ -2072,7 +2072,7 @@ function Script(
                 const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
                 return `crop=${crop.Width}:${crop.Height}:${cx}:${cy}`;
             }
-        } catch (err) {}
+        } catch (err) { }
         return '';
     }
 
@@ -2101,7 +2101,7 @@ function Script(
                 const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
                 filters.unshift(`crop=${crop.Width}:${crop.Height}:${cx}:${cy}`);
             }
-        } catch (err) {}
+        } catch (err) { }
 
         // Some builder nodes encode filters directly into EncodingParameters (eg: -filter:v:0 scale_qsv=...).
         try {
@@ -2115,7 +2115,7 @@ function Script(
                     if (val) filters.push(val);
                 }
             }
-        } catch (err) {}
+        } catch (err) { }
 
         if (filters.length === 0) return '';
 
@@ -2147,7 +2147,7 @@ function Script(
         const maxSize = parseInt(Variables.MaxFileSize || 0);
 
         Logger.ILog('');
-        Logger.ILog('========================================================================================');
+        Logger.ILog('----------------------------------------------------------------------------------------');
         Logger.ILog(` Auto Quality Results (${metric})`);
         Logger.ILog(` Target: ${targetStr}`);
         if (maxSize > 0) {
