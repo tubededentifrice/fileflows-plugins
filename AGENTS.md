@@ -44,6 +44,7 @@ Reusable libraries imported by other scripts. Use ES6 module syntax. Official ex
 1.  **Mandatory Headers**: All Shared scripts MUST include `@name` and `@uid` in their header comment block. FileFlows uses these for registration.
 2.  **Avoid Cross-Script Imports**: Shared scripts often fail to import each other correctly (e.g., `import { A } from "Shared/A"` inside `B.js`). Prefer inlining necessary logic or creating standalone, self-contained classes.
 3.  **Jint Compatibility (Maximum Reliability)**:
+    - **NO `Variables.` in String Literals**: NEVER put the literal text `Variables.` inside a string (e.g., `'Variables.foo'` or `"Variables.bar"`). FileFlows performs replacement on this pattern and it will crash. Use concatenation or template patterns to avoid: `'Vari' + 'ables.foo'` or store the prefix in a variable.
     - **NO Class Fields**: Do not declare properties at the top of a class. Initialize everything in the `constructor`.
     - **NO Higher-Order Method Callbacks**: Avoid passing internal class methods as callbacks to generic search functions. Jint may struggle with the `this` binding or method reference. Use explicit `for` loops instead.
     - **NO Anonymous Callbacks in Loops**: Jint can sometimes fail parsing anonymous functions inside complex loops or nested blocks. Prefer named methods or simple logic.
@@ -72,6 +73,17 @@ export class RadarrVc {
 ### System Scripts
 
 Scripts for scheduled tasks or pre-execute tasks. Return truthy/falsey values - falsey stops the action.
+
+## Documentation Maintenance
+
+**CRITICAL**: When creating new scripts or modifying script parameters/behavior, you MUST update the [README.md](./README.md) file.
+
+1.  **New Scripts**: Add a new section under the appropriate category. Include:
+    - Description.
+    - Configuration (Inputs/Arguments) using a `<details>` block.
+    - Variables read/written.
+    - Pros/Cons of key settings.
+2.  **Modified Scripts**: Update the existing section to reflect changes in parameters, default values, or logic.
 
 ## Script Format
 

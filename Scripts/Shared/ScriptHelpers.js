@@ -3,7 +3,7 @@
  * @uid F17EAED8-5E6F-43A8-88A5-416A2BEB7482
  * @description Common utility functions for FileFlows scripts
  * @author Vincent Courcelle
- * @revision 1
+ * @revision 2
  * @minimumVersion 1.0.0.0
  */
 
@@ -735,7 +735,25 @@ export class ScriptHelpers {
      */
     executeSilently(command, argumentList, timeoutSeconds, workingDirectory) {
         try {
-            const psi = new System.Diagnostics.ProcessStartInfo();
+            let psi;
+            try {
+                psi = new System.Diagnostics.ProcessStartInfo();
+            } catch (err) {
+                // Fallback to Flow.Execute if ProcessStartInfo is not available
+                const r = Flow.Execute({
+                    command: command,
+                    argumentList: argumentList,
+                    timeout: timeoutSeconds || 60,
+                    workingDirectory: workingDirectory
+                });
+                return {
+                    exitCode: r.exitCode,
+                    standardOutput: r.standardOutput || '',
+                    standardError: r.standardError || '',
+                    completed: r.completed
+                };
+            }
+
             psi.FileName = String(command);
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
@@ -800,6 +818,200 @@ export class ScriptHelpers {
         }
     }
 
+    sortNumbersAscending(arr) {
+        if (!arr || arr.length <= 1) return arr || [];
+        // Simple in-place sort to avoid callback-based Array.sort for maximum Jint compatibility
+        for (let i = 0; i < arr.length - 1; i++) {
+            for (let j = 0; j < arr.length - 1 - i; j++) {
+                const a = arr[j];
+                const b = arr[j + 1];
+                if (a > b) {
+                    arr[j] = b;
+                    arr[j + 1] = a;
+                }
+            }
+        }
+        return arr;
+    }
+
+    medianNumber(values) {
+        if (!values || values.length === 0) return null;
+        const arr = [];
+        for (let i = 0; i < values.length; i++) {
+            const n = parseFloat(values[i]);
+            if (!isNaN(n)) arr.push(n);
+        }
+        if (arr.length === 0) return null;
+        this.sortNumbersAscending(arr);
+        const mid = Math.floor(arr.length / 2);
+        if (arr.length % 2 === 1) return arr[mid];
+        return (arr[mid - 1] + arr[mid]) / 2;
+    }
+
+    meanNumber(values, startIndex) {
+        if (!values || values.length === 0) return null;
+        const start = startIndex && startIndex > 0 ? startIndex : 0;
+        let sum = 0;
+        let count = 0;
+        for (let i = start; i < values.length; i++) {
+            const n = parseFloat(values[i]);
+            if (isNaN(n)) continue;
+            sum += n;
+            count++;
+        }
+        if (count === 0) return null;
+        return sum / count;
+    }
+
+    /**
+     * Probes a simple temporal-difference based "noise/grain score" for a video using FFmpeg.
+     * This is a heuristic score: fast motion and heavy scene changes can inflate it, so it should
+     * generally be used as a bounded adjustment (not a full replacement) for denoise decisions.
+     *
+     * @param {string} ffmpegPath FFmpeg executable path
+     * @param {string} inputFile Input file path
+     * @param {number} durationSeconds Duration (optional)
+     * @param {Object} options { framesPerSample, timeoutSeconds, offsetsSeconds }
+     * @returns {Object} { ok, score, reason, samples, offsets, perOffsetMeans, perOffsetCounts }
+     */
+    probeTemporalNoiseScore(ffmpegPath, inputFile, durationSeconds, options) {
+        const ff = String(ffmpegPath || '').trim();
+        const file = String(inputFile || '').trim();
+        if (!ff || !file) return { ok: false, score: null, reason: 'missing-ffmpeg-or-file' };
+
+        const opts = options || {};
+        const framesPerSample = parseInt(opts.framesPerSample, 10) || 180;
+        const timeoutSeconds = parseInt(opts.timeoutSeconds, 10) || 300;
+
+        const offsets = [];
+        const providedOffsets = opts.offsetsSeconds;
+        if (providedOffsets && Array.isArray(providedOffsets) && providedOffsets.length) {
+            for (let i = 0; i < providedOffsets.length; i++) {
+                const v = parseInt(providedOffsets[i], 10);
+                if (!isNaN(v) && v >= 0) offsets.push(v);
+            }
+        } else if (durationSeconds && durationSeconds > 0) {
+            const d = Math.floor(durationSeconds);
+            const clampOffset = function (v) {
+                if (v < 0) return 0;
+                // Keep within duration when possible (avoid seeking past EOF)
+                if (d > 10 && v > d - 5) return Math.max(0, d - 5);
+                return v;
+            };
+            offsets.push(clampOffset(60));
+            offsets.push(clampOffset(Math.max(60, Math.floor(d * 0.35))));
+            offsets.push(clampOffset(Math.max(60, Math.floor(d * 0.7))));
+        } else {
+            offsets.push(60);
+            offsets.push(300);
+            offsets.push(600);
+        }
+
+        // De-dupe offsets
+        const seen = {};
+        const uniqueOffsets = [];
+        for (let i = 0; i < offsets.length; i++) {
+            const k = String(offsets[i]);
+            if (seen[k]) continue;
+            seen[k] = true;
+            uniqueOffsets.push(offsets[i]);
+        }
+
+        const vf = 'format=gray,boxblur=2:1,tblend=all_mode=difference,signalstats,metadata=print';
+        const yavgRe = /lavfi\.signalstats\.YAVG=([0-9.]+)/g;
+
+        const perOffsetMeans = [];
+        const perOffsetCounts = [];
+        const perOffsetRawMeans = [];
+
+        for (let i = 0; i < uniqueOffsets.length; i++) {
+            const ss = uniqueOffsets[i];
+            const result = this.executeSilently(
+                ff,
+                [
+                    '-hide_banner',
+                    '-nostats',
+                    '-ss',
+                    String(ss),
+                    '-i',
+                    file,
+                    '-an',
+                    '-sn',
+                    '-dn',
+                    '-vf',
+                    vf,
+                    '-frames:v',
+                    String(framesPerSample),
+                    '-f',
+                    'null',
+                    '-'
+                ],
+                timeoutSeconds
+            );
+
+            const output =
+                (result && result.standardError ? result.standardError : '') +
+                '\n' +
+                (result && result.standardOutput ? result.standardOutput : '');
+
+            const values = [];
+            let m;
+            while ((m = yavgRe.exec(output)) !== null) {
+                const n = parseFloat(m[1]);
+                if (!isNaN(n)) values.push(n);
+            }
+
+            perOffsetCounts.push(values.length);
+            if (values.length < 10) {
+                Logger.WLog(
+                    `Noise probe failed at offset ${ss}s: found ${values.length} samples (needed 10). ExitCode: ${
+                        result ? result.exitCode : 'null'
+                    }`
+                );
+                if (output && output.length > 0) {
+                    Logger.DLog(`Noise probe output (first 1000 chars): ${output.substring(0, 1000)}`);
+                }
+                perOffsetMeans.push(null);
+                continue;
+            }
+
+            // Ignore the first few frames (warm-up / initial difference state)
+            const mean = this.meanNumber(values, 6);
+            perOffsetMeans.push(mean);
+            perOffsetRawMeans.push(mean);
+        }
+
+        const validMeans = [];
+        for (let i = 0; i < perOffsetMeans.length; i++) {
+            const v = perOffsetMeans[i];
+            if (v === null || v === undefined) continue;
+            if (isNaN(v)) continue;
+            validMeans.push(v);
+        }
+        if (validMeans.length === 0) {
+            return {
+                ok: false,
+                score: null,
+                reason: 'no-samples',
+                samples: [],
+                offsets: uniqueOffsets,
+                perOffsetMeans: perOffsetMeans,
+                perOffsetCounts: perOffsetCounts
+            };
+        }
+
+        const score = this.medianNumber(validMeans);
+        return {
+            ok: true,
+            score: score,
+            reason: 'ok',
+            samples: validMeans,
+            offsets: uniqueOffsets,
+            perOffsetMeans: perOffsetMeans,
+            perOffsetCounts: perOffsetCounts
+        };
+    }
+
     /**
      * Probes video duration using FFmpeg
      * @param {string} ffmpegPath FFmpeg executable path
@@ -809,59 +1021,13 @@ export class ScriptHelpers {
     probeDurationSeconds(ffmpegPath, inputFile) {
         const file = String(inputFile || '').trim();
         if (!file) return 0;
-        try {
-            const psi = new System.Diagnostics.ProcessStartInfo();
-            psi.FileName = String(ffmpegPath);
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
 
-            const args = ['-hide_banner', '-i', file];
-            let usedArgumentList = false;
-            try {
-                if (psi.ArgumentList) {
-                    for (let i = 0; i < args.length; i++) psi.ArgumentList.Add(String(args[i]));
-                    usedArgumentList = true;
-                }
-            } catch (e) {}
-            if (!usedArgumentList) {
-                psi.Arguments = args.map((a) => this.quoteProcessArg(a)).join(' ');
-            }
+        const result = this.executeSilently(ffmpegPath, ['-hide_banner', '-i', file], 15);
 
-            const p = new System.Diagnostics.Process();
-            p.StartInfo = psi;
-            const started = p.Start();
-            if (!started) return 0;
-
-            // ffmpeg exits quickly with "At least one output file must be specified", but still prints Duration.
-            let exited = true;
-            try {
-                exited = p.WaitForExit(15000);
-            } catch (err) {
-                exited = true;
-            }
-            if (exited === false) {
-                try {
-                    p.Kill();
-                } catch (err) {}
-                return 0;
-            }
-
-            let text = '';
-            try {
-                text += String(p.StandardError.ReadToEnd() || '');
-            } catch (err) {}
-            try {
-                text += '\n' + String(p.StandardOutput.ReadToEnd() || '');
-            } catch (err) {}
-
-            const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
-            if (!m) return 0;
-            const d = this.parseDurationSeconds(m[1]);
-            return d > 0 ? d : 0;
-        } catch (err) {
-            return 0;
-        }
+        const text = (result.standardError || '') + '\n' + (result.standardOutput || '');
+        const m = String(text || '').match(/Duration:\s*([0-9:.]+)/i);
+        if (!m) return 0;
+        const d = this.parseDurationSeconds(m[1]);
+        return d > 0 ? d : 0;
     }
 }

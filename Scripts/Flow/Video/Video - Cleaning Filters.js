@@ -3,13 +3,15 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 40
+ * @revision 43
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
  * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (advanced; may break hardware pipelines depending on runner settings)
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable QSV deinterlacing (uses a quick `idet` probe)
+ * @param {bool} AutoNoiseDenoise Probe video noise/grain level and nudge denoise strength (bounded adjustment)
  * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
+ * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower, can improve compression/quality; requires FFmpeg/QSV support)
  * @output Cleaned video
  */
 function Script(
@@ -18,14 +20,17 @@ function Script(
     UseCPUFilters,
     AllowCpuFiltersWithHardwareEncode,
     AutoDeinterlace,
-    MpDecimateAnimation
+    AutoNoiseDenoise,
+    MpDecimateAnimation,
+    QsvLookAhead
 ) {
-    Logger.ILog('Cleaning filters.js revision 40 loaded');
+    Logger.ILog('Cleaning filters.js revision 43 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
     const safeString = (v) => helpers.safeString(v);
     const truthy = (v) => helpers.truthy(v);
+    const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
 
     const listAdd = (l, i) => helpers.listAdd(l, i);
     const listAddUnique = (l, i) => helpers.listAddUnique(l, i);
@@ -45,13 +50,48 @@ function Script(
     AllowCpuFiltersWithHardwareEncode =
         truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
     AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
+    AutoNoiseDenoise = truthy(AutoNoiseDenoise) || truthy(Variables.AutoNoiseDenoise);
     MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
+    QsvLookAhead = truthy(QsvLookAhead) || truthy(Variables['CleaningFilters.QsvTune.LookAhead']);
 
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
         // FileFlows VideoInfo.Bitrate is typically in bits/sec. If it's already in kbps this won't trip.
         if (value > 1000000) return Math.round(value / 1000);
         return Math.round(value);
+    }
+
+    function firstDefinedVariableNumber(keys, defaultValue) {
+        const list = keys || [];
+        for (let i = 0; i < list.length; i++) {
+            const key = list[i];
+            let val = null;
+            try {
+                val = Variables[key];
+            } catch (err) {}
+            if (val === null || val === undefined) continue;
+            const s = String(val).trim();
+            if (!s) continue;
+            const n = parseFloat(s);
+            if (!isNaN(n)) return n;
+        }
+        return defaultValue;
+    }
+
+    function firstDefinedVariableString(keys, defaultValue) {
+        const list = keys || [];
+        for (let i = 0; i < list.length; i++) {
+            const key = list[i];
+            let val = null;
+            try {
+                val = Variables[key];
+            } catch (err) {}
+            if (val === null || val === undefined) continue;
+            const s = String(val).trim();
+            if (!s) continue;
+            return s;
+        }
+        return defaultValue;
     }
 
     const safeTokenString = safeString;
@@ -951,6 +991,122 @@ function Script(
         }
     }
 
+    // ===== AUTO NOISE-BASED DENOISE NUDGE (optional) =====
+    // This is intentionally a bounded adjustment to the heuristic denoiseLevel above (year/genre/bitrate based).
+    // It can be misled by very fast motion or heavy scene changes, so we never let it fully decide denoise.
+    let denoiseLevelBase = denoiseLevel;
+    Variables.denoiseLevel_base = denoiseLevelBase;
+
+    if (AutoNoiseDenoise && !SkipDenoise && !forceVppQsv && !forceHqdn3d) {
+        try {
+            const ffmpegPath = Flow.GetToolPath('FFmpeg') || Flow.GetToolPath('ffmpeg') || Variables.ffmpeg;
+            const inputFile =
+                (fileVar && fileVar.Orig && fileVar.Orig.FullName) || (fileVar && fileVar.FullName) || Flow.WorkingFile;
+
+            if (ffmpegPath && inputFile) {
+                const framesPerSample =
+                    parseInt(Variables['NoiseProbe.FramesPerSample'], 10) ||
+                    parseInt(Variables.NoiseProbeFramesPerSample, 10) ||
+                    180;
+                const timeoutSeconds =
+                    parseInt(Variables['NoiseProbe.TimeoutSeconds'], 10) ||
+                    parseInt(Variables.NoiseProbeTimeoutSeconds, 10) ||
+                    300;
+
+                const probe = helpers.probeTemporalNoiseScore(ffmpegPath, inputFile, duration, {
+                    framesPerSample: framesPerSample,
+                    timeoutSeconds: timeoutSeconds
+                });
+
+                Variables.noise_probe_ok = !!(probe && probe.ok);
+                Variables.noise_probe_reason = probe ? probe.reason : 'no-probe';
+                Variables.noise_probe_offsets = probe && probe.offsets ? safeTokenString(probe.offsets.join(',')) : '';
+                Variables.noise_probe_samples =
+                    probe && probe.samples ? safeTokenString(probe.samples.map((x) => String(x)).join(',')) : '';
+
+                if (probe && probe.ok && probe.score !== null && probe.score !== undefined && !isNaN(probe.score)) {
+                    const score = Math.round(parseFloat(probe.score) * 1000) / 1000;
+                    Variables.noise_probe_score = score;
+
+                    let adjust = 0;
+                    if (score >= 4.5) adjust = 25;
+                    else if (score >= 3.6) adjust = 18;
+                    else if (score >= 2.8) adjust = 10;
+                    else if (score < 2.0) adjust = -10;
+
+                    let maxIncrease =
+                        parseInt(Variables['NoiseProbe.MaxIncrease'], 10) ||
+                        parseInt(Variables.NoiseProbeMaxIncrease, 10) ||
+                        25;
+                    let maxDecrease =
+                        parseInt(Variables['NoiseProbe.MaxDecrease'], 10) ||
+                        parseInt(Variables.NoiseProbeMaxDecrease, 10) ||
+                        10;
+
+                    // Preserve intentional grain for doc/horror, and be conservative for very modern content.
+                    if (isDocumentary || isHorror) maxIncrease = Math.min(maxIncrease, 10);
+                    if (year >= 2019) maxIncrease = Math.min(maxIncrease, 10);
+
+                    if (adjust > 0) adjust = Math.min(adjust, maxIncrease);
+                    if (adjust < 0) adjust = -Math.min(Math.abs(adjust), maxDecrease);
+
+                    Variables.noise_probe_adjust = adjust;
+                    denoiseLevel = clampNumber(denoiseLevelBase + adjust, 0, 100);
+                    Variables.denoiseLevel = denoiseLevel;
+
+                    Logger.ILog(
+                        `Noise probe: score=${score} -> denoise adjust ${adjust} (base ${denoiseLevelBase} => ${denoiseLevel})`
+                    );
+                } else {
+                    Variables.noise_probe_adjust = 0;
+                    Logger.WLog(`Noise probe enabled but no usable samples (${Variables.noise_probe_reason})`);
+                }
+            } else {
+                Variables.noise_probe_ok = false;
+                Variables.noise_probe_reason = 'missing-ffmpeg-or-input';
+                Variables.noise_probe_adjust = 0;
+                Logger.WLog('Noise probe enabled but ffmpeg path or input file missing; skipping');
+            }
+        } catch (err) {
+            Variables.noise_probe_ok = false;
+            Variables.noise_probe_reason = `error:${err}`;
+            Variables.noise_probe_adjust = 0;
+            Logger.WLog(`Noise probe failed: ${err}`);
+        }
+    } else {
+        Variables.noise_probe_ok = false;
+        Variables.noise_probe_reason = AutoNoiseDenoise ? 'skipped (forced denoise or SkipDenoise)' : 'disabled';
+        Variables.noise_probe_adjust = 0;
+    }
+
+    // ===== MANUAL DENOISE CONTROL (Variables) =====
+    // Useful for "more compression" without changing encoder presets:
+    // - CleaningFilters.DenoiseBoost: +/- level added after heuristics + (optional) noise probe
+    // - CleaningFilters.DenoiseMin / DenoiseMax: clamps final denoise decision
+    const denoiseBoost = Math.round(
+        firstDefinedVariableNumber(['CleaningFilters.DenoiseBoost', 'CleaningFilters.DenoiseBoostPercent'], 0) || 0
+    );
+    const denoiseMinRaw = firstDefinedVariableString(['CleaningFilters.DenoiseMin'], '');
+    const denoiseMaxRaw = firstDefinedVariableString(['CleaningFilters.DenoiseMax'], '');
+    const denoiseMin = denoiseMinRaw ? clampNumber(parseInt(denoiseMinRaw, 10), 0, 100) : null;
+    const denoiseMax = denoiseMaxRaw ? clampNumber(parseInt(denoiseMaxRaw, 10), 0, 100) : null;
+
+    if (denoiseBoost !== 0) {
+        Variables.denoise_boost = denoiseBoost;
+        denoiseLevel = clampNumber(denoiseLevel + denoiseBoost, 0, 100);
+        Logger.ILog(`Applied denoise boost: ${denoiseBoost} (now ${denoiseLevel})`);
+    }
+    if (denoiseMin !== null && denoiseLevel < denoiseMin) {
+        Variables.denoise_min = denoiseMin;
+        denoiseLevel = denoiseMin;
+        Logger.ILog(`Applied denoise min clamp: ${denoiseMin} (now ${denoiseLevel})`);
+    }
+    if (denoiseMax !== null && denoiseLevel > denoiseMax) {
+        Variables.denoise_max = denoiseMax;
+        denoiseLevel = denoiseMax;
+        Logger.ILog(`Applied denoise max clamp: ${denoiseMax} (now ${denoiseLevel})`);
+    }
+
     // Store computed values for downstream nodes
     Variables.denoiseLevel = denoiseLevel;
     Variables.isRestoredContent = isRestoredContent;
@@ -1532,44 +1688,116 @@ function Script(
     // Apply QSV tuning (only add if missing).
     if (hwEncoder === 'qsv') {
         try {
-            const ep = video.EncodingParameters;
-            if (listCount(ep) === null) {
-                Logger.WLog('Unable to apply QSV tuning params: EncodingParameters is not a mutable list');
+            const skipQsvTuning = truthy(Variables['CleaningFilters.SkipQsvTuning']);
+            if (skipQsvTuning) {
+                Logger.WLog('Skipping QSV tuning params (Variables[CleaningFilters.SkipQsvTuning]=true)');
             } else {
-                const fps =
-                    parseFloat(
-                        (videoVar && videoVar.FramesPerSecond) ||
-                            (viVar && viVar.FramesPerSecond) ||
-                            (viVar && viVar.FPS) ||
-                            (videoVar && videoVar.FPS) ||
-                            24
-                    ) || 24;
-                const gop = Math.max(48, Math.min(300, Math.round(fps * 5))); // ~5 seconds keyframe interval
-
-                const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
-                const added = [];
-
-                if (ensureArgWithValue(ep, '-extbrc', '1', isFlag('-extbrc'))) added.push('-extbrc 1');
-
-                // B-frames / refs (mostly impacts compression at same quality).
-                if (ensureArgWithValue(ep, '-bf', '7', isFlag('-bf'))) added.push('-bf 7');
-                const desiredRefs =
-                    isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent) ? '6' : '4';
-                if (ensureArgWithValue(ep, '-refs', desiredRefs, isFlag('-refs'))) added.push(`-refs ${desiredRefs}`);
-
-                // Adaptive frame decisions.
-                if (ensureArgWithValue(ep, '-adaptive_i', '1', isFlag('-adaptive_i'))) added.push('-adaptive_i 1');
-                if (ensureArgWithValue(ep, '-adaptive_b', '1', isFlag('-adaptive_b'))) added.push('-adaptive_b 1');
-
-                // GOP (seekability + compression tradeoff). Do not override if the node already set one.
-                const gopPred = (t) => t === '-g' || t === '-g:v' || t.startsWith('-g:') || t.startsWith('-g:v');
-                if (ensureArgWithValue(ep, '-g:v', String(gop), gopPred)) added.push(`-g:v ${gop}`);
-
-                if (added.length > 0) {
-                    Variables.applied_qsv_tuning = added.join(' ');
-                    Logger.ILog(`Applied QSV tuning params: ${Variables.applied_qsv_tuning}`);
+                const ep = video.EncodingParameters;
+                if (listCount(ep) === null) {
+                    Logger.WLog('Unable to apply QSV tuning params: EncodingParameters is not a mutable list');
                 } else {
-                    Logger.DLog('QSV tuning params already present; no changes made');
+                    const fps =
+                        parseFloat(
+                            (videoVar && videoVar.FramesPerSecond) ||
+                                (viVar && viVar.FramesPerSecond) ||
+                                (viVar && viVar.FPS) ||
+                                (videoVar && videoVar.FPS) ||
+                                24
+                        ) || 24;
+
+                    const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
+                    const added = [];
+                    const override = truthy(Variables['CleaningFilters.QsvTune.Override']);
+
+                    const extBrc = clampNumber(
+                        firstDefinedVariableNumber(
+                            ['CleaningFilters.QsvTune.ExtBrc', 'CleaningFilters.QsvTune.ExtBRC'],
+                            1
+                        ),
+                        0,
+                        1
+                    );
+                    const bFrames = clampNumber(
+                        firstDefinedVariableNumber(
+                            ['CleaningFilters.QsvTune.BFrames', 'CleaningFilters.QsvTune.Bf'],
+                            7
+                        ),
+                        0,
+                        7
+                    );
+                    const refs = clampNumber(
+                        firstDefinedVariableNumber(
+                            ['CleaningFilters.QsvTune.Refs'],
+                            isAnimation && (AggressiveCompression || isOldCelAnimation || isRestoredContent) ? 6 : 4
+                        ),
+                        1,
+                        16
+                    );
+
+                    const gopSeconds = clampNumber(
+                        firstDefinedVariableNumber(['CleaningFilters.QsvTune.GopSeconds'], 5),
+                        1,
+                        20
+                    );
+                    const gop2 = Math.max(24, Math.min(600, Math.round(fps * gopSeconds)));
+
+                    const adaptiveI = clampNumber(
+                        firstDefinedVariableNumber(['CleaningFilters.QsvTune.AdaptiveI'], 1),
+                        0,
+                        1
+                    );
+                    const adaptiveB = clampNumber(
+                        firstDefinedVariableNumber(['CleaningFilters.QsvTune.AdaptiveB'], 1),
+                        0,
+                        1
+                    );
+
+                    if (override) removeArgWithValue(ep, isFlag('-extbrc'));
+                    if (ensureArgWithValue(ep, '-extbrc', String(extBrc), isFlag('-extbrc')))
+                        added.push(`-extbrc ${extBrc}`);
+
+                    // Lookahead (optional; can improve compression, but costs throughput and may be unsupported on some stacks).
+                    if (truthy(QsvLookAhead)) {
+                        if (override) removeArgWithValue(ep, isFlag('-look_ahead'));
+                        if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead')))
+                            added.push('-look_ahead 1');
+
+                        const ladRaw = firstDefinedVariableString(['CleaningFilters.QsvTune.LookAheadDepth'], '');
+                        const lad = ladRaw ? clampNumber(parseFloat(ladRaw), 1, 200) : null;
+                        if (lad && !isNaN(lad)) {
+                            if (override) removeArgWithValue(ep, isFlag('-look_ahead_depth'));
+                            if (ensureArgWithValue(ep, '-look_ahead_depth', String(lad), isFlag('-look_ahead_depth')))
+                                added.push(`-look_ahead_depth ${lad}`);
+                        }
+                    }
+
+                    // B-frames / refs (mostly impacts compression at same quality).
+                    if (override) removeArgWithValue(ep, isFlag('-bf'));
+                    if (ensureArgWithValue(ep, '-bf', String(bFrames), isFlag('-bf'))) added.push(`-bf ${bFrames}`);
+                    if (override) removeArgWithValue(ep, isFlag('-refs'));
+                    if (ensureArgWithValue(ep, '-refs', String(refs), isFlag('-refs'))) added.push(`-refs ${refs}`);
+
+                    // Adaptive frame decisions.
+                    if (override) removeArgWithValue(ep, isFlag('-adaptive_i'));
+                    if (ensureArgWithValue(ep, '-adaptive_i', String(adaptiveI), isFlag('-adaptive_i')))
+                        added.push(`-adaptive_i ${adaptiveI}`);
+                    if (override) removeArgWithValue(ep, isFlag('-adaptive_b'));
+                    if (ensureArgWithValue(ep, '-adaptive_b', String(adaptiveB), isFlag('-adaptive_b')))
+                        added.push(`-adaptive_b ${adaptiveB}`);
+
+                    // GOP (seekability + compression tradeoff). Do not override if the node already set one.
+                    const gopPred = (t) => t === '-g' || t === '-g:v' || t.startsWith('-g:') || t.startsWith('-g:v');
+                    if (override) removeArgWithValue(ep, gopPred);
+                    if (ensureArgWithValue(ep, '-g:v', String(gop2), gopPred)) added.push(`-g:v ${gop2}`);
+
+                    if (added.length > 0) {
+                        Variables.applied_qsv_tuning = added.join(' ');
+                        Logger.ILog(
+                            `Applied QSV tuning params${override ? ' (override)' : ''}: ${Variables.applied_qsv_tuning}`
+                        );
+                    } else {
+                        Logger.DLog('QSV tuning params already present; no changes made');
+                    }
                 }
             }
         } catch (err) {
