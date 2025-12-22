@@ -1928,24 +1928,14 @@ function Script(
                 Variables.AutoQuality_FilterMode = upstreamFiltersStr ? 'upstream' : 'none';
 
             const applyRefFiltersInMetric = referenceMode === 'filtered-in-metric' && upstreamFiltersStr;
+            const refChain = applyRefFiltersInMetric
+                ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic`
+                : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
 
             // Create unique log file for this metric measurement
             const metricLogFile = `${tempDir}/${task.sample.key}_metric_q${qualityValue}.log`;
             const currentMetricFilter = buildMetricFilter(metric, metricLogFile);
-
-            // CRITICAL: libvmaf requires both inputs to have identical dimensions and pixel format.
-            // Use scale2ref to match distorted to reference dimensions, and convert both to yuv420p10le
-            // (a format libvmaf handles well for both 8-bit and 10-bit content).
-            // Order: [1:v] is reference (second input), [0:v] is distorted (first input/encoded test sample)
-            // scale2ref scales the second stream (main) to match the first stream (ref)
-            const refPreprocess = applyRefFiltersInMetric
-                ? `setpts=PTS-STARTPTS,${upstreamFiltersStr}`
-                : 'setpts=PTS-STARTPTS';
-            const filterComplex =
-                `[1:v]${refPreprocess},format=yuv420p10le[ref_fmt];` +
-                `[0:v]setpts=PTS-STARTPTS,format=yuv420p10le[dist_fmt];` +
-                `[ref_fmt][dist_fmt]scale2ref=flags=bicubic[reference][distorted];` +
-                `[distorted][reference]${currentMetricFilter}`;
+            const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${currentMetricFilter}`;
 
             // Use -loglevel error and -nostats to suppress verbose output
             // Score is captured via log file instead of stdout
@@ -2032,13 +2022,18 @@ function Script(
                     const logContent = System.IO.File.ReadAllText(t.metricLogFile);
                     if (metric === 'VMAF') {
                         // Parse JSON output from libvmaf
-                        // Format: {"frames":[...],"pooled_metrics":{"vmaf":{"min":X,"max":X,"mean":X,...}}}
-                        const meanMatch = logContent.match(/"mean"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
-                        if (meanMatch) {
-                            score = parseFloat(meanMatch[1]);
+                        // Format: {"pooled_metrics":{"integer_adm2":{...},"vmaf":{"min":X,"max":X,"mean":X,...}}}
+                        // IMPORTANT: libvmaf includes other metrics (integer_adm2, integer_motion, etc.) BEFORE vmaf
+                        // so we must specifically match the "vmaf" object's mean, not just any "mean"
+                        // Look for "vmaf" followed by an object containing "mean"
+                        const vmafMeanMatch = logContent.match(
+                            /"vmaf"\s*:\s*\{[^}]*"mean"\s*:\s*([0-9]+(?:\.[0-9]+)?)/
+                        );
+                        if (vmafMeanMatch) {
+                            score = parseFloat(vmafMeanMatch[1]);
                         } else {
-                            // Fallback: try to find vmaf value anywhere in JSON
-                            const vmafMatch = logContent.match(/"vmaf"\s*[:\s]*([0-9]+(?:\.[0-9]+)?)/);
+                            // Fallback: try older format where vmaf is a direct value
+                            const vmafMatch = logContent.match(/"vmaf"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
                             if (vmafMatch) score = parseFloat(vmafMatch[1]);
                         }
                     } else {
