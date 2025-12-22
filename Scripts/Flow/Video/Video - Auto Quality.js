@@ -4,7 +4,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 25
+ * @revision 26
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -174,7 +174,7 @@ function Script(
     // Test if FFmpeg has libvmaf compiled in, fall back to SSIM if not
     let qualityMetric = 'SSIM'; // Default to SSIM (always available)
     try {
-        Logger.ILog(`Checking for libvmaf support in: ${ffmpegPath}`);
+        Logger.DLog(`Checking for libvmaf support in: ${ffmpegPath}`);
 
         // Use a targeted check to avoid printing the full `-filters` output to logs.
         let vmafCheck = null;
@@ -195,7 +195,8 @@ function Script(
             vmafCheck = Flow.Execute({
                 command: ffmpegPath,
                 argumentList: ['-hide_banner', '-loglevel', 'error', '-h', 'filter=libvmaf'],
-                timeout: 30
+                timeout: 30,
+                silent: true
             });
         }
 
@@ -216,10 +217,10 @@ function Script(
     }
 
     if (qualityMetric === 'VMAF') {
-        Logger.ILog('Quality metric: VMAF (libvmaf available)');
+        Logger.DLog('Quality metric: VMAF (libvmaf available)');
     } else {
         Logger.WLog('Quality metric: SSIM (libvmaf not available, using fallback)');
-        Logger.ILog('For better quality detection, install FFmpeg with --enable-libvmaf');
+        Logger.DLog('For better quality detection, install FFmpeg with --enable-libvmaf');
     }
     Variables.AutoQuality_Metric = qualityMetric;
 
@@ -276,7 +277,7 @@ function Script(
     // ===== DETECT ENCODER =====
     const targetCodec = getTargetCodec(video);
     const crfArg = getCRFArgument(targetCodec);
-    Logger.ILog(`Target encoder: ${targetCodec}, CRF argument: ${crfArg}`);
+    Logger.DLog(`Target encoder: ${targetCodec}, CRF argument: ${crfArg}`);
 
     // ===== UPSTREAM VIDEO FILTERS (from FFmpeg Builder) =====
     const encodingParamFilter = getVideoFilterFromEncodingParameters(video);
@@ -308,7 +309,7 @@ function Script(
     Variables.AutoQuality_UpstreamVideoFilters = upstreamVideoFilters;
     Variables.AutoQuality_EncodingParamFilter = encodingParamFilter || '';
     if (upstreamVideoFilters) {
-        Logger.ILog(
+        Logger.DLog(
             `Auto quality: using upstream video filters for sampling: ${upstreamVideoFilters} (source=${Variables.AutoQuality_FilterSource})`
         );
     } else {
@@ -370,14 +371,14 @@ function Script(
 
     // ===== CALCULATE SAMPLE POSITIONS =====
     const samplePositions = calculateSamplePositions(duration, SampleCount, SampleDurationSec);
-    Logger.ILog(`Sample positions: ${samplePositions.map((p) => Math.round(p) + 's').join(', ')}`);
+    Logger.DLog(`Sample positions: ${samplePositions.map((p) => Math.round(p) + 's').join(', ')}`);
 
     // Extract short video-only sample files once (provider-style) to avoid repeatedly opening/seeking the full source.
     // If extraction fails, fall back to seeking into the full source for each encode/metric run.
     const samples = extractVideoSamples(ffmpegEncodePath, originalFile, samplePositions, SampleDurationSec);
     const extractedCount = samples.filter((s) => s.isTempSample).length;
     if (extractedCount > 0) {
-        Logger.ILog(`Extracted ${extractedCount}/${samplePositions.length} sample files for quality testing`);
+        Logger.DLog(`Extracted ${extractedCount}/${samplePositions.length} sample files for quality testing`);
     } else {
         Logger.WLog('Could not extract sample files; falling back to direct seeking into the source for tests');
     }
@@ -406,7 +407,7 @@ function Script(
                 `Dark scene detection: SOMEWHAT DARK (avg luma ${avgLuminance.toFixed(1)}) - boosting quality by ${luminanceBoost}`
             );
         } else {
-            Logger.ILog(`Dark scene detection: NORMAL/BRIGHT (avg luma ${avgLuminance.toFixed(1)}) - no adjustment`);
+            Logger.DLog(`Dark scene detection: NORMAL/BRIGHT (avg luma ${avgLuminance.toFixed(1)}) - no adjustment`);
         }
     } else {
         Logger.WLog('Dark scene detection: Could not analyze luminance, skipping adjustment');
@@ -431,7 +432,7 @@ function Script(
 
     // ===== QUALITY-BASED CRF SEARCH =====
     const targetDisplay = qualityMetric === 'SSIM' ? effectiveTarget.toFixed(3) : effectiveTarget;
-    Logger.ILog(
+    Logger.DLog(
         `Starting ${qualityMetric}-based CRF search: CRF ${MinCRF}-${MaxCRF}, target ${qualityMetric} ${targetDisplay}`
     );
 
@@ -494,6 +495,13 @@ function Script(
     let highCRF = MaxCRF;
     let iterations = 0;
 
+    // Sample-based progress tracking
+    // Total operations: reference encode (1 batch) + search iterations × 2 batches (encode + metric)
+    // Estimate total assuming MaxSearchIterations iterations
+    const referenceBatches = referenceMode === 'encoded' ? 1 : 0;
+    const estimatedTotalBatches = referenceBatches + MaxSearchIterations * 2;
+    let batchesCompleted = referenceBatches; // Reference samples already completed
+
     try {
         while (lowCRF <= highCRF && iterations < MaxSearchIterations) {
             iterations++;
@@ -509,15 +517,15 @@ function Script(
                 continue;
             }
 
-            Logger.ILog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
+            Logger.DLog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
             if (typeof Flow.AdditionalInfoRecorder === 'function') {
                 Flow.AdditionalInfoRecorder('Auto Quality', `CRF ${testCRF}`, 1);
             }
 
-            const iterBase = ((iterations - 1) / MaxSearchIterations) * 100.0;
-            const iterSpan = (1.0 / MaxSearchIterations) * 100.0;
+            // Update progress based on batches completed
+            const currentProgress = (batchesCompleted / estimatedTotalBatches) * 100.0;
             if (typeof Flow.PartPercentageUpdate === 'function') {
-                Flow.PartPercentageUpdate(iterBase);
+                Flow.PartPercentageUpdate(currentProgress);
             }
 
             const result = measureQualityAtQualityValue(
@@ -533,9 +541,12 @@ function Script(
                 upstreamVideoFilters,
                 referenceMode,
                 referenceSamples,
-                iterBase,
-                iterSpan
+                batchesCompleted,
+                estimatedTotalBatches
             );
+
+            // Increment batch counter: encode batch + metric batch
+            batchesCompleted += 2;
 
             if (!result || result.score < 0) {
                 Logger.WLog(`${qualityMetric} measurement failed for CRF ${testCRF}, skipping...`);
@@ -556,7 +567,7 @@ function Script(
             });
             const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
             const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GB';
-            Logger.ILog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
+            Logger.DLog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
 
             const maxSize = parseInt(Variables.MaxFileSize || 0);
             const useMaxSize = EnforceMaxSize && maxSize > 0;
@@ -730,7 +741,8 @@ function Script(
                     const r = Flow.Execute({
                         command: task.command,
                         argumentList: task.args,
-                        timeout: 3600
+                        timeout: 3600,
+                        silent: true
                     });
                     results[task.id] = {
                         exitCode: r.exitCode,
@@ -747,7 +759,7 @@ function Script(
         const queue = tasks.slice();
         const running = [];
 
-        Logger.ILog(`Executing ${tasks.length} tasks with concurrency ${concurrency}...`);
+        Logger.DLog(`Executing ${tasks.length} tasks with concurrency ${concurrency}...`);
 
         while (queue.length > 0 || running.length > 0) {
             while (running.length < concurrency && queue.length > 0) {
@@ -778,11 +790,13 @@ function Script(
                     if (isWindows) {
                         psi.FileName = 'cmd.exe';
                         // Quote the command and the arguments carefully
-                        const cmdLine = `"${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
+                        // Suppress libva info messages via environment variable
+                        const cmdLine = `set LIBVA_MESSAGING_LEVEL=0 && "${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
                         psi.Arguments = `/C "${cmdLine}"`;
                     } else {
                         psi.FileName = '/bin/bash';
-                        const cmdLine = `"${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
+                        // Suppress libva info messages via environment variable
+                        const cmdLine = `export LIBVA_MESSAGING_LEVEL=0; "${task.command}" ${task.args.map((a) => helpers.quoteProcessArg(a)).join(' ')} > "${logFile}" 2>&1`;
                         psi.Arguments = `-c ${helpers.quoteProcessArg(cmdLine)}`;
                     }
 
@@ -1041,8 +1055,8 @@ function Script(
                 '-hide_banner',
                 '-loglevel',
                 'error',
+                '-nostats',
                 '-y',
-                '-stats',
                 '-ss',
                 String(sec),
                 '-i',
@@ -1438,10 +1452,10 @@ function Script(
 
         const softwareFilters = upstreamNeedsQsv ? stripQsvOnlyFilters(upstreamFiltersStr) : upstreamFiltersStr;
 
-        Logger.ILog(`Pre-encoding ${samples.length} reference samples at quality ${referenceQuality} (${encoder})...`);
+        Logger.DLog(`Pre-encoding ${samples.length} reference samples at quality ${referenceQuality} (${encoder})...`);
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-stats', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) {
                 args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
@@ -1547,7 +1561,7 @@ function Script(
         if (results.length === 0) {
             Logger.ELog('Failed to encode any reference samples');
         } else {
-            Logger.ILog(`Successfully pre-encoded ${results.length}/${samples.length} reference samples`);
+            Logger.DLog(`Successfully pre-encoded ${results.length}/${samples.length} reference samples`);
         }
 
         return results;
@@ -1566,8 +1580,8 @@ function Script(
         upstreamFilters,
         referenceMode,
         referenceSamples,
-        progressBase,
-        progressSpan
+        batchesCompleted,
+        estimatedTotalBatches
     ) {
         const tempDir = Flow.TempPath;
         const scores = [];
@@ -1577,6 +1591,14 @@ function Script(
         if (!samples || samples.length === 0) {
             Logger.ELog('No samples available for quality measurement');
             return null;
+        }
+
+        // Helper to update progress based on batch completion
+        function updateProgress(additionalBatches) {
+            const progress = ((batchesCompleted + additionalBatches) / estimatedTotalBatches) * 100.0;
+            if (typeof Flow.PartPercentageUpdate === 'function') {
+                Flow.PartPercentageUpdate(Math.min(progress, 100));
+            }
         }
 
         const upstreamFiltersStr = String(upstreamFilters || '').trim();
@@ -1788,7 +1810,7 @@ function Script(
         }
 
         function buildEncodeArgs(sample, qValue, outputFile, filters) {
-            const args = ['-hide_banner', '-loglevel', 'error', '-stats', '-y'];
+            const args = ['-hide_banner', '-loglevel', 'error', '-nostats', '-y'];
             const qsvRequired = detectNeedsQsvFilters(filters);
             if (qsvRequired) {
                 args.push('-init_hw_device', 'qsv=qsv', '-filter_hw_device', 'qsv');
@@ -1823,14 +1845,22 @@ function Script(
             }
         } catch (e) {}
 
-        const metricFilter =
-            metric === 'VMAF'
-                ? `libvmaf=n_threads=4${vmafNSubsample > 1 ? ':n_subsample=' + vmafNSubsample : ''}:shortest=1:eof_action=endall`
-                : 'ssim';
-
-        const pb = parseFloat(progressBase || 0);
-        const ps = parseFloat(progressSpan || 100);
-        const stepSpan = ps / 2;
+        // Build metric filter with log file output to avoid needing -loglevel info
+        function buildMetricFilter(metricType, logFilePath) {
+            const escapedPath = escapeFfmpegFilterArgValue(logFilePath);
+            if (metricType === 'VMAF') {
+                return (
+                    'libvmaf=n_threads=4' +
+                    (vmafNSubsample > 1 ? ':n_subsample=' + vmafNSubsample : '') +
+                    ':shortest=1:eof_action=endall:log_path=' +
+                    escapedPath +
+                    ':log_fmt=json'
+                );
+            } else {
+                // SSIM with stats_file
+                return 'ssim=stats_file=' + escapedPath;
+            }
+        }
 
         const encodeTasks = [];
         for (let i = 0; i < samples.length; i++) {
@@ -1853,7 +1883,8 @@ function Script(
 
         const encodeResults = executeBatch(encodeTasks, MaxParallel);
 
-        if (typeof Flow.PartPercentageUpdate === 'function') Flow.PartPercentageUpdate(pb + stepSpan);
+        // Update progress: encode batch complete (0.5 of this iteration's 2 batches)
+        updateProgress(0.5);
 
         const metricTasks = [];
         const validEncodedSamples = [];
@@ -1888,9 +1919,15 @@ function Script(
             const refChain = applyRefFiltersInMetric
                 ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic`
                 : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
-            const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${metricFilter}`;
 
-            const metricArgs = ['-hide_banner', '-loglevel', 'info', '-stats', '-y', '-i', task.encodedSample];
+            // Create unique log file for this metric measurement
+            const metricLogFile = `${tempDir}/${task.sample.key}_metric_q${qualityValue}.log`;
+            const currentMetricFilter = buildMetricFilter(metric, metricLogFile);
+            const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${currentMetricFilter}`;
+
+            // Use -loglevel error and -nostats to suppress verbose output
+            // Score is captured via log file instead of stdout
+            const metricArgs = ['-hide_banner', '-loglevel', 'error', '-nostats', '-y', '-i', task.encodedSample];
 
             if (referenceMode === 'encoded') {
                 const referencePath = ref && ref.path;
@@ -1913,7 +1950,8 @@ function Script(
                 command: ffmpegMetric,
                 args: metricArgs,
                 sample: task.sample,
-                encodedSample: task.encodedSample
+                encodedSample: task.encodedSample,
+                metricLogFile: metricLogFile
             });
 
             validEncodedSamples.push(task.encodedSample);
@@ -1921,7 +1959,8 @@ function Script(
 
         const metricResults = executeBatch(metricTasks, MaxParallel);
 
-        if (typeof Flow.PartPercentageUpdate === 'function') Flow.PartPercentageUpdate(pb + ps);
+        // Update progress: metric batch complete (full 2 batches for this iteration)
+        updateProgress(2);
 
         for (let i = 0; i < metricTasks.length; i++) {
             const t = metricTasks[i];
@@ -1931,26 +1970,54 @@ function Script(
 
             if (res.exitCode !== 0 && res.exitCode !== 1) {
                 Logger.WLog(
-                    `Error measuring quality for sample ${t.sample.key}. Output: ${res.output.substring(0, 100)}...`
+                    `Error measuring quality for sample ${t.sample.key}. Output: ${(res.output || '').substring(0, 100)}...`
                 );
+                cleanupFiles([t.metricLogFile]);
                 continue;
             }
 
-            const output = res.output;
+            // Read score from log file instead of stdout
             let score = null;
-            if (metric === 'VMAF') {
-                const vmafMatch = output.match(/VMAF score[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                if (vmafMatch) score = parseFloat(vmafMatch[1]);
-                else {
-                    const jsonMatch = output.match(/"vmaf"[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                    if (jsonMatch) score = parseFloat(jsonMatch[1]);
+            try {
+                if (System.IO.File.Exists(t.metricLogFile)) {
+                    const logContent = System.IO.File.ReadAllText(t.metricLogFile);
+                    if (metric === 'VMAF') {
+                        // Parse JSON output from libvmaf
+                        // Format: {"frames":[...],"pooled_metrics":{"vmaf":{"min":X,"max":X,"mean":X,...}}}
+                        const meanMatch = logContent.match(/"mean"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
+                        if (meanMatch) {
+                            score = parseFloat(meanMatch[1]);
+                        } else {
+                            // Fallback: try to find vmaf value anywhere in JSON
+                            const vmafMatch = logContent.match(/"vmaf"\s*[:\s]*([0-9]+(?:\.[0-9]+)?)/);
+                            if (vmafMatch) score = parseFloat(vmafMatch[1]);
+                        }
+                    } else {
+                        // Parse SSIM stats_file output
+                        // Format: n:1 Y:0.9999 U:0.9999 V:0.9999 All:0.9999 (per frame)
+                        // Compute average of All values
+                        const allValues = [];
+                        const allRe = /All:([0-9]+(?:\.[0-9]+)?)/g;
+                        let m;
+                        while ((m = allRe.exec(logContent)) !== null) {
+                            const v = parseFloat(m[1]);
+                            if (!isNaN(v)) allValues.push(v);
+                        }
+                        if (allValues.length > 0) {
+                            let sum = 0;
+                            for (let j = 0; j < allValues.length; j++) sum += allValues[j];
+                            score = sum / allValues.length;
+                        }
+                    }
                 }
-            } else {
-                const ssimMatch = output.match(/All:[^0-9]*([0-9]+(?:[.][0-9]+)?)/i);
-                if (ssimMatch) score = parseFloat(ssimMatch[1]);
+            } catch (e) {
+                Logger.WLog(`Failed to read metric log file for sample ${t.sample.key}: ${e}`);
             }
 
-            if (score !== null) {
+            // Cleanup metric log file
+            cleanupFiles([t.metricLogFile]);
+
+            if (score !== null && !isNaN(score)) {
                 scores.push(score);
                 const scoreDisplay = metric === 'SSIM' ? score.toFixed(4) : score.toFixed(2);
                 Logger.DLog(`Sample ${t.id + 1} (${t.sample.key}): ${metric} ${scoreDisplay}`);

@@ -69,12 +69,12 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
 
     Logger.ILog(
         'File size is ' +
-        fileSize +
-        ' (' +
-        helpers.bytesToGb(fileSize) +
-        ' GB) and should be below: ' +
-        helpers.bytesToGb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
-        ' GB'
+            fileSize +
+            ' (' +
+            helpers.bytesToGb(fileSize) +
+            ' GB) and should be below: ' +
+            helpers.bytesToGb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
+            ' GB'
     );
     Logger.ILog('Duration: ' + duration + ' seconds');
     Logger.ILog('Detected mibPerHour: ' + mibPerHour);
