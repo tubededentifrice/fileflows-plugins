@@ -4,7 +4,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 26
+ * @revision 27
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -1562,6 +1562,18 @@ function Script(
             Logger.ELog('Failed to encode any reference samples');
         } else {
             Logger.DLog(`Successfully pre-encoded ${results.length}/${samples.length} reference samples`);
+            // Log reference sample details to help diagnose VMAF issues
+            for (let i = 0; i < results.length; i++) {
+                const r = results[i];
+                let sizeKB = 0;
+                try {
+                    const fi = new System.IO.FileInfo(r.path);
+                    if (fi.Exists) sizeKB = Math.round(fi.Length / 1024);
+                } catch (e) {}
+                Logger.DLog(
+                    `  Reference ${i + 1}: ${r.key} -> ${r.path} (${sizeKB}KB, quality=${referenceQuality}, filterMode=${r.filterMode})`
+                );
+            }
         }
 
         return results;
@@ -1916,14 +1928,24 @@ function Script(
                 Variables.AutoQuality_FilterMode = upstreamFiltersStr ? 'upstream' : 'none';
 
             const applyRefFiltersInMetric = referenceMode === 'filtered-in-metric' && upstreamFiltersStr;
-            const refChain = applyRefFiltersInMetric
-                ? `setpts=PTS-STARTPTS,${upstreamFiltersStr},scale=flags=bicubic`
-                : 'setpts=PTS-STARTPTS,scale=flags=bicubic';
 
             // Create unique log file for this metric measurement
             const metricLogFile = `${tempDir}/${task.sample.key}_metric_q${qualityValue}.log`;
             const currentMetricFilter = buildMetricFilter(metric, metricLogFile);
-            const filterComplex = `[0:v]setpts=PTS-STARTPTS,scale=flags=bicubic[distorted];[1:v]${refChain}[reference];[distorted][reference]${currentMetricFilter}`;
+
+            // CRITICAL: libvmaf requires both inputs to have identical dimensions and pixel format.
+            // Use scale2ref to match distorted to reference dimensions, and convert both to yuv420p10le
+            // (a format libvmaf handles well for both 8-bit and 10-bit content).
+            // Order: [1:v] is reference (second input), [0:v] is distorted (first input/encoded test sample)
+            // scale2ref scales the second stream (main) to match the first stream (ref)
+            const refPreprocess = applyRefFiltersInMetric
+                ? `setpts=PTS-STARTPTS,${upstreamFiltersStr}`
+                : 'setpts=PTS-STARTPTS';
+            const filterComplex =
+                `[1:v]${refPreprocess},format=yuv420p10le[ref_fmt];` +
+                `[0:v]setpts=PTS-STARTPTS,format=yuv420p10le[dist_fmt];` +
+                `[ref_fmt][dist_fmt]scale2ref=flags=bicubic[reference][distorted];` +
+                `[distorted][reference]${currentMetricFilter}`;
 
             // Use -loglevel error and -nostats to suppress verbose output
             // Score is captured via log file instead of stdout
@@ -1945,6 +1967,25 @@ function Script(
 
             metricArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
 
+            // Diagnostic: log file sizes to help debug VMAF mismatches
+            let distSize = 0;
+            let refSize = 0;
+            try {
+                const distFi = new System.IO.FileInfo(task.encodedSample);
+                if (distFi.Exists) distSize = distFi.Length;
+            } catch (e) {}
+            try {
+                const refPath = ref && ref.path;
+                if (refPath) {
+                    const refFi = new System.IO.FileInfo(refPath);
+                    if (refFi.Exists) refSize = refFi.Length;
+                }
+            } catch (e) {}
+            Logger.DLog(
+                `VMAF comparison: distorted=${task.encodedSample} (${Math.round(distSize / 1024)}KB), ` +
+                    `reference=${ref && ref.path} (${Math.round(refSize / 1024)}KB)`
+            );
+
             metricTasks.push({
                 id: i,
                 command: ffmpegMetric,
@@ -1955,6 +1996,14 @@ function Script(
             });
 
             validEncodedSamples.push(task.encodedSample);
+        }
+
+        // Log first VMAF command for debugging
+        if (metricTasks.length > 0) {
+            const firstTask = metricTasks[0];
+            Logger.DLog(
+                `VMAF command (sample 1): ${firstTask.command} ${firstTask.args.map((a) => (a.indexOf(' ') >= 0 ? '"' + a + '"' : a)).join(' ')}`
+            );
         }
 
         const metricResults = executeBatch(metricTasks, MaxParallel);
