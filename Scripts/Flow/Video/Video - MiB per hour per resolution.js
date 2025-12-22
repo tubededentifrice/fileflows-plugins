@@ -53,7 +53,7 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
 
     const fileSize = Variables.file.Size;
     if (!duration || isNaN(duration) || duration <= 0) {
-        Logger.WLog(`Unable to determine video duration. MiB per hour calculation aborted. Duration: ${duration}`);
+        Logger.WLog('Unable to determine video duration. MiB per hour calculation aborted. Duration: ' + duration);
         return OUTPUT_UNABLE;
     }
 
@@ -62,19 +62,19 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     const maxSizeBytes = (duration * MaxMiBPerHour * 1024 * 1024) / 3600;
     if (!Variables.MaxFileSize) {
         Variables.MaxFileSize = Math.floor(maxSizeBytes);
-        Logger.ILog('Setting Variables.MaxFileSize to: ' + Variables.MaxFileSize);
+        Logger.ILog('Setting MaxFileSize to: ' + Variables.MaxFileSize);
     } else {
-        Logger.ILog('Variables.MaxFileSize is already set to: ' + Variables.MaxFileSize + ', not overriding.');
+        Logger.ILog('MaxFileSize is already set to: ' + Variables.MaxFileSize + ', not overriding.');
     }
 
     Logger.ILog(
         'File size is ' +
-            fileSize +
-            ' (' +
-            helpers.bytesToGb(fileSize) +
-            ' GB) and should be below: ' +
-            helpers.bytesToGb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
-            ' GB'
+        fileSize +
+        ' (' +
+        helpers.bytesToGb(fileSize) +
+        ' GB) and should be below: ' +
+        helpers.bytesToGb((duration * MaxMiBPerHour * 1024 * 1024) / 3600) +
+        ' GB'
     );
     Logger.ILog('Duration: ' + duration + ' seconds');
     Logger.ILog('Detected mibPerHour: ' + mibPerHour);
