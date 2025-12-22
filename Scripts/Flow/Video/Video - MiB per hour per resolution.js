@@ -60,8 +60,12 @@ function Script(MaxMiBPerHour4K, MaxMiBPerHour1080p, MaxMiBPerHour720p, MaxMiBPe
     const mibPerHour = helpers.calculateMiBPerHour(fileSize, duration);
 
     const maxSizeBytes = (duration * MaxMiBPerHour * 1024 * 1024) / 3600;
-    Variables.MaxFileSize = Math.floor(maxSizeBytes);
-    Logger.ILog('Setting Variables.MaxFileSize to: ' + Variables.MaxFileSize);
+    if (!Variables.MaxFileSize) {
+        Variables.MaxFileSize = Math.floor(maxSizeBytes);
+        Logger.ILog('Setting Variables.MaxFileSize to: ' + Variables.MaxFileSize);
+    } else {
+        Logger.ILog('Variables.MaxFileSize is already set to: ' + Variables.MaxFileSize + ', not overriding.');
+    }
 
     Logger.ILog(
         'File size is ' +

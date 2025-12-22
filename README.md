@@ -115,18 +115,20 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 
 #### Node Parameters
 
-| Parameter           | Default  | Description                                                              | Pros / Cons                                                                                            |
-| :------------------ | :------- | :----------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------- |
-| `TargetVMAF`        | 0 (Auto) | Target quality score (93-99). 0 uses smart defaults based on Year/Genre. | **Higher:** Better quality, larger files.<br>**Lower:** Smaller files, risk of artifacts.              |
-| `MinCRF`            | 18       | Lowest allowed CRF (highest quality cap).                                | **Lower:** Prevents blockiness in simple scenes.<br>**Higher:** Saves space on uncompressable content. |
-| `MaxCRF`            | 28       | Highest allowed CRF (lowest quality cap).                                | **Higher:** Allows massive reduction on easy content.<br>**Lower:** Guarantees minimum quality floor.  |
-| `Preset`            | veryslow | Encoder preset for tests and final encode.                               | **Slower:** Better compression/quality ratio.<br>**Faster:** Quicker processing, larger files.         |
-| `SampleDurationSec` | 8        | Length of each test sample.                                              | **Longer:** More accurate score.<br>**Shorter:** Faster testing.                                       |
-| `MinSizeReduction`  | 0        | Minimum % size reduction to proceed.                                     | Set to e.g., 10 to skip files that won't shrink much.                                                  |
+| Parameter           | Default  | Description                                                              | Pros / Cons                                                                                                   |
+| :------------------ | :------- | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| `TargetVMAF`        | 0 (Auto) | Target quality score (93-99). 0 uses smart defaults based on Year/Genre. | **Higher:** Better quality, larger files.<br>**Lower:** Smaller files, risk of artifacts.                     |
+| `MinCRF`            | 18       | Lowest allowed CRF (highest quality cap).                                | **Lower:** Prevents blockiness in simple scenes.<br>**Higher:** Saves space on uncompressable content.        |
+| `MaxCRF`            | 28       | Highest allowed CRF (lowest quality cap).                                | **Higher:** Allows massive reduction on easy content.<br>**Lower:** Guarantees minimum quality floor.         |
+| `Preset`            | veryslow | Encoder preset for tests and final encode.                               | **Slower:** Better compression/quality ratio.<br>**Faster:** Quicker processing, larger files.                |
+| `SampleDurationSec` | 8        | Length of each test sample.                                              | **Longer:** More accurate score.<br>**Shorter:** Faster testing.                                              |
+| `ScoreAggregation`  | min      | How to aggregate scores from multiple samples ('min', 'max', 'average'). | **min:** Safest (all parts must look good).<br>**average:** Best for overall quality.<br>**max:** Optimistic. |
+| `MinSizeReduction`  | 0        | Minimum % size reduction to proceed.                                     | Set to e.g., 10 to skip files that won't shrink much.                                                         |
 
 #### Advanced Variables
 
 - `Variables.AutoQualityPreset`: Set to 'quality', 'balanced', or 'compression' to override numerical targets.
+- `Variables.ForceCRF`: If set, bypasses quality search and forces this CRF value (e.g. "23"). Useful for manual overrides.
 - `Variables.MaxFileSize`: If set, the script will increase CRF if the estimated size exceeds this limit (requires `EnforceMaxSize=true`).
 - `Variables.ffmpeg_vmaf`: Path to a custom ffmpeg binary with libvmaf support if the system default lacks it.
 

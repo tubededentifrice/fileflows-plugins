@@ -18,6 +18,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
  * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: 2
  * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false
+ * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. Default: min
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -33,7 +34,8 @@ function Script(
     Preset,
     MinSizeReduction,
     MaxParallel,
-    EnforceMaxSize
+    EnforceMaxSize,
+    ScoreAggregation
 ) {
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -70,6 +72,13 @@ function Script(
     if (Variables.Preset) Preset = String(Variables.Preset);
     if (Variables.MinSizeReduction) MinSizeReduction = parseInt(Variables.MinSizeReduction);
     if (Variables.MaxParallel) MaxParallel = parseInt(Variables.MaxParallel);
+    if (Variables.ScoreAggregation) ScoreAggregation = String(Variables.ScoreAggregation);
+
+    if (!ScoreAggregation) ScoreAggregation = 'min';
+    ScoreAggregation = ScoreAggregation.toLowerCase();
+    if (['min', 'max', 'average'].indexOf(ScoreAggregation) === -1) {
+        ScoreAggregation = 'min';
+    }
 
     if (!MaxParallel || MaxParallel <= 0) {
         try {
@@ -122,6 +131,24 @@ function Script(
     if (!video) {
         Logger.ELog('Auto quality: No video stream found in FFmpeg Builder model.');
         return -1;
+    }
+
+    // ===== FORCE CRF =====
+    if (Variables.ForceCRF) {
+        const forceCrf = parseInt(Variables.ForceCRF);
+        if (!isNaN(forceCrf)) {
+            Logger.ILog(`ForceCRF variable set to ${forceCrf}. Bypassing quality search.`);
+            const targetCodec = getTargetCodec(video);
+            applyCRF(video, forceCrf, targetCodec, Preset);
+
+            Variables.AutoQuality_CRF = forceCrf;
+            Variables.AutoQuality_Reason = 'forced_by_variable';
+
+            if (UseTags && typeof Flow.AddTags === 'function') {
+                Flow.AddTags([`CRF ${forceCrf}`, `Forced`]);
+            }
+            return 1;
+        }
     }
 
     // ===== GET TOOL PATHS =====
@@ -424,7 +451,7 @@ function Script(
             .trim()
             .toLowerCase();
         if (rm) referenceMode = rm;
-    } catch (e) { }
+    } catch (e) {}
     if (referenceMode === 'auto') {
         // Always use 'encoded' so both reference and test go through the same encoding pipeline.
         // This ensures the quality measurement reflects only the difference in quality settings,
@@ -438,15 +465,15 @@ function Script(
     const referenceSamples =
         referenceMode === 'encoded'
             ? encodeReferenceSamplesForAutoQuality(
-                ffmpegEncodePath,
-                samples,
-                SampleDurationSec,
-                use10BitForTests,
-                video,
-                targetCodec,
-                upstreamVideoFilters,
-                referenceQuality
-            )
+                  ffmpegEncodePath,
+                  samples,
+                  SampleDurationSec,
+                  use10BitForTests,
+                  video,
+                  targetCodec,
+                  upstreamVideoFilters,
+                  referenceQuality
+              )
             : [];
 
     if (referenceSamples.length === 0) {
@@ -607,7 +634,7 @@ function Script(
                 const fi = new System.IO.FileInfo(sourceFile);
                 if (fi.Exists) currentSize = fi.Length;
             }
-        } catch (e) { }
+        } catch (e) {}
 
         if (currentSize > 0 && estimatedSize > 0) {
             const reduction = (1 - estimatedSize / currentSize) * 100;
@@ -792,7 +819,7 @@ function Script(
                             output = System.IO.File.ReadAllText(r.logFile);
                             System.IO.File.Delete(r.logFile);
                         }
-                    } catch (e) { }
+                    } catch (e) {}
 
                     results[r.id] = {
                         exitCode: exitCode,
@@ -844,7 +871,7 @@ function Script(
                     for (let i = 0; i < ep.length; i++) params.push(String(ep[i]));
                 }
             }
-        } catch (e) { }
+        } catch (e) {}
 
         const signature = params.join(' ').toLowerCase();
 
@@ -1008,7 +1035,7 @@ function Script(
 
             try {
                 if (System.IO.File.Exists(samplePath)) System.IO.File.Delete(samplePath);
-            } catch (e) { }
+            } catch (e) {}
 
             const args = [
                 '-hide_banner',
@@ -1049,7 +1076,7 @@ function Script(
                 try {
                     const fi = new System.IO.FileInfo(t.samplePath);
                     if (fi.Length > 0) extracted = true;
-                } catch (e) { }
+                } catch (e) {}
             }
 
             if (extracted) {
@@ -1064,7 +1091,7 @@ function Script(
             } else {
                 try {
                     if (System.IO.File.Exists(t.samplePath)) System.IO.File.Delete(t.samplePath);
-                } catch (e) { }
+                } catch (e) {}
                 finalSamples.push({
                     pos: t.pos,
                     inputFile: inputFile,
@@ -1137,7 +1164,7 @@ function Script(
                 } finally {
                     try {
                         if (System.IO.File.Exists(metadataFile)) System.IO.File.Delete(metadataFile);
-                    } catch (e) { }
+                    } catch (e) {}
                 }
 
                 // Parse YAVG values from output
@@ -1794,7 +1821,7 @@ function Script(
             if (metric === 'VMAF' && desired > 0 && fps > 0) {
                 vmafNSubsample = Math.max(1, Math.round(fps / desired));
             }
-        } catch (e) { }
+        } catch (e) {}
 
         const metricFilter =
             metric === 'VMAF'
@@ -1848,7 +1875,7 @@ function Script(
                     totalEncodedBytes += fi.Length;
                     totalEncodedSeconds += sampleDur;
                 }
-            } catch (e) { }
+            } catch (e) {}
 
             const ref = task.ref;
             const filterMode = (ref && ref.filterMode) || (upstreamFiltersStr ? 'upstream' : 'none');
@@ -1938,9 +1965,14 @@ function Script(
         const min = scores.reduce((m, val) => (val < m ? val : m), scores[0]);
         const max = scores.reduce((m, val) => (val > m ? val : m), scores[0]);
         const avg = scores.reduce((s, val) => s + val, 0) / scores.length;
+
+        let score = min;
+        if (ScoreAggregation === 'max') score = max;
+        else if (ScoreAggregation === 'average') score = avg;
+
         const bitrate = totalEncodedSeconds > 0 ? totalEncodedBytes / totalEncodedSeconds : 0;
 
-        return { score: min, min: min, max: max, avg: avg, bitrate: bitrate };
+        return { score: score, min: min, max: max, avg: avg, bitrate: bitrate };
     }
 
     function cleanupFiles(files) {
@@ -1949,7 +1981,7 @@ function Script(
                 if (System.IO.File.Exists(file)) {
                     System.IO.File.Delete(file);
                 }
-            } catch (e) { }
+            } catch (e) {}
         }
     }
 
@@ -1973,7 +2005,7 @@ function Script(
                     }
                     return result;
                 }
-            } catch (e) { }
+            } catch (e) {}
             return [];
         }
 
@@ -2072,7 +2104,7 @@ function Script(
                 const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
                 return `crop=${crop.Width}:${crop.Height}:${cx}:${cy}`;
             }
-        } catch (err) { }
+        } catch (err) {}
         return '';
     }
 
@@ -2101,7 +2133,7 @@ function Script(
                 const cy = crop.Y !== null && crop.Y !== undefined ? crop.Y : 0;
                 filters.unshift(`crop=${crop.Width}:${crop.Height}:${cx}:${cy}`);
             }
-        } catch (err) { }
+        } catch (err) {}
 
         // Some builder nodes encode filters directly into EncodingParameters (eg: -filter:v:0 scale_qsv=...).
         try {
@@ -2115,7 +2147,7 @@ function Script(
                     if (val) filters.push(val);
                 }
             }
-        } catch (err) { }
+        } catch (err) {}
 
         if (filters.length === 0) return '';
 
@@ -2149,7 +2181,7 @@ function Script(
         Logger.ILog('');
         Logger.ILog('----------------------------------------------------------------------------------------');
         Logger.ILog(` Auto Quality Results (${metric})`);
-        Logger.ILog(` Target: ${targetStr}`);
+        Logger.ILog(` Target: ${targetStr} (${ScoreAggregation})`);
         if (maxSize > 0) {
             Logger.ILog(` Max Size: ${helpers.bytesToGb(maxSize).toFixed(2)} GB`);
         }
