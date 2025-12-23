@@ -744,7 +744,8 @@ export class ScriptHelpers {
                     command: command,
                     argumentList: argumentList,
                     timeout: timeoutSeconds || 60,
-                    workingDirectory: workingDirectory
+                    workingDirectory: workingDirectory,
+                    silent: true
                 });
                 return {
                     exitCode: r.exitCode,

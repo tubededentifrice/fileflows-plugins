@@ -29,6 +29,18 @@ The scripts are designed to work in a specific workflow:
 2.  **Process**: Apply filters and quality settings based on that metadata.
 3.  **Refresh**: Notify Radarr/Sonarr to rescan the file after processing.
 
+### Global Integration Variables
+
+The following Variables are set by Lookup scripts and consumed by other scripts:
+
+- `Variables.VideoMetadata`: Object containing movie/show metadata (Year, Genres, OriginalLanguage).
+- `Variables.MovieInfo`: Radarr-specific movie metadata (Radarr/Sonarr Refresh reads this).
+- `Variables.TVShowInfo`: Sonarr-specific TV show metadata (Sonarr Refresh reads this).
+- `Variables.OriginalLanguage`: ISO-639-2/B code of original content language.
+- `Variables.FfmpegBuilderModel`: FFmpeg Builder model (set by "FFmpeg Builder: Start" node).
+- `Variables['Radarr.Url']` / `Variables['Radarr.ApiKey']`: Radarr connection settings.
+- `Variables['Sonarr.Url']` / `Variables['Sonarr.ApiKey']`: Sonarr connection settings.
+
 ---
 
 ## Application Scripts
@@ -129,8 +141,28 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 
 - `Variables.AutoQualityPreset`: Set to 'quality', 'balanced', or 'compression' to override numerical targets.
 - `Variables.ForceCRF`: If set, bypasses quality search and forces this CRF value (e.g. "23"). Useful for manual overrides.
-- `Variables.MaxFileSize`: If set, the script will increase CRF if the estimated size exceeds this limit (requires `EnforceMaxSize=true`).
-- `Variables.ffmpeg_vmaf`: Path to a custom ffmpeg binary with libvmaf support if the system default lacks it.
+- `Variables.MaxFileSize`: If set, the script will increase CRF if the estimated size exceeds this limit (in bytes).
+- `Variables.EnforceMaxSize`: Set to `true` to enable MaxFileSize enforcement (otherwise MaxFileSize is only informational).
+- `Variables['AutoQuality_VmafFps']`: Override VMAF subsampling FPS (default is source FPS). Lower values = faster VMAF calculation.
+
+##### Variables Set by Script (Output)
+
+- `Variables.AutoQuality_CRF`: Final CRF value chosen ('copy', 'unchanged', or numeric value).
+- `Variables.AutoQuality_Reason`: Why the decision was made (e.g., 'forced_by_variable', 'already_optimal', 'insufficient_reduction').
+- `Variables.AutoQuality_Metric`: Quality metric used ('vmaf' or 'ssim').
+- `Variables.AutoQuality_Target`: Effective quality target used.
+- `Variables.AutoQuality_Iterations`: Number of binary search iterations performed.
+- `Variables.AutoQuality_Results`: JSON string with detailed search results.
+- `Variables.AutoQuality_AvgLuminance`: Average scene brightness (for HDR content awareness).
+- `Variables.AutoQuality_LuminanceBoost`: Luminance-based adjustment applied to target.
+- `Variables.AutoQuality_ReferenceCRF`: CRF of reference encode (if applicable).
+- `Variables.AutoQuality_Score`: Final quality score achieved.
+- `Variables.AutoQuality_EstimatedReduction`: Estimated size reduction percentage.
+- `Variables.AutoQuality_TargetVMAF`: Backwards compatible VMAF target.
+- `Variables.AutoQuality_UpstreamVideoFilters`: Video filters detected upstream (e.g., from Cleaning Filters).
+- `Variables.AutoQuality_EncodingParamFilter`: Any `-filter:v:*` found in EncodingParameters.
+- `Variables.AutoQuality_FilterSource`: Source of filters ('variables-filters', 'encoding-params', or 'model').
+- `Variables.AutoQuality_FilterMode`: Filter mode used ('software-fallback', 'upstream', or 'none').
 
 </details>
 
@@ -143,6 +175,7 @@ Detects language for "Unknown" (und) audio/subtitle tracks using heuristics (fil
 - Fixes "Unknown" tracks so players select the right language.
 - Can tag files in-place (MKV) without full remuxing.
 - Uses local AI (privacy-friendly, no API limits).
+- Updates in-memory VideoInfo/FfmpegBuilderModel for immediate downstream access.
 
 **Cons:**
 
@@ -159,6 +192,21 @@ Detects language for "Unknown" (und) audio/subtitle tracks using heuristics (fil
 | `UseWhisperFallback` | true    | Use Whisper.cpp if SpeechBrain is unsure. Slower but robust.          |
 | `PreferMkvPropEdit`  | true    | Modifies MKV headers directly (Instant). Uncheck to force full remux. |
 | `ForceRetag`         | false   | Run even if language is already set (useful to fix bad tags).         |
+| `TagSubtitles`       | true    | Also tag subtitle tracks missing language.                            |
+
+#### Advanced Variables
+
+- `Variables['AudioLangID.ForceRetag']`: Override the node's ForceRetag parameter.
+- `Variables['AudioLangID.TagSubtitles']`: Override the node's TagSubtitles parameter.
+- `Variables['AudioLangID.SampleStartSeconds']`: Override audio sample start position (default: auto, avoids intros).
+- `Variables['AudioLangID.SampleDurationSeconds']`: Override audio sample duration in seconds (default: 25, range: 6-120).
+
+##### Variables Set by Script (Output)
+
+- `Variables['AudioLangID.UpdatedAudioLanguagesByIndex']`: JSON string mapping overall stream indices to ISO-639-2/B language codes.
+- `Variables['AudioLangID.UpdatedAudioLanguagesByTypeIndex']`: JSON string mapping audio type indices (0:a:N) to language codes.
+- `Variables['AudioLangID.UpdatedSubtitleLanguagesByIndex']`: JSON string mapping subtitle stream indices to language codes.
+- `Variables['AudioLangID.UpdatedSubtitleLanguagesByTypeIndex']`: JSON string mapping subtitle type indices (0:s:N) to language codes.
 
 </details>
 
@@ -190,7 +238,90 @@ Applies video filters based on the movie's age, genre, and technical properties 
 #### Advanced Variables
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
-- `CleaningFilters.QsvTune.*`: Fine-tune Intel QSV encoder settings (LookAhead, BFrames, Refs).
+- `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
+- `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
+- `Variables.ForceMpDecimate`: Force-enable mpdecimate even if heuristics would disable it.
+- `Variables.MpDecimateCfrRate` / `Variables.CfrRate`: Override CFR output framerate.
+- `CleaningFilters.SkipQsvTuning`: Skip all QSV encoder tuning parameter application.
+- `CleaningFilters.QsvTune.Override`: Override existing QSV tuning parameters instead of only adding missing ones.
+- `CleaningFilters.QsvTune.ExtBrc` / `CleaningFilters.QsvTune.ExtBRC`: Extended bitrate control (0-1, default: 1).
+- `CleaningFilters.QsvTune.BFrames` / `CleaningFilters.QsvTune.Bf`: B-frames count (0-16, default: 7 for animation, 4 for live action).
+- `CleaningFilters.QsvTune.Refs`: Reference frames (1-16, default: 6 for anime, 4 for live action).
+- `CleaningFilters.QsvTune.GopSeconds`: GOP length in seconds (1-20, default: 5).
+- `CleaningFilters.QsvTune.LookAheadDepth` / `CleaningFilters.QsvTune.LookAhead`: Lookahead depth (1-200).
+- `CleaningFilters.QsvTune.AdaptiveI`: Adaptive I-frames (0-1, default: 1).
+- `CleaningFilters.QsvTune.AdaptiveB`: Adaptive B-frames (0-1, default: 1).
+- `Variables.SkipBandingFix`: Disable all debanding logic.
+- `Variables.ForceDeband`: Force-enable debanding.
+- `CleaningFilters.ForceEncodingParamFilter`: Force injection of filters into EncodingParameters even when Filters array is used.
+
+##### Variables Set by Script (Output)
+
+**Detection & Metadata:**
+
+- `Variables.detected_hw_encoder`: Detected hardware encoder ('qsv', 'vaapi', 'nvenc', 'none').
+- `Variables.hw_frames_likely`: Whether hardware frames are likely in the filtergraph.
+- `Variables.target_bit_depth`: Target output bit depth (8 or 10).
+- `Variables.applied_qsv_profile`: QSV profile set ('main10' for 10-bit).
+- `Variables.source_bit_depth`: Source bit depth detected.
+- `Variables.is_hdr`: Whether source is HDR.
+- `Variables.is_dolby_vision`: Whether source has Dolby Vision.
+- `Variables.isRestoredContent`: Whether content is detected as a modern restoration of old content.
+- `Variables.isOldCelAnimation`: Whether content is old cel animation (<=1995).
+- `Variables.sourceBitrateKbps`: Source bitrate in Kbps.
+
+**Noise Probe:**
+
+- `Variables.noise_probe_ok`: Whether noise probe succeeded (true/false).
+- `Variables.noise_probe_reason`: Reason for probe result or failure.
+- `Variables.noise_probe_offsets`: Noise level offsets detected across samples.
+- `Variables.noise_probe_samples`: Noise levels detected for each sample.
+- `Variables.noise_probe_score`: Overall noise score (lower = cleaner).
+- `Variables.noise_probe_adjust`: Adjustment applied to denoise level based on noise score.
+
+**Denoise:**
+
+- `Variables.denoiseLevel`: Final denoise level (0-100).
+- `Variables.denoise_boost`: Denoise boost applied.
+- `Variables.denoise_min` / `Variables.denoise_max`: Min/max clamps applied.
+- `Variables.applied_denoise`: The denoise filter applied (`hqdn3d=...` or `vpp_qsv=denoise=...`).
+- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-64).
+
+**Deband:**
+
+- `Variables.applied_deband`: The deband filter applied (e.g., `deband=1thr=0.04:...`).
+
+**MpDecimate:**
+
+- `Variables.mpdecimate_enabled`: Whether mpdecimate was enabled.
+- `Variables.mpdecimate_reason`: Reason for enable/disable decision.
+- `Variables.mpdecimate_filter`: The mpdecimate filter string used.
+- `Variables.mpdecimate_probe_ss`, `Variables.mpdecimate_probe_seconds`, `Variables.mpdecimate_probe_base_frames`, `Variables.mpdecimate_probe_dec_frames`, `Variables.mpdecimate_probe_drop_ratio`: Probe results.
+- `Variables.applied_fps_mode`: FPS mode applied ('cfr' if mpdecimate enabled).
+- `Variables.applied_r`: Output framerate set.
+- `Variables.applied_mpdecimate`: Summary of mpdecimate action.
+
+**Interlace Detection:**
+
+- `Variables.interlace_detect_reason`: Interlace detection result.
+- `Variables.interlace_tff`: Top-field-first frame count.
+- `Variables.interlace_bff`: Bottom-field-first frame count.
+- `Variables.interlace_progressive`: Progressive frame count.
+- `Variables.interlace_undetermined`: Undetermined frame count.
+- `Variables.detected_interlaced`: Whether content is interlaced.
+
+**Filters:**
+
+- `Variables.applied_vpp_qsv_filter`: Full QSV vpp filter string.
+- `Variables.applied_hybrid_cpu_filters`: CPU filters used in hybrid mode.
+- `Variables.applied_hybrid_cpu_filters_mode`: Hybrid filter mode ('hwdownload+hwupload' or 'hwdownload-only').
+- `Variables.video_filters`: Summary of video filters applied (for downstream).
+- `Variables.filters`: Filter list passed to executor.
+
+**QSV Tuning:**
+
+- `Variables.applied_qsv_tuning`: QSV tuning parameters applied.
+- `Variables.applied_hdr_color_params`: HDR color metadata params added.
 
 </details>
 
@@ -203,6 +334,11 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Guarantees all filters (Denoise, Subtitles, Watermarks) are applied.
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
+- Writes full FFmpeg command to metadata for auditing.
+
+**Cons:**
+
+- Slightly more complex execution than standard executor.
 
 <details>
 <summary><strong>Configuration</strong></summary>
@@ -210,7 +346,19 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 | Parameter                     | Default   | Description                                                       |
 | :---------------------------- | :-------- | :---------------------------------------------------------------- |
 | `HardwareDecoding`            | Automatic | Enables hardware decoding if QSV filters are used.                |
+| `KeepModel`                   | false     | Keep the FfmpegBuilderModel variable after execution.             |
 | `WriteFullArgumentsToComment` | true      | Writes the full FFmpeg command to the file metadata for auditing. |
+| `MaxCommentLength`            | 32000     | Maximum characters for comment metadata (0 = unlimited).          |
+
+#### Advanced Variables
+
+- `Variables.ForceEncode`: Force execution even if no changes are detected.
+- `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
+
+##### Variables Set by Script (Output)
+
+- `Variables['FFmpegExecutor.LastCommandLine']`: Full audit command line that was executed.
+- `Variables['FFmpegExecutor.LastArgumentsLine']`: Full FFmpeg arguments as a single string.
 
 </details>
 
@@ -225,6 +373,11 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 3.  Keeps **Unknown** language tracks _only_ if no Original Language track exists.
 4.  **Subtitles** are never deleted, only reordered (Original -> Additional -> Others).
 
+**Requirements:**
+
+- Must run after Movie/TV Show Lookup to have `Variables.OriginalLanguage` available.
+- Must run after FFmpeg Builder: Start to have `Variables.FfmpegBuilderModel` available.
+
 <details>
 <summary><strong>Configuration</strong></summary>
 
@@ -234,6 +387,19 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 | `ProcessAudio`         | Apply logic to audio tracks.                              |
 | `ProcessSubtitles`     | Reorder subtitle tracks.                                  |
 | `KeepFirstIfNoneMatch` | Safety net: keep track 1 if nothing matches requirements. |
+
+#### Advanced Variables
+
+- `Variables['OriginalLanguage']`: ISO-639-2/B code of original language (set by Lookup scripts).
+
+##### Variables Set by Script (Output)
+
+- `Variables['TrackSelection.OriginalLanguage']`: Original language ISO code (e.g., "fre", "eng").
+- `Variables['TrackSelection.AdditionalLanguages']`: Additional languages kept (comma-separated).
+- `Variables['TrackSelection.AllowedLanguages']`: All allowed languages (original + additional).
+- `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
+- `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
+- `Variables['TrackSelection.ReorderedCount']`: Number of subtitle streams reordered.
 
 </details>
 
