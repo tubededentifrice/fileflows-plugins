@@ -3,11 +3,11 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Converts all audio tracks to a specific codec with intelligent bitrate limits.
  * @author Sisyphus
- * @revision 2
+ * @revision 3
  * @minimumVersion 1.0.0.0
  * @param {('eac3'|'ac3'|'aac'|'libopus'|'flac'|'copy')} Codec The target audio codec (default: eac3).
- * @param {int} BitratePerChannel Kbps per channel limit (e.g. 160). Calculates total limit based on channel count. Set 0 to disable.
- * @param {('48000'|'44100'|'Same as Source')} MaxSampleRate Maximum sample rate (default: 48000).
+ * @param {int} BitratePerChannel Kbps per channel limit (e.g. 96 or 128). Calculates total limit based on channel count. Set 0 to disable. Default: 96.
+ * @param {('48000'|'44100'|'Same as Source')} MaxSampleRate Maximum sample rate. Default: 48000.
  * @output Tracks converted
  * @output No changes needed
  */
@@ -20,27 +20,45 @@ function Script(Codec, BitratePerChannel, MaxSampleRate) {
         return -1;
     }
 
-    if (!ffModel.AudioStreams || ffModel.AudioStreams.length === 0) {
+    const audioStreams = helpers.toEnumerableArray(ffModel.AudioStreams, 200);
+    if (!audioStreams || audioStreams.length === 0) {
         Logger.ILog('No audio streams found.');
         return 2;
     }
 
     Codec = Codec || 'eac3';
     BitratePerChannel = parseInt(BitratePerChannel, 10);
-    if (isNaN(BitratePerChannel)) BitratePerChannel = 160;
+    if (isNaN(BitratePerChannel)) BitratePerChannel = 96;
 
+    MaxSampleRate = MaxSampleRate || '48000';
     let maxSampleRateVal = 0;
     if (String(MaxSampleRate) === '48000') maxSampleRateVal = 48000;
     else if (String(MaxSampleRate) === '44100') maxSampleRateVal = 44100;
 
     let changes = 0;
 
-    for (let i = 0; i < ffModel.AudioStreams.length; i++) {
-        const stream = ffModel.AudioStreams[i];
+    function normalizeCodecName(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase();
+    }
+
+    function codecsCompatibleForCopy(sourceCodec, targetCodec) {
+        const s = normalizeCodecName(sourceCodec);
+        const t = normalizeCodecName(targetCodec);
+        if (!s || !t) return false;
+        if (s === t) return true;
+        // FFmpeg reports Opus as "opus" but encoder is "libopus"
+        if ((s === 'opus' && t === 'libopus') || (s === 'libopus' && t === 'opus')) return true;
+        return false;
+    }
+
+    for (let i = 0; i < audioStreams.length; i++) {
+        const stream = audioStreams[i];
         if (stream.Deleted) continue;
 
-        const sourceCodec = String(stream.Codec || '').toLowerCase();
-        const targetCodec = String(Codec || '').toLowerCase();
+        const sourceCodec = normalizeCodecName(stream.Codec);
+        const targetCodec = normalizeCodecName(Codec);
         const isCopy = targetCodec === 'copy';
 
         let smartCopy = false;
@@ -51,17 +69,18 @@ function Script(Codec, BitratePerChannel, MaxSampleRate) {
         const sourceBitrate = stream.Bitrate > 0 ? stream.Bitrate : 0;
         const sourceRate = stream.SampleRate > 0 ? stream.SampleRate : 0;
 
-        if (!isCopy && sourceCodec === targetCodec) {
-            const bitrateOk = BitratePerChannel <= 0 || (sourceBitrate > 0 && sourceBitrate <= targetTotalBits);
-            const sampleRateOk = maxSampleRateVal <= 0 || (sourceRate > 0 && sourceRate <= maxSampleRateVal);
-            
+        if (!isCopy && codecsCompatibleForCopy(sourceCodec, targetCodec)) {
+            // If bitrate/sample rate info is missing, assume OK (prefer copy over unnecessary re-encode).
+            const bitrateOk = BitratePerChannel <= 0 || sourceBitrate <= 0 || sourceBitrate <= targetTotalBits;
+            const sampleRateOk = maxSampleRateVal <= 0 || sourceRate <= 0 || sourceRate <= maxSampleRateVal;
+
             if (bitrateOk && sampleRateOk) {
                 smartCopy = true;
             }
         }
 
         if (isCopy || smartCopy) {
-            if (stream.Codec !== 'copy') {
+            if (normalizeCodecName(stream.Codec) !== 'copy') {
                 stream.Codec = 'copy';
                 if (stream.EncodingParameters) {
                     helpers.removeArgWithValue(stream.EncodingParameters, (t) => t === '-b:a' || t.startsWith('-b:a:'));
@@ -69,21 +88,29 @@ function Script(Codec, BitratePerChannel, MaxSampleRate) {
                 }
                 changes++;
             }
-            continue; 
+            continue;
         }
 
-        if (stream.Codec !== targetCodec) {
+        if (normalizeCodecName(stream.Codec) !== targetCodec) {
             stream.Codec = targetCodec;
             changes++;
         }
 
         if (!stream.EncodingParameters) stream.EncodingParameters = [];
 
-        if (BitratePerChannel > 0) {
-            const finalBitrate = sourceBitrate > 0 ? Math.min(sourceBitrate, targetTotalBits) : targetTotalBits;
+        // Bitrate/sample-rate options should be set per-stream by placing them in this stream's EncodingParameters,
+        // and using the non-indexed form (-b:a / -ar). The executor adds these tokens in stream order, which targets
+        // the correct output audio stream.
+        if (BitratePerChannel > 0 && targetCodec !== 'flac') {
+            let finalBitrate = sourceBitrate > 0 ? Math.min(sourceBitrate, targetTotalBits) : targetTotalBits;
+
+            // AC3 hard limit: 640 kbps total
+            if (targetCodec === 'ac3') {
+                finalBitrate = Math.min(finalBitrate, 640000);
+            }
 
             helpers.removeArgWithValue(stream.EncodingParameters, (t) => t === '-b:a' || t.startsWith('-b:a:'));
-            stream.EncodingParameters.push(`-b:a:{index}`);
+            stream.EncodingParameters.push('-b:a');
             stream.EncodingParameters.push(String(finalBitrate));
             changes++;
         }

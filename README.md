@@ -16,6 +16,7 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
     - [Video - Cleaning Filters](#video---cleaning-filters)
     - [Video - FFmpeg Builder Executor (Single Filter)](#video---ffmpeg-builder-executor-single-filter)
     - [Video - Language Based Track Selection](#video---language-based-track-selection)
+    - [Video - Audio Format Converter](#video---audio-format-converter)
     - [Video - Resolution Fixed](#video---resolution-fixed)
 - [DockerMods](#dockermods)
 
@@ -400,6 +401,27 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 - `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
 - `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
 - `Variables['TrackSelection.ReorderedCount']`: Number of subtitle streams reordered.
+
+</details>
+
+### Video - Audio Format Converter
+
+Converts remaining (non-deleted) audio tracks to a target codec and caps bitrate/sample rate. Intended to run after `Video - Language Based Track Selection` and before `Video - FFmpeg Builder Executor (Single Filter)`.
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+| Parameter           | Default | Description                                                                                                       |
+| :------------------ | :------ | :---------------------------------------------------------------------------------------------------------------- |
+| `Codec`             | eac3    | Target audio codec (`eac3`, `ac3`, `aac`, `libopus`, `flac`, or `copy`).                                          |
+| `BitratePerChannel` | 96      | Kbps per channel cap (total cap = channels × value). Source bitrate is kept if already lower. Set `0` to disable. |
+| `MaxSampleRate`     | 48000   | Maximum sample rate (`48000`, `44100`, or `Same as Source`).                                                      |
+
+##### Variables Modified
+
+- `Variables.FfmpegBuilderModel.AudioStreams[*].Codec`
+- `Variables.FfmpegBuilderModel.AudioStreams[*].EncodingParameters`
+- `Variables.FfmpegBuilderModel.ForceEncode` (set when changes are made)
 
 </details>
 
