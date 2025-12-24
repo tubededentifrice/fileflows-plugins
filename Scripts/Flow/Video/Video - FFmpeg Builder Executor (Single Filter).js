@@ -4,7 +4,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 12
+ * @revision 13
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -953,8 +953,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     if (!result || result.exitCode !== 0) {
         const code = result ? result.exitCode : -1;
         Logger.ELog(`FFmpeg failed (exitCode=${code}).`);
-        if (result && result.output) Logger.ELog(String(result.output).substring(0, 3000));
-        if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 3000));
+        if (result && result.output) Logger.ELog(String(result.output).substring(0, 20000));
+        if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 20000));
         return -1;
     }
 

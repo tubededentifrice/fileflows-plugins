@@ -797,7 +797,7 @@ function Script(
     const genres = toEnumerableArray(videoMetadata && videoMetadata.Genres, 100);
 
     // Override variables (set these in upstream nodes to force specific filter values)
-    const forceVppQsv = Variables.vpp_qsv; // e.g., "50" (Intel QSV vpp denoise, 0-64)
+    const forceVppQsv = Variables.vpp_qsv; // e.g., "50" (Intel QSV vpp denoise, 0-100)
     const forceHqdn3d = Variables.hqdn3d; // e.g., "2:2:6:6" (CPU)
     const forceMpDecimateValue = Variables.mpdecimate; // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
     const mpDecimateFilter = buildMpDecimateFilter(forceMpDecimateValue);
@@ -924,7 +924,7 @@ function Script(
      *
      * DENOISE:
      *   - CPU: hqdn3d (plus optional deband/gradfun)
-     *   - QSV: vpp_qsv=denoise=XX (0-64)
+     *   - QSV: vpp_qsv=denoise=XX (0-100)
      *
      * IMPORTANT: Do not use video.Denoise for QSV. In current FileFlows runners it maps to CPU hqdn3d which fails
      * when decoding to QSV surfaces.
@@ -939,7 +939,7 @@ function Script(
      *   - Very modern (2019+): 0 (skip)
      *
      * MAPPINGS:
-     *   - QSV: Level 0-100 -> denoise 0-64
+     *   - QSV: Level 0-100 -> denoise 0-100
      *   - CPU: Level 0-100 -> hqdn3d spatial 0-8, temporal 0-16
      */
 
@@ -1304,10 +1304,10 @@ function Script(
                 // Use vpp_qsv denoise explicitly. Do NOT use video.Denoise (it maps to CPU hqdn3d in current runners).
                 let qsvDenoiseValue;
                 if (forceVppQsv) {
-                    qsvDenoiseValue = Math.max(0, Math.min(64, parseInt(forceVppQsv) || 32));
+                    qsvDenoiseValue = Math.max(0, Math.min(100, parseInt(forceVppQsv) || 32));
                     Logger.ILog(`Forced QSV denoise: vpp_qsv=denoise=${qsvDenoiseValue}`);
                 } else {
-                    qsvDenoiseValue = Math.max(0, Math.min(64, Math.round((denoiseLevel * 64) / 100)));
+                    qsvDenoiseValue = clampNumber(denoiseLevel, 0, 100);
                     Logger.ILog(
                         `Auto QSV denoise for ${year}: vpp_qsv=denoise=${qsvDenoiseValue} (level ${denoiseLevel}%)`
                     );

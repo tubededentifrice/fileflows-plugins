@@ -285,7 +285,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.denoise_boost`: Denoise boost applied.
 - `Variables.denoise_min` / `Variables.denoise_max`: Min/max clamps applied.
 - `Variables.applied_denoise`: The denoise filter applied (`hqdn3d=...` or `vpp_qsv=denoise=...`).
-- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-64).
+- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-100).
 
 **Deband:**
 

@@ -4,7 +4,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 27
+ * @revision 28
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
@@ -555,7 +555,9 @@ function Script(
             }
 
             const qualityScore = result.score;
-            const estimatedSize = result.bitrate > 0 ? result.bitrate * duration : 0;
+            const estimatedVideoSize = result.bitrate > 0 ? result.bitrate * duration : 0;
+            const estimatedAudioSize = getEstimatedAudioSize(ffmpegModel, duration);
+            const estimatedSize = estimatedVideoSize + estimatedAudioSize;
 
             searchResults.push({
                 crf: testCRF,
@@ -868,6 +870,67 @@ function Script(
             }
         }
         return bitrate || 0;
+    }
+
+    function getEstimatedAudioSize(ffmpegModel, duration) {
+        if (!ffmpegModel || !ffmpegModel.AudioStreams) return 0;
+        let totalBitrate = 0;
+        const audioStreams = toEnumerableArray(ffmpegModel.AudioStreams);
+
+        const sourceInfo = {};
+        if (ffmpegModel.VideoInfo && ffmpegModel.VideoInfo.AudioStreams) {
+            const sourceAudio = toEnumerableArray(ffmpegModel.VideoInfo.AudioStreams);
+            for (let i = 0; i < sourceAudio.length; i++) {
+                const sa = sourceAudio[i];
+                if (sa) {
+                    sourceInfo[sa.Index] = {
+                        Bitrate: sa.Bitrate,
+                        Codec: String(sa.Codec || '').toLowerCase()
+                    };
+                }
+            }
+        }
+
+        for (let i = 0; i < audioStreams.length; i++) {
+            const stream = audioStreams[i];
+            if (!stream || stream.Deleted) continue;
+
+            const src = sourceInfo[stream.Index] || { Bitrate: 0, Codec: '' };
+            const sourceBitrate = src.Bitrate || 0;
+            const sourceCodec = src.Codec;
+            const targetCodec = String(stream.Codec || '').toLowerCase();
+            const channels = stream.Channels || 2;
+
+            let isReencode = false;
+            if (targetCodec && targetCodec !== 'copy' && targetCodec !== sourceCodec) {
+                isReencode = true;
+            }
+
+            let estimatedStreamBitrate = stream.Bitrate || 0;
+
+            if (isReencode) {
+                if (estimatedStreamBitrate === 0 || estimatedStreamBitrate === sourceBitrate) {
+                    if (targetCodec.indexOf('ac3') >= 0 || targetCodec.indexOf('eac3') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 640000 : 256000;
+                    } else if (targetCodec.indexOf('aac') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 384000 : 128000;
+                    } else if (targetCodec.indexOf('mp3') >= 0) {
+                        estimatedStreamBitrate = 192000;
+                    } else if (targetCodec.indexOf('opus') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 192000 : 96000;
+                    } else {
+                        estimatedStreamBitrate = (channels / 2) * 128000;
+                    }
+                }
+            } else {
+                if (estimatedStreamBitrate <= 0) estimatedStreamBitrate = sourceBitrate;
+                if (estimatedStreamBitrate <= 0) estimatedStreamBitrate = channels * 64000;
+            }
+
+            totalBitrate += estimatedStreamBitrate;
+        }
+
+        return (totalBitrate * duration) / 8;
     }
 
     function getTargetCodec(videoStream) {
