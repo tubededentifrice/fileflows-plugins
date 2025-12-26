@@ -354,6 +354,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 #### Advanced Variables
 
 - `Variables.ForceEncode`: Force execution even if no changes are detected.
+- `Variables['FFmpegExecutor.AudioFilterFallbackCodec']`: If audio filters are present but the audio codec is `copy`, re-encode audio using this codec (default: source codec when known/encodable, otherwise `eac3` for MKV and `aac` for MP4/MOV).
 - `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
 
 ##### Variables Set by Script (Output)
@@ -407,6 +408,8 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 ### Video - Audio Format Converter
 
 Converts remaining (non-deleted) audio tracks to a target codec and caps bitrate/sample rate. Intended to run after `Video - Language Based Track Selection` and before `Video - FFmpeg Builder Executor (Single Filter)`.
+
+Note: the script’s “smart copy” behavior is disabled when audio filters are present, since filters require decoding/re-encoding (stream copy can’t be filtered).
 
 <details>
 <summary><strong>Configuration</strong></summary>

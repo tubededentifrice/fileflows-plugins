@@ -53,6 +53,31 @@ function Script(Codec, BitratePerChannel, MaxSampleRate) {
         return false;
     }
 
+    function hasAnyAudioFilters(stream) {
+        const filterLists = []
+            .concat(helpers.toEnumerableArray(stream ? stream.Filter : null, 200))
+            .concat(helpers.toEnumerableArray(stream ? stream.Filters : null, 200))
+            .concat(helpers.toEnumerableArray(stream ? stream.OptionalFilter : null, 200));
+
+        for (let i = 0; i < filterLists.length; i++) {
+            const v = String(filterLists[i] || '').trim();
+            if (v) return true;
+        }
+
+        const tokens = helpers.toEnumerableArray(stream ? stream.EncodingParameters : null, 2000);
+        for (let i = 0; i < tokens.length; i++) {
+            const t = String(tokens[i] || '')
+                .trim()
+                .toLowerCase();
+            if (!t) continue;
+            if (t === '-af') return true;
+            if (t === '-filter:a') return true;
+            if (t.indexOf('-filter:a:') === 0) return true;
+        }
+
+        return false;
+    }
+
     for (let i = 0; i < audioStreams.length; i++) {
         const stream = audioStreams[i];
         if (stream.Deleted) continue;
@@ -69,12 +94,14 @@ function Script(Codec, BitratePerChannel, MaxSampleRate) {
         const sourceBitrate = stream.Bitrate > 0 ? stream.Bitrate : 0;
         const sourceRate = stream.SampleRate > 0 ? stream.SampleRate : 0;
 
+        const hasFilters = hasAnyAudioFilters(stream);
+
         if (!isCopy && codecsCompatibleForCopy(sourceCodec, targetCodec)) {
             // If bitrate/sample rate info is missing, assume OK (prefer copy over unnecessary re-encode).
             const bitrateOk = BitratePerChannel <= 0 || sourceBitrate <= 0 || sourceBitrate <= targetTotalBits;
             const sampleRateOk = maxSampleRateVal <= 0 || sourceRate <= 0 || sourceRate <= maxSampleRateVal;
 
-            if (bitrateOk && sampleRateOk) {
+            if (bitrateOk && sampleRateOk && !hasFilters) {
                 smartCopy = true;
             }
         }
