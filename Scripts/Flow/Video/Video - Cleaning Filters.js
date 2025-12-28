@@ -3,7 +3,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 44
+ * @revision 45
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -12,6 +12,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} AutoNoiseDenoise Probe video noise/grain level and nudge denoise strength (bounded adjustment)
  * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
  * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower, can improve compression/quality; requires FFmpeg/QSV support)
+ * @param {('auto'|'qsv'|'cpu'|'both'|'off')} DenoiseMode Denoise mode selection. 'cpu' uses hqdn3d (CPU) even with QSV encoding; 'qsv' uses vpp_qsv denoise; 'both' applies vpp_qsv then CPU denoise; 'off' disables denoise.
  * @output Cleaned video
  */
 function Script(
@@ -22,9 +23,10 @@ function Script(
     AutoDeinterlace,
     AutoNoiseDenoise,
     MpDecimateAnimation,
-    QsvLookAhead
+    QsvLookAhead,
+    DenoiseMode
 ) {
-    Logger.ILog('Cleaning filters.js revision 44 loaded');
+    Logger.ILog('Cleaning filters.js revision 45 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -53,6 +55,17 @@ function Script(
     AutoNoiseDenoise = truthy(AutoNoiseDenoise) || truthy(Variables.AutoNoiseDenoise);
     MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
     QsvLookAhead = truthy(QsvLookAhead) || truthy(Variables['CleaningFilters.QsvTune.LookAhead']);
+
+    function normalizeDenoiseMode(value) {
+        const v = safeString(value).trim().toLowerCase();
+        if (!v) return 'auto';
+        if (v === 'auto') return 'auto';
+        if (v === 'qsv' || v === 'vpp' || v === 'vpp_qsv') return 'qsv';
+        if (v === 'cpu' || v === 'hqdn3d') return 'cpu';
+        if (v === 'both' || v === 'hybrid') return 'both';
+        if (v === 'off' || v === 'none' || v === 'disabled' || v === 'disable') return 'off';
+        return 'auto';
+    }
 
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
@@ -846,18 +859,23 @@ function Script(
     const targetBitDepth = detectTargetBitDepth(video);
     Variables.target_bit_depth = targetBitDepth;
 
+    const denoiseMode = normalizeDenoiseMode(
+        firstDefinedVariableString(['CleaningFilters.DenoiseMode', 'DenoiseMode'], safeString(DenoiseMode))
+    );
+    Variables.denoise_mode = denoiseMode;
+
     // If the user explicitly sets hqdn3d, treat it as an intent to run CPU filters even in hardware encode mode.
     // This is especially useful for "QSV encode + CPU filter detour" hybrid pipelines.
-    if (forceHqdn3d) {
+    if (forceHqdn3d || denoiseMode === 'cpu' || denoiseMode === 'both') {
         if (!UseCPUFilters) {
             UseCPUFilters = true;
             Variables.cleaningfilters_auto_use_cpu_filters = true;
-            Logger.ILog('hqdn3d override detected; enabling CPU filters');
+            Logger.ILog('DenoiseMode/override requires CPU filters; enabling CPU filters');
         }
         if (isHardwareEncode && !AllowCpuFiltersWithHardwareEncode) {
             AllowCpuFiltersWithHardwareEncode = true;
             Variables.cleaningfilters_auto_allow_cpu_filters_with_hw_encode = true;
-            Logger.WLog('hqdn3d override detected; enabling CPU filters with hardware encode (hybrid pipeline)');
+            Logger.WLog('DenoiseMode/override requires CPU filters with hardware encode (hybrid pipeline)');
         }
     }
 
@@ -1238,8 +1256,37 @@ function Script(
 
     const cpuFiltersNeedHwBridge = () => hwFramesLikely || addedHardwareOnlyFilters;
 
-    if (denoiseLevel > 0) {
-        if (UseCPUFilters && !isHardwareEncode && !cpuFiltersNeedHwBridge()) {
+    if (denoiseMode === 'off') {
+        SkipDenoise = true;
+        denoiseLevel = 0;
+        Variables.applied_denoise = 'off';
+        Logger.ILog('DenoiseMode=off; skipping denoise');
+    }
+
+    let wantQsvDenoise = false;
+    let wantCpuDenoise = false;
+    if (!SkipDenoise && denoiseLevel > 0) {
+        if (denoiseMode === 'qsv') {
+            wantQsvDenoise = hwEncoder === 'qsv';
+            wantCpuDenoise = false;
+        } else if (denoiseMode === 'cpu') {
+            wantQsvDenoise = false;
+            wantCpuDenoise = true;
+        } else if (denoiseMode === 'both') {
+            wantQsvDenoise = hwEncoder === 'qsv';
+            wantCpuDenoise = true;
+        } else {
+            // auto
+            wantQsvDenoise = hwEncoder === 'qsv';
+            wantCpuDenoise = UseCPUFilters && !isHardwareEncode;
+            if (!wantCpuDenoise && forceHqdn3d) wantCpuDenoise = true;
+        }
+    }
+    Variables.wants_qsv_denoise = wantQsvDenoise;
+    Variables.wants_cpu_denoise = wantCpuDenoise;
+
+    if (!SkipDenoise && denoiseLevel > 0) {
+        if (wantCpuDenoise && UseCPUFilters && !isHardwareEncode && !cpuFiltersNeedHwBridge()) {
             // ===== CPU MODE: hqdn3d =====
             let hqdn3dValue;
             if (forceHqdn3d) {
@@ -1259,9 +1306,10 @@ function Script(
                 );
                 return -1;
             }
-            Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
-            appliedFiltersSummary.push(Variables.applied_denoise);
-            appliedFiltersForExecutor.push(Variables.applied_denoise);
+            Variables.applied_denoise_cpu = `hqdn3d=${hqdn3dValue}`;
+            Variables.applied_denoise = Variables.applied_denoise_cpu;
+            appliedFiltersSummary.push(Variables.applied_denoise_cpu);
+            appliedFiltersForExecutor.push(Variables.applied_denoise_cpu);
 
             // DEBAND - Removes color banding (essential for animation)
             if (isAnimation && year <= 2010) {
@@ -1280,7 +1328,7 @@ function Script(
                 appliedFiltersSummary.push(`deband=${debandParams}`);
                 appliedFiltersForExecutor.push(`deband=${debandParams}`);
             }
-        } else if (UseCPUFilters && !isHardwareEncode && cpuFiltersNeedHwBridge()) {
+        } else if (wantCpuDenoise && UseCPUFilters && !isHardwareEncode && cpuFiltersNeedHwBridge()) {
             // ===== CPU FILTERS WITH HW FRAMES: download to system memory, apply CPU filters, (no upload needed for CPU encoders) =====
             let hqdn3dValue;
             if (forceHqdn3d) {
@@ -1295,8 +1343,9 @@ function Script(
                 );
             }
             hybridCpuFilters.push(`hqdn3d=${hqdn3dValue}`);
-            Variables.applied_denoise = `hqdn3d=${hqdn3dValue}`;
-            appliedFiltersSummary.push(Variables.applied_denoise);
+            Variables.applied_denoise_cpu = `hqdn3d=${hqdn3dValue}`;
+            Variables.applied_denoise = Variables.applied_denoise_cpu;
+            appliedFiltersSummary.push(Variables.applied_denoise_cpu);
 
             if (isAnimation && year <= 2010) {
                 let debandParams;
@@ -1318,42 +1367,48 @@ function Script(
             if (hwEncoder === 'qsv') {
                 // Use vpp_qsv denoise explicitly. Do NOT use video.Denoise (it maps to CPU hqdn3d in current runners).
                 let qsvDenoiseValue;
-                if (forceVppQsv) {
-                    qsvDenoiseValue = Math.max(0, Math.min(100, parseInt(forceVppQsv) || 32));
-                    Logger.ILog(`Forced QSV denoise: vpp_qsv=denoise=${qsvDenoiseValue}`);
-                } else {
-                    qsvDenoiseValue = clampNumber(denoiseLevel, 0, 100);
-                    Logger.ILog(
-                        `Auto QSV denoise for ${year}: vpp_qsv=denoise=${qsvDenoiseValue} (level ${denoiseLevel}%)`
-                    );
-                }
-
-                const vppFormat = getVppQsvFormat(targetBitDepth);
-
-                // FileFlows generates a vpp_qsv filter when crop/scale is configured. Adding a second vpp_qsv filter is dropped.
-                // To ensure denoise is actually applied, take over the crop and generate a single vpp_qsv filter with denoise+crop+format.
                 let vppFilter;
-                if (hasCrop(video)) {
-                    vppFilter = buildVppQsvFilterWithExistingCrop(video, [
-                        `denoise=${qsvDenoiseValue}`,
-                        `format=${vppFormat}`
-                    ]);
-                    try {
-                        video.Crop = null;
-                    } catch (err) {}
-                } else {
-                    vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
-                }
-                Variables.applied_vpp_qsv_filter = vppFilter;
-                addedHardwareOnlyFilters = true;
+                if (wantQsvDenoise) {
+                    if (forceVppQsv) {
+                        qsvDenoiseValue = Math.max(0, Math.min(100, parseInt(forceVppQsv) || 32));
+                        Logger.ILog(`Forced QSV denoise: vpp_qsv=denoise=${qsvDenoiseValue}`);
+                    } else {
+                        qsvDenoiseValue = clampNumber(denoiseLevel, 0, 100);
+                        Logger.ILog(
+                            `Auto QSV denoise for ${year}: vpp_qsv=denoise=${qsvDenoiseValue} (level ${denoiseLevel}%)`
+                        );
+                    }
 
-                // Remove any scale_qsv format filters added by Video Encode Advanced node
-                // to prevent duplicate -filter:v:0 arguments in the final command.
-                const removedScaleQsv = removeScaleQsvFormatFilters(video);
-                if (removedScaleQsv > 0) {
-                    Logger.ILog(
-                        `Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`
-                    );
+                    const vppFormat = getVppQsvFormat(targetBitDepth);
+
+                    // FileFlows generates a vpp_qsv filter when crop/scale is configured. Adding a second vpp_qsv filter is dropped.
+                    // To ensure denoise is actually applied, take over the crop and generate a single vpp_qsv filter with denoise+crop+format.
+                    if (hasCrop(video)) {
+                        vppFilter = buildVppQsvFilterWithExistingCrop(video, [
+                            `denoise=${qsvDenoiseValue}`,
+                            `format=${vppFormat}`
+                        ]);
+                        try {
+                            video.Crop = null;
+                        } catch (err) {}
+                    } else {
+                        vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
+                    }
+                    Variables.applied_vpp_qsv_filter = vppFilter;
+                    addedHardwareOnlyFilters = true;
+
+                    // Remove any scale_qsv format filters added by Video Encode Advanced node
+                    // to prevent duplicate -filter:v:0 arguments in the final command.
+                    const removedScaleQsv = removeScaleQsvFormatFilters(video);
+                    if (removedScaleQsv > 0) {
+                        Logger.ILog(
+                            `Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`
+                        );
+                    }
+                } else {
+                    Variables.applied_denoise_qsv = 'skipped';
+                    Variables.applied_vpp_qsv_filter = '';
+                    Logger.ILog(`Skipping QSV denoise (DenoiseMode=${denoiseMode})`);
                 }
 
                 // Debug: Deep dump of FfmpegBuilderModel and Video stream to JSON
@@ -1446,37 +1501,65 @@ function Script(
 
                 // Use the simple approach from community scripts: video.Filter.Add()
                 // This is a .NET List<string> that the FFmpeg Builder processes.
-                try {
-                    video.Filter.Add(vppFilter);
-                    Logger.ILog(`Added QSV filter via video.Filter.Add(): ${vppFilter}`);
-                } catch (err) {
-                    Logger.ELog(`Failed to add filter via video.Filter.Add(): ${err}`);
-                    return -1;
+                if (wantQsvDenoise && vppFilter) {
+                    try {
+                        video.Filter.Add(vppFilter);
+                        Logger.ILog(`Added QSV filter via video.Filter.Add(): ${vppFilter}`);
+                    } catch (err) {
+                        Logger.ELog(`Failed to add filter via video.Filter.Add(): ${err}`);
+                        return -1;
+                    }
+
+                    appliedFiltersForExecutor.push(vppFilter);
+
+                    Variables.applied_denoise_qsv = `vpp_qsv=denoise=${qsvDenoiseValue}`;
+                    Variables.qsv_denoise_value = qsvDenoiseValue;
+                    Variables.applied_denoise = Variables.applied_denoise_qsv;
+                    appliedFiltersSummary.push(Variables.applied_denoise_qsv);
                 }
-
-                appliedFiltersForExecutor.push(vppFilter);
-
-                Variables.applied_denoise = `vpp_qsv=denoise=${qsvDenoiseValue}`;
-                Variables.qsv_denoise_value = qsvDenoiseValue;
-                appliedFiltersSummary.push(Variables.applied_denoise);
 
                 // Optional CPU filters in hybrid mode (download frames -> CPU filter -> upload frames)
                 if (AllowCpuFiltersWithHardwareEncode) {
-                    if (UseCPUFilters) {
-                        // Treat UseCPUFilters as "allow CPU extras" in QSV mode (wrapped safely).
+                    if (wantCpuDenoise) {
+                        let hqdn3dValue;
                         if (forceHqdn3d) {
-                            Logger.ILog(`CPU denoise extra enabled: hqdn3d=${forceHqdn3d}`);
-                            if (cpuFiltersNeedHwBridge()) {
-                                hybridCpuFilters.push(`hqdn3d=${forceHqdn3d}`);
-                            } else {
-                                const addedVia = addVideoFilter(video, `hqdn3d=${forceHqdn3d}`);
-                                if (!addedVia) {
-                                    Logger.ELog('Unable to attach CPU denoise filter (QSV extras)');
-                                    return -1;
-                                }
-                                appliedFiltersForExecutor.push(`hqdn3d=${forceHqdn3d}`);
+                            hqdn3dValue = forceHqdn3d;
+                            Logger.ILog(`Forced CPU denoise (hardware encode): hqdn3d=${hqdn3dValue}`);
+                        } else {
+                            const spatial = ((denoiseLevel * 8) / 100).toFixed(1);
+                            const temporal = ((denoiseLevel * 16) / 100).toFixed(1);
+                            hqdn3dValue = `${spatial}:${spatial}:${temporal}:${temporal}`;
+                            Logger.ILog(
+                                `Auto CPU denoise (hardware encode) for ${year}: hqdn3d=${hqdn3dValue} (level ${denoiseLevel}%)`
+                            );
+                        }
+
+                        if (cpuFiltersNeedHwBridge()) {
+                            hybridCpuFilters.push(`hqdn3d=${hqdn3dValue}`);
+                        } else {
+                            const addedVia = addVideoFilter(video, `hqdn3d=${hqdn3dValue}`);
+                            if (!addedVia) {
+                                Logger.ELog('Unable to attach CPU denoise filter (hardware encode)');
+                                return -1;
                             }
-                            appliedFiltersSummary.push(`hqdn3d=${forceHqdn3d}`);
+                            appliedFiltersForExecutor.push(`hqdn3d=${hqdn3dValue}`);
+                        }
+
+                        Variables.applied_denoise_cpu = `hqdn3d=${hqdn3dValue}`;
+                        appliedFiltersSummary.push(Variables.applied_denoise_cpu);
+
+                        if (
+                            Variables.applied_denoise_qsv &&
+                            Variables.applied_denoise_qsv.indexOf('vpp_qsv=') === 0 &&
+                            Variables.applied_denoise_cpu &&
+                            Variables.applied_denoise_cpu.indexOf('hqdn3d=') === 0
+                        ) {
+                            Variables.applied_denoise = `${Variables.applied_denoise_qsv},${Variables.applied_denoise_cpu}`;
+                        } else if (
+                            Variables.applied_denoise_cpu &&
+                            Variables.applied_denoise_cpu.indexOf('hqdn3d=') === 0
+                        ) {
+                            Variables.applied_denoise = Variables.applied_denoise_cpu;
                         }
                     }
 
@@ -1608,7 +1691,8 @@ function Script(
 
     if (hybridCpuFilters.length > 0) {
         // Build a single, ordered CPU segment that safely bridges HW->SW (and back to HW for QSV encodes when needed).
-        const needUploadBackToHw = isHardwareEncode && hwEncoder === 'qsv';
+        const hybridCpuUpload = truthy(Variables['CleaningFilters.HybridCpuUpload']);
+        const needUploadBackToHw = isHardwareEncode && hwEncoder === 'qsv' && hybridCpuUpload;
         const parts = ['hwdownload', `format=${uploadHwFormat}`];
         if (hybridCpuFormat !== uploadHwFormat) parts.push(`format=${hybridCpuFormat}`);
         for (let i = 0; i < hybridCpuFilters.length; i++) parts.push(hybridCpuFilters[i]);

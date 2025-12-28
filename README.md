@@ -228,18 +228,21 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 #### Node Parameters
 
-| Parameter               | Description                                 | Pros / Cons                                                                                                 |
-| :---------------------- | :------------------------------------------ | :---------------------------------------------------------------------------------------------------------- |
-| `SkipDenoise`           | Disable all denoising.                      | **True:** Retains all film grain.<br>**False:** Better compression.                                         |
-| `AggressiveCompression` | Stronger filters for old/restored content.  | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                 |
-| `AutoDeinterlace`       | Probes for interlacing (idet) and fixes it. | Essential for old TV content. Adds probe time.                                                              |
-| `MpDecimateAnimation`   | Drop duplicate frames in Anime.             | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players). |
-| `UseCPUFilters`         | Prefer `hqdn3d` over hardware `vpp`.        | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                  |
+| Parameter               | Description                                 | Pros / Cons                                                                                                                                                                                        |
+| :---------------------- | :------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SkipDenoise`           | Disable all denoising.                      | **True:** Retains all film grain.<br>**False:** Better compression.                                                                                                                                |
+| `AggressiveCompression` | Stronger filters for old/restored content.  | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                                                                                                        |
+| `DenoiseMode`           | Select denoise strategy.                    | `auto`: Script chooses based on encoder/mode.<br>`qsv`: Use `vpp_qsv` denoise only.<br>`cpu`: Use `hqdn3d` CPU denoise (even with QSV encode).<br>`both`: QSV + CPU denoise.<br>`off`: No denoise. |
+| `AutoDeinterlace`       | Probes for interlacing (idet) and fixes it. | Essential for old TV content. Adds probe time.                                                                                                                                                     |
+| `MpDecimateAnimation`   | Drop duplicate frames in Anime.             | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players).                                                                                        |
+| `UseCPUFilters`         | Prefer `hqdn3d` over hardware `vpp`.        | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                                                                                                         |
 
 #### Advanced Variables
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
 - `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
+- `CleaningFilters.DenoiseMode`: Override the node `DenoiseMode` parameter.
+- `CleaningFilters.HybridCpuUpload`: When using hybrid CPU filters on QSV decode surfaces, also `hwupload` back to QSV surfaces (default: false; usually unnecessary since `hevc_qsv` can accept system-memory frames).
 - `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
 - `Variables.vpp_qsv`: Force QSV denoise level (0-100).
 - `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
