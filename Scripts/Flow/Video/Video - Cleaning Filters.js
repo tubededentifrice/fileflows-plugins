@@ -3,7 +3,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 43
+ * @revision 44
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -24,7 +24,7 @@ function Script(
     MpDecimateAnimation,
     QsvLookAhead
 ) {
-    Logger.ILog('Cleaning filters.js revision 43 loaded');
+    Logger.ILog('Cleaning filters.js revision 44 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -798,7 +798,7 @@ function Script(
 
     // Override variables (set these in upstream nodes to force specific filter values)
     const forceVppQsv = Variables.vpp_qsv; // e.g., "50" (Intel QSV vpp denoise, 0-100)
-    const forceHqdn3d = Variables.hqdn3d; // e.g., "2:2:6:6" (CPU)
+    const forceHqdn3d = safeString(Variables.hqdn3d).trim(); // e.g., "2:2:6:6" (CPU)
     const forceMpDecimateValue = Variables.mpdecimate; // e.g., "hi=768:lo=320:frac=0.33" or "mpdecimate=hi=..."
     const mpDecimateFilter = buildMpDecimateFilter(forceMpDecimateValue);
 
@@ -845,6 +845,21 @@ function Script(
     let addedHardwareOnlyFilters = false; // eg: vpp_qsv / deinterlace_qsv implies HW frames in filtergraph
     const targetBitDepth = detectTargetBitDepth(video);
     Variables.target_bit_depth = targetBitDepth;
+
+    // If the user explicitly sets hqdn3d, treat it as an intent to run CPU filters even in hardware encode mode.
+    // This is especially useful for "QSV encode + CPU filter detour" hybrid pipelines.
+    if (forceHqdn3d) {
+        if (!UseCPUFilters) {
+            UseCPUFilters = true;
+            Variables.cleaningfilters_auto_use_cpu_filters = true;
+            Logger.ILog('hqdn3d override detected; enabling CPU filters');
+        }
+        if (isHardwareEncode && !AllowCpuFiltersWithHardwareEncode) {
+            AllowCpuFiltersWithHardwareEncode = true;
+            Variables.cleaningfilters_auto_allow_cpu_filters_with_hw_encode = true;
+            Logger.WLog('hqdn3d override detected; enabling CPU filters with hardware encode (hybrid pipeline)');
+        }
+    }
 
     // If the user selected a 10-bit QSV HEVC encoder preset, keep (or add) the Main10 profile.
     // This is especially important when hybrid CPU detours are used, since any accidental nv12 hop can push the pipeline back to 8-bit.

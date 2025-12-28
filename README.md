@@ -240,6 +240,8 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
 - `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
+- `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
+- `Variables.vpp_qsv`: Force QSV denoise level (0-100).
 - `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
 - `Variables.ForceMpDecimate`: Force-enable mpdecimate even if heuristics would disable it.
 - `Variables.MpDecimateCfrRate` / `Variables.CfrRate`: Override CFR output framerate.
