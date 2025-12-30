@@ -222,6 +222,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - **Smart Deband:** Removes color banding in animation.
 - **MpDecimate:** Drops duplicate frames in animation (Variable Frame Rate) to save space.
 - **HDR/DoVi Safe:** Preserves dynamic range metadata.
+- **Attached Pictures Safe:** Scopes QSV tuning options to `v:0` when the file contains extra "attached picture" video streams (cover art/logo), preventing FFmpeg failures (eg MJPEG + B-frames).
 
 <details>
 <summary><strong>Configuration (Knobs & Dials)</strong></summary>
@@ -268,6 +269,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.detected_hw_encoder`: Detected hardware encoder ('qsv', 'vaapi', 'nvenc', 'none').
 - `Variables.hw_frames_likely`: Whether hardware frames are likely in the filtergraph.
 - `Variables.target_bit_depth`: Target output bit depth (8 or 10).
+- `Variables.output_video_stream_count`: Count of non-deleted output video streams in the builder model (helps diagnose attached pictures).
 - `Variables.applied_qsv_profile`: QSV profile set ('main10' for 10-bit).
 - `Variables.source_bit_depth`: Source bit depth detected.
 - `Variables.is_hdr`: Whether source is HDR.
@@ -340,6 +342,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Guarantees all filters (Denoise, Subtitles, Watermarks) are applied.
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
+- Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**

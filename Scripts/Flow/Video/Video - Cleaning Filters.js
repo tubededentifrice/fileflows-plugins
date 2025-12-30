@@ -3,7 +3,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 45
+ * @revision 46
  * @param {bool} SkipDenoise Skip all denoising filters
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
@@ -26,7 +26,7 @@ function Script(
     QsvLookAhead,
     DenoiseMode
 ) {
-    Logger.ILog('Cleaning filters.js revision 45 loaded');
+    Logger.ILog('Cleaning filters.js revision 46 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -820,6 +820,20 @@ function Script(
         Logger.ELog('FFMPEG Builder variable not found');
         return -1;
     }
+
+    // Some files contain attached pictures (cover.jpg/folder.jpg/logo.png) which FFmpeg Builder exposes as extra
+    // video streams. Unscoped encoder options (eg `-bf 7`) can unintentionally apply to those streams and break
+    // the encode (eg MJPEG does not support B-frames). When multiple output video streams exist, we must scope
+    // encoder tuning options to the primary video stream only.
+    const allVideoStreams = toEnumerableArray(ffmpeg.VideoStreams, 50);
+    let activeVideoStreamCount = 0;
+    for (let i = 0; i < allVideoStreams.length; i++) {
+        const s = allVideoStreams[i];
+        if (!s || s.Deleted) continue;
+        activeVideoStreamCount++;
+    }
+    const hasMultipleOutputVideoStreams = activeVideoStreamCount > 1;
+    Variables.output_video_stream_count = activeVideoStreamCount;
 
     const video = ffmpeg.VideoStreams[0];
     if (!video) {
@@ -1804,7 +1818,20 @@ function Script(
                                 24
                         ) || 24;
 
+                    const videoOutIndex = 0;
+                    const scopeVideo0 = hasMultipleOutputVideoStreams;
+
                     const isFlag = (flag) => (t) => t === flag || t.startsWith(flag + ':') || t.startsWith(flag + ':v');
+                    const scopedFlag = (flag) => (scopeVideo0 ? `${flag}:v:${videoOutIndex}` : flag);
+
+                    function removeUnscopedVariants(flag) {
+                        if (!scopeVideo0) return;
+                        // Remove unscoped or partially-scoped variants so we can safely re-add a fully scoped flag.
+                        removeArgWithValue(ep, (t) => t === flag);
+                        removeArgWithValue(ep, (t) => t === `${flag}:v`);
+                        removeArgWithValue(ep, (t) => t === `${flag}:v:`);
+                    }
+
                     const added = [];
                     const override = truthy(Variables['CleaningFilters.QsvTune.Override']);
 
@@ -1851,43 +1878,115 @@ function Script(
                         1
                     );
 
-                    if (override) removeArgWithValue(ep, isFlag('-extbrc'));
-                    if (ensureArgWithValue(ep, '-extbrc', String(extBrc), isFlag('-extbrc')))
-                        added.push(`-extbrc ${extBrc}`);
+                    if (override) {
+                        removeArgWithValue(ep, isFlag('-extbrc'));
+                    } else {
+                        removeUnscopedVariants('-extbrc');
+                    }
+                    if (
+                        ensureArgWithValue(
+                            ep,
+                            scopedFlag('-extbrc'),
+                            String(extBrc),
+                            (t) => t === scopedFlag('-extbrc')
+                        )
+                    )
+                        added.push(`${scopedFlag('-extbrc')} ${extBrc}`);
 
                     // Lookahead (optional; can improve compression, but costs throughput and may be unsupported on some stacks).
                     if (truthy(QsvLookAhead)) {
-                        if (override) removeArgWithValue(ep, isFlag('-look_ahead'));
-                        if (ensureArgWithValue(ep, '-look_ahead', '1', isFlag('-look_ahead')))
-                            added.push('-look_ahead 1');
+                        if (override) {
+                            removeArgWithValue(ep, isFlag('-look_ahead'));
+                        } else {
+                            removeUnscopedVariants('-look_ahead');
+                        }
+                        if (
+                            ensureArgWithValue(
+                                ep,
+                                scopedFlag('-look_ahead'),
+                                '1',
+                                (t) => t === scopedFlag('-look_ahead')
+                            )
+                        )
+                            added.push(`${scopedFlag('-look_ahead')} 1`);
 
                         const ladRaw = firstDefinedVariableString(['CleaningFilters.QsvTune.LookAheadDepth'], '');
                         const lad = ladRaw ? clampNumber(parseFloat(ladRaw), 1, 200) : null;
                         if (lad && !isNaN(lad)) {
-                            if (override) removeArgWithValue(ep, isFlag('-look_ahead_depth'));
-                            if (ensureArgWithValue(ep, '-look_ahead_depth', String(lad), isFlag('-look_ahead_depth')))
-                                added.push(`-look_ahead_depth ${lad}`);
+                            if (override) {
+                                removeArgWithValue(ep, isFlag('-look_ahead_depth'));
+                            } else {
+                                removeUnscopedVariants('-look_ahead_depth');
+                            }
+                            if (
+                                ensureArgWithValue(
+                                    ep,
+                                    scopedFlag('-look_ahead_depth'),
+                                    String(lad),
+                                    (t) => t === scopedFlag('-look_ahead_depth')
+                                )
+                            )
+                                added.push(`${scopedFlag('-look_ahead_depth')} ${lad}`);
                         }
                     }
 
                     // B-frames / refs (mostly impacts compression at same quality).
-                    if (override) removeArgWithValue(ep, isFlag('-bf'));
-                    if (ensureArgWithValue(ep, '-bf', String(bFrames), isFlag('-bf'))) added.push(`-bf ${bFrames}`);
-                    if (override) removeArgWithValue(ep, isFlag('-refs'));
-                    if (ensureArgWithValue(ep, '-refs', String(refs), isFlag('-refs'))) added.push(`-refs ${refs}`);
+                    if (override) {
+                        removeArgWithValue(ep, isFlag('-bf'));
+                    } else {
+                        removeUnscopedVariants('-bf');
+                    }
+                    if (ensureArgWithValue(ep, scopedFlag('-bf'), String(bFrames), (t) => t === scopedFlag('-bf')))
+                        added.push(`${scopedFlag('-bf')} ${bFrames}`);
+
+                    if (override) {
+                        removeArgWithValue(ep, isFlag('-refs'));
+                    } else {
+                        removeUnscopedVariants('-refs');
+                    }
+                    if (ensureArgWithValue(ep, scopedFlag('-refs'), String(refs), (t) => t === scopedFlag('-refs')))
+                        added.push(`${scopedFlag('-refs')} ${refs}`);
 
                     // Adaptive frame decisions.
-                    if (override) removeArgWithValue(ep, isFlag('-adaptive_i'));
-                    if (ensureArgWithValue(ep, '-adaptive_i', String(adaptiveI), isFlag('-adaptive_i')))
-                        added.push(`-adaptive_i ${adaptiveI}`);
-                    if (override) removeArgWithValue(ep, isFlag('-adaptive_b'));
-                    if (ensureArgWithValue(ep, '-adaptive_b', String(adaptiveB), isFlag('-adaptive_b')))
-                        added.push(`-adaptive_b ${adaptiveB}`);
+                    if (override) {
+                        removeArgWithValue(ep, isFlag('-adaptive_i'));
+                    } else {
+                        removeUnscopedVariants('-adaptive_i');
+                    }
+                    if (
+                        ensureArgWithValue(
+                            ep,
+                            scopedFlag('-adaptive_i'),
+                            String(adaptiveI),
+                            (t) => t === scopedFlag('-adaptive_i')
+                        )
+                    )
+                        added.push(`${scopedFlag('-adaptive_i')} ${adaptiveI}`);
+
+                    if (override) {
+                        removeArgWithValue(ep, isFlag('-adaptive_b'));
+                    } else {
+                        removeUnscopedVariants('-adaptive_b');
+                    }
+                    if (
+                        ensureArgWithValue(
+                            ep,
+                            scopedFlag('-adaptive_b'),
+                            String(adaptiveB),
+                            (t) => t === scopedFlag('-adaptive_b')
+                        )
+                    )
+                        added.push(`${scopedFlag('-adaptive_b')} ${adaptiveB}`);
 
                     // GOP (seekability + compression tradeoff). Do not override if the node already set one.
                     const gopPred = (t) => t === '-g' || t === '-g:v' || t.startsWith('-g:') || t.startsWith('-g:v');
                     if (override) removeArgWithValue(ep, gopPred);
-                    if (ensureArgWithValue(ep, '-g:v', String(gop2), gopPred)) added.push(`-g:v ${gop2}`);
+                    if (!override && scopeVideo0) {
+                        // Remove unscoped / global video GOP options so we can set GOP only for v:0.
+                        removeArgWithValue(ep, (t) => t === '-g' || t === '-g:v');
+                    }
+                    const gFlag = scopeVideo0 ? `-g:v:${videoOutIndex}` : '-g:v';
+                    if (ensureArgWithValue(ep, gFlag, String(gop2), (t) => t === gFlag)) added.push(`${gFlag} ${gop2}`);
 
                     if (added.length > 0) {
                         Variables.applied_qsv_tuning = added.join(' ');

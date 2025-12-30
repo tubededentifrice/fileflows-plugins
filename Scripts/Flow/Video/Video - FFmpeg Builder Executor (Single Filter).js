@@ -4,7 +4,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 14
+ * @revision 15
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -749,6 +749,19 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const outExt = getOutputExtension(model);
     const outFile = `${Flow.TempPath}/${Flow.NewGuid()}.${outExt}`;
 
+    // Some files have "attached picture" streams (cover art / logos) which FFmpeg Builder exposes as additional
+    // video streams. Unscoped encoder options (eg `-bf 7`) can unintentionally apply to those streams and cause
+    // FFmpeg to fail (eg MJPEG does not support B-frames). When multiple output video streams exist, force-scope
+    // common encoder options to the current output stream index.
+    const modelVideoStreams = toEnumerableArray(model.VideoStreams, 50);
+    let activeVideoStreamCount = 0;
+    for (let i = 0; i < modelVideoStreams.length; i++) {
+        const s = modelVideoStreams[i];
+        if (!s || s.Deleted) continue;
+        activeVideoStreamCount++;
+    }
+    const hasMultipleOutputVideoStreams = activeVideoStreamCount > 1;
+
     // ===== GLOBAL ARGS =====
     // Match FFmpeg Builder executor defaults as closely as possible.
     // Note: These are placed before inputs so they apply as input options.
@@ -774,6 +787,59 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     for (let i = 0; i < inputFiles.length; i++) args = args.concat(['-i', inputFiles[i]]);
 
     // ===== STREAMS =====
+    function scopeTokenToStream(token, typeChar, outIndex) {
+        const t = String(token || '').trim();
+        if (!t) return t;
+        const tc = String(typeChar || '').toLowerCase();
+        if (!tc) return t;
+
+        // Already fully scoped (eg -bf:v:0)
+        if (t.toLowerCase().indexOf(`:${tc}:`) >= 0) return t;
+
+        // Partially scoped (eg -g:v, -preset:v)
+        if (t.toLowerCase().indexOf(`:${tc}`) >= 0) return `${t}:${outIndex}`;
+
+        // Unscoped
+        return `${t}:${tc}:${outIndex}`;
+    }
+
+    function scopeCommonEncoderOptions(tokens, typeChar, outIndex) {
+        const tc = String(typeChar || '').toLowerCase();
+        if (tc !== 'v') return tokens || [];
+        if (!hasMultipleOutputVideoStreams) return tokens || [];
+
+        // Only scope a small set of common options that are known to break when they "bleed" into attached picture streams.
+        const shouldScope = {
+            '-bf': true,
+            '-refs': true,
+            '-adaptive_i': true,
+            '-adaptive_b': true,
+            '-look_ahead': true,
+            '-look_ahead_depth': true,
+            '-extbrc': true,
+            '-g': true,
+            '-g:v': true,
+            '-pix_fmt': true,
+            '-pix_fmt:v': true,
+            '-preset': true,
+            '-preset:v': true,
+            '-global_quality': true,
+            '-global_quality:v': true,
+            '-low_power': true,
+            '-low_power:v': true
+        };
+
+        const out = [];
+        for (let i = 0; i < (tokens || []).length; i++) {
+            const tok = String(tokens[i] || '').trim();
+            if (!tok) continue;
+            const lower = tok.toLowerCase();
+            if (shouldScope[lower]) out.push(scopeTokenToStream(tok, typeChar, outIndex));
+            else out.push(tok);
+        }
+        return out;
+    }
+
     function buildStream(typeChar, stream, outIndex) {
         const filterExpressions = [];
         const filtersFromModel = []
@@ -794,6 +860,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         }
 
         tokens = rewriteStreamIndexTokens(tokens, typeChar, outIndex);
+        tokens = scopeCommonEncoderOptions(tokens, typeChar, outIndex);
         tokens = replaceIndexPlaceholders(tokens, outIndex);
         tokens = replaceSourcePlaceholders(tokens, stream);
         tokens = stripMapArgs(tokens);
