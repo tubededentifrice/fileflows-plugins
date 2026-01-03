@@ -4,11 +4,11 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 27
+ * @revision 28
  * @minimumVersion 24.0.0.0
- * @param {int} TargetVMAF Target VMAF score (0 = auto based on content type, 93-99 manual). For SSIM, this is auto-converted. Default: 0 (auto)
- * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Default: 18
- * @param {int} MaxCRF Maximum CRF to search (higher = lower quality, smaller file). Default: 28
+ * @param {int} TargetVMAF Target VMAF score (0 = auto, 93-99 manual). Quality=97, Balanced=95, Compression=93. Default: 95
+ * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Suggested: 16-20. Default: 18
+ * @param {int} MaxCRF Maximum CRF to search (higher = lower quality, smaller file). Suggested: 24-30. Default: 26
  * @param {int} SampleDurationSec Duration of each sample in seconds. Default: 8
  * @param {int} SampleCount Number of samples to take from video. Default: 3
  * @param {int} MaxSearchIterations Maximum binary search iterations. Default: 6
@@ -16,9 +16,9 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
  * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
  * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
- * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: 2
+ * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: auto (half CPU cores)
  * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false
- * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. Default: min
+ * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. 'average' recommended for most content. Default: average
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -56,12 +56,12 @@ function Script(
 
     // ===== DEFAULTS =====
     if (!MinCRF || MinCRF <= 0) MinCRF = 18;
-    if (!MaxCRF || MaxCRF <= 0) MaxCRF = 28;
+    if (!MaxCRF || MaxCRF <= 0) MaxCRF = 26;
     if (!SampleDurationSec || SampleDurationSec <= 0) SampleDurationSec = 8;
     if (!SampleCount || SampleCount <= 0) SampleCount = 3;
     if (!MaxSearchIterations || MaxSearchIterations <= 0) MaxSearchIterations = 6;
     if (PreferSmaller === undefined || PreferSmaller === null) PreferSmaller = true;
-    if (TargetVMAF === undefined || TargetVMAF === null) TargetVMAF = 0;
+    if (TargetVMAF === undefined || TargetVMAF === null) TargetVMAF = 95;
     if (!Preset) Preset = 'veryslow';
     if (MinSizeReduction === undefined || MinSizeReduction === null) MinSizeReduction = 0;
 
@@ -74,10 +74,10 @@ function Script(
     if (Variables.MaxParallel) MaxParallel = parseInt(Variables.MaxParallel);
     if (Variables.ScoreAggregation) ScoreAggregation = String(Variables.ScoreAggregation);
 
-    if (!ScoreAggregation) ScoreAggregation = 'min';
+    if (!ScoreAggregation) ScoreAggregation = 'average';
     ScoreAggregation = ScoreAggregation.toLowerCase();
     if (['min', 'max', 'average'].indexOf(ScoreAggregation) === -1) {
-        ScoreAggregation = 'min';
+        ScoreAggregation = 'average';
     }
 
     if (!MaxParallel || MaxParallel <= 0) {

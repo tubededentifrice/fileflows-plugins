@@ -129,12 +129,12 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 
 | Parameter           | Default  | Description                                                              | Pros / Cons                                                                                                   |
 | :------------------ | :------- | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
-| `TargetVMAF`        | 0 (Auto) | Target quality score (93-99). 0 uses smart defaults based on Year/Genre. | **Higher:** Better quality, larger files.<br>**Lower:** Smaller files, risk of artifacts.                     |
-| `MinCRF`            | 18       | Lowest allowed CRF (highest quality cap).                                | **Lower:** Prevents blockiness in simple scenes.<br>**Higher:** Saves space on uncompressable content.        |
-| `MaxCRF`            | 28       | Highest allowed CRF (lowest quality cap).                                | **Higher:** Allows massive reduction on easy content.<br>**Lower:** Guarantees minimum quality floor.         |
+| `TargetVMAF`        | 95       | Target quality score (93-99). Quality=97, Balanced=95, Compression=93.   | **Higher:** Better quality, larger files.<br>**Lower:** Smaller files, risk of artifacts.                     |
+| `MinCRF`            | 18       | Lowest allowed CRF (highest quality cap). Suggested: 16-20.              | **Lower:** Prevents blockiness in simple scenes.<br>**Higher:** Saves space on uncompressable content.        |
+| `MaxCRF`            | 26       | Highest allowed CRF (lowest quality cap). Suggested: 24-30.              | **Higher:** Allows massive reduction on easy content.<br>**Lower:** Guarantees minimum quality floor.         |
 | `Preset`            | veryslow | Encoder preset for tests and final encode.                               | **Slower:** Better compression/quality ratio.<br>**Faster:** Quicker processing, larger files.                |
 | `SampleDurationSec` | 8        | Length of each test sample.                                              | **Longer:** More accurate score.<br>**Shorter:** Faster testing.                                              |
-| `ScoreAggregation`  | min      | How to aggregate scores from multiple samples ('min', 'max', 'average'). | **min:** Safest (all parts must look good).<br>**average:** Best for overall quality.<br>**max:** Optimistic. |
+| `ScoreAggregation`  | average  | How to aggregate scores from multiple samples ('min', 'max', 'average'). | **min:** Safest (all parts must look good).<br>**average:** Best for overall quality.<br>**max:** Optimistic. |
 | `MinSizeReduction`  | 0        | Minimum % size reduction to proceed.                                     | Set to e.g., 10 to skip files that won't shrink much.                                                         |
 
 #### Advanced Variables
@@ -227,13 +227,16 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 #### Node Parameters
 
-| Parameter               | Description                                 | Pros / Cons                                                                                                 |
-| :---------------------- | :------------------------------------------ | :---------------------------------------------------------------------------------------------------------- |
-| `SkipDenoise`           | Disable all denoising.                      | **True:** Retains all film grain.<br>**False:** Better compression.                                         |
-| `AggressiveCompression` | Stronger filters for old/restored content.  | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                 |
-| `AutoDeinterlace`       | Probes for interlacing (idet) and fixes it. | Essential for old TV content. Adds probe time.                                                              |
-| `MpDecimateAnimation`   | Drop duplicate frames in Anime.             | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players). |
-| `UseCPUFilters`         | Prefer `hqdn3d` over hardware `vpp`.        | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                  |
+| Parameter                           | Default     | Description                                                                                               | Pros / Cons                                                                                                 |
+| :---------------------------------- | :---------- | :-------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| `NoiseRetention`                    | 3           | How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Animation tolerates lower values. | **Lower (1-3):** Maximum compression, may smooth fine detail.<br>**Higher (7-10):** Preserves film grain.   |
+| `SkipDenoise`                       | false       | Disable all denoising (overrides NoiseRetention).                                                         | **True:** Retains all film grain.<br>**False:** Better compression.                                         |
+| `AggressiveCompression`             | false       | Stronger filters for old/restored content (auto-enabled for pre-1990).                                    | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                 |
+| `AutoDeinterlace`                   | true        | Probes for interlacing (idet) and fixes it.                                                               | Essential for old TV content. Adds probe time.                                                              |
+| `MpDecimateAnimation`               | auto-detect | Drop duplicate frames in Anime (auto-detects from metadata).                                              | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players). |
+| `UseCPUFilters`                     | false       | Prefer `hqdn3d` over hardware `vpp`.                                                                      | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                  |
+| `AllowCpuFiltersWithHardwareEncode` | true        | Allow CPU filters with hardware encoders (hybrid hw+cpu pipelines).                                       | **True:** More filter options.<br>**False:** Pure hardware pipeline (faster but limited).                   |
+| `QsvLookAhead`                      | true        | Enable QSV encoder lookahead (slower but better compression/quality).                                     | **True:** Better compression at cost of ~10-20% slower encode.<br>**False:** Faster encodes.                |
 
 #### Advanced Variables
 
@@ -272,12 +275,15 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 **Noise Probe:**
 
+- `Variables.NoiseRetention`: The NoiseRetention setting used (1-10).
 - `Variables.noise_probe_ok`: Whether noise probe succeeded (true/false).
 - `Variables.noise_probe_reason`: Reason for probe result or failure.
 - `Variables.noise_probe_offsets`: Noise level offsets detected across samples.
 - `Variables.noise_probe_samples`: Noise levels detected for each sample.
 - `Variables.noise_probe_score`: Overall noise score (lower = cleaner).
-- `Variables.noise_probe_adjust`: Adjustment applied to denoise level based on noise score.
+- `Variables.noise_threshold`: Noise threshold below which denoise is skipped (based on NoiseRetention).
+- `Variables.noise_probe_computed_level`: Computed denoise level based on noise score and NoiseRetention.
+- `Variables.denoise_skipped_reason`: Reason denoise was skipped (e.g., 'low-noise-detected').
 
 **Denoise:**
 

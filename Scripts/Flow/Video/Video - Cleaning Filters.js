@@ -3,28 +3,28 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 43
- * @param {bool} SkipDenoise Skip all denoising filters
- * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise)
- * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun). If hardware encoding is detected, this will be ignored unless AllowCpuFiltersWithHardwareEncode is enabled.
- * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (advanced; may break hardware pipelines depending on runner settings)
- * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable QSV deinterlacing (uses a quick `idet` probe)
- * @param {bool} AutoNoiseDenoise Probe video noise/grain level and nudge denoise strength (bounded adjustment)
- * @param {bool} MpDecimateAnimation Force-enable `mpdecimate` for animation/anime sources (unchecked = auto; drops duplicate frames; uses CFR output framing via `-fps_mode cfr` + `-r`)
- * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower, can improve compression/quality; requires FFmpeg/QSV support)
+ * @revision 44
+ * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3
+ * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention)
+ * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content)
+ * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun) when available. Default: false (use hardware filters)
+ * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (enables hybrid hw+cpu pipelines). Default: true
+ * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable deinterlacing (uses a quick `idet` probe). Default: true
+ * @param {bool} MpDecimateAnimation Enable `mpdecimate` for animation/anime sources (auto-detects from metadata; drops duplicate frames). Default: auto-detect
+ * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower but better compression/quality). Default: true
  * @output Cleaned video
  */
 function Script(
+    NoiseRetention,
     SkipDenoise,
     AggressiveCompression,
     UseCPUFilters,
     AllowCpuFiltersWithHardwareEncode,
     AutoDeinterlace,
-    AutoNoiseDenoise,
     MpDecimateAnimation,
     QsvLookAhead
 ) {
-    Logger.ILog('Cleaning filters.js revision 43 loaded');
+    Logger.ILog('Cleaning filters.js revision 44 loaded');
 
     const helpers = new ScriptHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -43,16 +43,43 @@ function Script(
     const detectTargetBitDepth = (v) => helpers.detectTargetBitDepth(v);
     const asJoinedString = (v) => helpers.asJoinedString(v);
 
-    // Parameter normalization
+    // Parameter normalization and defaults
+    // NoiseRetention: 1-10 scale (1=aggressive denoise, 10=keep all noise). Default: 3
+    if (NoiseRetention === undefined || NoiseRetention === null) {
+        NoiseRetention = parseInt(Variables.NoiseRetention || Variables['CleaningFilters.NoiseRetention'], 10);
+    }
+    if (isNaN(NoiseRetention) || NoiseRetention < 1 || NoiseRetention > 10) {
+        NoiseRetention = 3; // Default: aggressive denoise for compression
+    }
+    NoiseRetention = clampNumber(NoiseRetention, 1, 10);
+
     SkipDenoise = truthy(SkipDenoise) || truthy(Variables.SkipDenoise);
     AggressiveCompression = truthy(AggressiveCompression) || truthy(Variables.AggressiveCompression);
     UseCPUFilters = truthy(UseCPUFilters) || truthy(Variables.UseCPUFilters);
-    AllowCpuFiltersWithHardwareEncode =
-        truthy(AllowCpuFiltersWithHardwareEncode) || truthy(Variables.AllowCpuFiltersWithHardwareEncode);
-    AutoDeinterlace = truthy(AutoDeinterlace) || truthy(Variables.AutoDeinterlace);
-    AutoNoiseDenoise = truthy(AutoNoiseDenoise) || truthy(Variables.AutoNoiseDenoise);
-    MpDecimateAnimation = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
-    QsvLookAhead = truthy(QsvLookAhead) || truthy(Variables['CleaningFilters.QsvTune.LookAhead']);
+
+    // AllowCpuFiltersWithHardwareEncode defaults to TRUE (allow hybrid hw+cpu pipelines)
+    if (AllowCpuFiltersWithHardwareEncode === undefined || AllowCpuFiltersWithHardwareEncode === null) {
+        AllowCpuFiltersWithHardwareEncode = Variables.AllowCpuFiltersWithHardwareEncode;
+    }
+    AllowCpuFiltersWithHardwareEncode = AllowCpuFiltersWithHardwareEncode !== false; // default true
+
+    // AutoDeinterlace defaults to TRUE
+    if (AutoDeinterlace === undefined || AutoDeinterlace === null) {
+        AutoDeinterlace = Variables.AutoDeinterlace;
+    }
+    AutoDeinterlace = AutoDeinterlace !== false; // default true
+
+    // MpDecimateAnimation: if explicitly set use it, otherwise auto-detect
+    const MpDecimateAnimationExplicit = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
+
+    // QsvLookAhead defaults to TRUE
+    if (QsvLookAhead === undefined || QsvLookAhead === null) {
+        QsvLookAhead = Variables.QsvLookAhead || Variables['CleaningFilters.QsvTune.LookAhead'];
+    }
+    QsvLookAhead = QsvLookAhead !== false; // default true
+
+    // Always probe noise (for NoiseRetention logic) - this replaces AutoNoiseDenoise
+    const AutoNoiseDenoise = !SkipDenoise;
 
     function normalizeBitrateToKbps(value) {
         if (!value || isNaN(value)) return 0;
@@ -991,11 +1018,19 @@ function Script(
         }
     }
 
-    // ===== AUTO NOISE-BASED DENOISE NUDGE (optional) =====
-    // This is intentionally a bounded adjustment to the heuristic denoiseLevel above (year/genre/bitrate based).
-    // It can be misled by very fast motion or heavy scene changes, so we never let it fully decide denoise.
+    // ===== NOISE PROBE + NoiseRetention LOGIC =====
+    // NoiseRetention (1-10): 1=aggressive denoise, 10=keep all noise
+    // This new approach:
+    // 1. Always probes noise (unless SkipDenoise)
+    // 2. Uses NoiseRetention to modulate denoise strength
+    // 3. Bypasses denoise entirely if no significant noise detected and NoiseRetention is high
+    // 4. Animation tolerates more aggressive denoise than live-action
     let denoiseLevelBase = denoiseLevel;
     Variables.denoiseLevel_base = denoiseLevelBase;
+    Variables.NoiseRetention = NoiseRetention;
+
+    let noiseScore = null;
+    let skipDenoiseDueToLowNoise = false;
 
     if (AutoNoiseDenoise && !SkipDenoise && !forceVppQsv && !forceHqdn3d) {
         try {
@@ -1025,58 +1060,86 @@ function Script(
                     probe && probe.samples ? safeTokenString(probe.samples.map((x) => String(x)).join(',')) : '';
 
                 if (probe && probe.ok && probe.score !== null && probe.score !== undefined && !isNaN(probe.score)) {
-                    const score = Math.round(parseFloat(probe.score) * 1000) / 1000;
-                    Variables.noise_probe_score = score;
+                    noiseScore = Math.round(parseFloat(probe.score) * 1000) / 1000;
+                    Variables.noise_probe_score = noiseScore;
 
-                    let adjust = 0;
-                    if (score >= 4.5) adjust = 25;
-                    else if (score >= 3.6) adjust = 18;
-                    else if (score >= 2.8) adjust = 10;
-                    else if (score < 2.0) adjust = -10;
+                    // NoiseRetention-based logic:
+                    // - Lower NoiseRetention (1-3) = aggressive denoise, even at low noise scores
+                    // - Higher NoiseRetention (7-10) = preserve noise, only denoise if severe
+                    // - noiseScore thresholds: <2.0=low noise, 2.0-3.5=moderate, >3.5=high noise
 
-                    let maxIncrease =
-                        parseInt(Variables['NoiseProbe.MaxIncrease'], 10) ||
-                        parseInt(Variables.NoiseProbeMaxIncrease, 10) ||
-                        25;
-                    let maxDecrease =
-                        parseInt(Variables['NoiseProbe.MaxDecrease'], 10) ||
-                        parseInt(Variables.NoiseProbeMaxDecrease, 10) ||
-                        10;
+                    // Threshold below which we consider "no significant noise" depends on NoiseRetention
+                    // At NoiseRetention=10, threshold=3.5 (only denoise heavy noise)
+                    // At NoiseRetention=1, threshold=0.5 (always denoise if any noise detected)
+                    const noiseThreshold = 0.5 + (NoiseRetention - 1) * 0.33;
+                    Variables.noise_threshold = noiseThreshold;
 
-                    // Preserve intentional grain for doc/horror, and be conservative for very modern content.
-                    if (isDocumentary || isHorror) maxIncrease = Math.min(maxIncrease, 10);
-                    if (year >= 2019) maxIncrease = Math.min(maxIncrease, 10);
+                    if (noiseScore < noiseThreshold) {
+                        skipDenoiseDueToLowNoise = true;
+                        Logger.ILog(
+                            `Noise probe: score=${noiseScore} below threshold ${noiseThreshold.toFixed(1)} (NoiseRetention=${NoiseRetention}). Bypassing denoise.`
+                        );
+                    } else {
+                        // Calculate denoise strength based on noise score and NoiseRetention
+                        // Base formula: map noise score (0-6+) to denoise level (0-100)
+                        // Then modulate by inverse of NoiseRetention (1=max denoise, 10=min denoise)
+                        const noiseIntensityFactor = Math.min(1.0, noiseScore / 5.0); // 0-1 based on noise
+                        const retentionFactor = (11 - NoiseRetention) / 10; // 1.0 at retention=1, 0.1 at retention=10
 
-                    if (adjust > 0) adjust = Math.min(adjust, maxIncrease);
-                    if (adjust < 0) adjust = -Math.min(Math.abs(adjust), maxDecrease);
+                        // Animation can tolerate more aggressive denoise (1.2x multiplier)
+                        const contentFactor = isAnimation ? 1.2 : 1.0;
 
-                    Variables.noise_probe_adjust = adjust;
-                    denoiseLevel = clampNumber(denoiseLevelBase + adjust, 0, 100);
-                    Variables.denoiseLevel = denoiseLevel;
+                        // Combine factors to get final denoise level (0-100)
+                        let computedDenoise = Math.round(noiseIntensityFactor * retentionFactor * contentFactor * 80);
 
-                    Logger.ILog(
-                        `Noise probe: score=${score} -> denoise adjust ${adjust} (base ${denoiseLevelBase} => ${denoiseLevel})`
-                    );
+                        // Apply year-based baseline for very old content
+                        if (year && year <= 1990 && AggressiveCompression) {
+                            computedDenoise = Math.max(computedDenoise, 40);
+                        }
+
+                        // Documentary/Horror preserve some grain for atmosphere
+                        if (isDocumentary || isHorror) {
+                            computedDenoise = Math.min(computedDenoise, 30);
+                        }
+
+                        computedDenoise = clampNumber(computedDenoise, 0, 100);
+
+                        Logger.ILog(
+                            `Noise probe: score=${noiseScore} (threshold=${noiseThreshold.toFixed(1)}), NoiseRetention=${NoiseRetention}, content=${isAnimation ? 'animation' : 'live-action'}`
+                        );
+                        Logger.ILog(
+                            `Computed denoise: ${computedDenoise}% (intensity=${noiseIntensityFactor.toFixed(2)}, retention=${retentionFactor.toFixed(2)}, content=${contentFactor})`
+                        );
+
+                        // Replace heuristic level with probe-based level
+                        denoiseLevel = computedDenoise;
+                        Variables.noise_probe_computed_level = computedDenoise;
+                    }
                 } else {
-                    Variables.noise_probe_adjust = 0;
-                    Logger.WLog(`Noise probe enabled but no usable samples (${Variables.noise_probe_reason})`);
+                    Logger.WLog(
+                        `Noise probe enabled but no usable samples (${Variables.noise_probe_reason}). Using heuristic denoise.`
+                    );
                 }
             } else {
                 Variables.noise_probe_ok = false;
                 Variables.noise_probe_reason = 'missing-ffmpeg-or-input';
-                Variables.noise_probe_adjust = 0;
-                Logger.WLog('Noise probe enabled but ffmpeg path or input file missing; skipping');
+                Logger.WLog('Noise probe enabled but ffmpeg path or input file missing; using heuristic denoise');
             }
         } catch (err) {
             Variables.noise_probe_ok = false;
-            Variables.noise_probe_reason = `error:${err}`;
-            Variables.noise_probe_adjust = 0;
-            Logger.WLog(`Noise probe failed: ${err}`);
+            Variables.noise_probe_reason = 'error:' + String(err);
+            Logger.WLog('Noise probe failed: ' + String(err) + '; using heuristic denoise');
         }
     } else {
         Variables.noise_probe_ok = false;
-        Variables.noise_probe_reason = AutoNoiseDenoise ? 'skipped (forced denoise or SkipDenoise)' : 'disabled';
-        Variables.noise_probe_adjust = 0;
+        Variables.noise_probe_reason = SkipDenoise ? 'SkipDenoise=true' : 'forced-filter-mode';
+    }
+
+    // If no significant noise detected, force skip denoise
+    if (skipDenoiseDueToLowNoise) {
+        denoiseLevel = 0;
+        Variables.denoiseLevel = 0;
+        Variables.denoise_skipped_reason = 'low-noise-detected';
     }
 
     // ===== MANUAL DENOISE CONTROL (Variables) =====
@@ -1124,7 +1187,7 @@ function Script(
     const hybridCpuFormat = targetBitDepth >= 10 ? 'p010le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
     const skipMpDecimate = truthy(Variables.SkipMpDecimate) || truthy(Variables.SkipDecimate);
-    const forceMpDecimate = MpDecimateAnimation || truthy(Variables.ForceMpDecimate);
+    const forceMpDecimate = MpDecimateAnimationExplicit || truthy(Variables.ForceMpDecimate);
     let enableMpDecimate = false;
     let mpDecimateReason = 'disabled';
     if (skipMpDecimate) {

@@ -1,11 +1,12 @@
 import { ScriptHelpers } from 'Shared/ScriptHelpers';
 
 /**
- * @description Check the size in MiB per hour of the input by checking the full file size and dividing by the video duration.
+ * @description Check the size in MiB per hour of the input by checking the full file size and dividing by the video duration. Use 'MiB per hour per resolution' for resolution-specific thresholds with defaults.
  * @author Vincent Courcelle
- * @param {int} MaxMiBPerHour MBytes per hour threshold (1024^2)
- * @output Actual MB per hour below or equal the threshold
- * @output Actual MB per hour above the threshold
+ * @revision 2
+ * @param {int} MaxMiBPerHour MBytes per hour threshold. Suggested: 4K=3000, 1080p=1500, 720p=1000, SD=600. Required.
+ * @output Actual MiB per hour below or equal the threshold
+ * @output Actual MiB per hour above the threshold
  * @output Unable to get video duration or other problem
  */
 function Script(MaxMiBPerHour) {
