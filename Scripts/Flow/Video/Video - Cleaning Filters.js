@@ -1,4 +1,5 @@
 import { ScriptHelpers } from 'Shared/ScriptHelpers';
+import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
@@ -27,6 +28,7 @@ function Script(
     Logger.ILog('Cleaning filters.js revision 44 loaded');
 
     const helpers = new ScriptHelpers();
+    const ffmpegHelpers = new FfmpegHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
     const safeString = (v) => helpers.safeString(v);
     const truthy = (v) => helpers.truthy(v);
@@ -123,83 +125,9 @@ function Script(
 
     const safeTokenString = safeString;
 
-    function flattenFilterExpressions(filters) {
-        const parts = [];
-        for (let i = 0; i < (filters || []).length; i++) {
-            const f = String(filters[i] || '').trim();
-            if (!f) continue;
-            const split = f
-                .split(',')
-                .map((x) => x.trim())
-                .filter((x) => x);
-            for (let j = 0; j < split.length; j++) parts.push(split[j]);
-        }
-        return parts;
-    }
-
-    function mergeVppQsv(existing, desired) {
-        // existing/desired like: vpp_qsv=denoise=13:format=p010le
-        const parse = (s) => {
-            const result = { name: '', items: [], map: {} };
-            if (!s) return result;
-            const t = String(s).trim();
-            const eq = t.indexOf('=');
-            if (eq < 0) {
-                result.name = t;
-                return result;
-            }
-            result.name = t.substring(0, eq);
-            const opts = t
-                .substring(eq + 1)
-                .split(':')
-                .map((x) => x.trim())
-                .filter((x) => x);
-            for (let i = 0; i < opts.length; i++) {
-                const o = opts[i];
-                const p = o.indexOf('=');
-                if (p > 0) {
-                    const k = o.substring(0, p);
-                    const v = o.substring(p + 1);
-                    result.items.push({ k, v });
-                    result.map[k] = v;
-                } else {
-                    result.items.push({ k: o, v: null });
-                    result.map[o] = null;
-                }
-            }
-            return result;
-        };
-
-        const a = parse(existing);
-        const b = parse(desired);
-        if (a.name !== 'vpp_qsv' || b.name !== 'vpp_qsv') return desired || existing;
-
-        const merged = [];
-        const seen = {};
-
-        // Keep existing order, override values when desired provides them.
-        for (let i = 0; i < a.items.length; i++) {
-            const it = a.items[i];
-            const key = it.k;
-            if (key in b.map) {
-                merged.push(key + (b.map[key] !== null ? '=' + b.map[key] : ''));
-                seen[key] = true;
-            } else {
-                merged.push(key + (it.v !== null ? '=' + it.v : ''));
-                seen[key] = true;
-            }
-        }
-
-        // Append desired-only keys in desired order.
-        for (let i = 0; i < b.items.length; i++) {
-            const it = b.items[i];
-            if (seen[it.k]) continue;
-            merged.push(it.k + (it.v !== null ? '=' + it.v : ''));
-        }
-
-        return 'vpp_qsv=' + merged.join(':');
-    }
-
+    // Use FfmpegHelpers for filter manipulation
+    const flattenFilterExpressions = (filters) => ffmpegHelpers.flattenFilterExpressions(filters);
+    const mergeVppQsv = (existing, desired) => ffmpegHelpers.mergeVppQsv(existing, desired);
     function tryAppendFilterToBuilderList(videoStream, propName, filter) {
         if (!videoStream || !propName || !filter) return false;
         let current = null;

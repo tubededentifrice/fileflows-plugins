@@ -1,5 +1,6 @@
 import { FfmpegBuilderDefaults } from 'Shared/FfmpegBuilderDefaults';
 import { ScriptHelpers } from 'Shared/ScriptHelpers';
+import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
@@ -23,10 +24,20 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const hasArg = (l, f) => helpers.hasArg(l, (t) => t.toLowerCase() === String(f || '').toLowerCase());
 
     const builderDefaults = new FfmpegBuilderDefaults();
+    const ffmpegHelpers = new FfmpegHelpers();
 
     // Shared helpers are imported, but we can alias them if we want to match existing code exactly
     // or just use them directly. The existing code uses `safeTokenString` which is identical to `safeString`.
     const safeTokenString = safeString;
+
+    // Use FfmpegHelpers for common ffmpeg command line manipulation
+    const splitCommandLine = (s) => ffmpegHelpers.splitCommandLine(s);
+    const mergeFilters = (filterExpressions) => ffmpegHelpers.mergeFilters(filterExpressions);
+    const extractAndStripFilterArgs = (tokens, typeChar) => ffmpegHelpers.extractAndStripFilterArgs(tokens, typeChar);
+    const extractCodecFromArgs = (tokens) => ffmpegHelpers.extractCodecFromArgs(tokens);
+    const stripCodecArgs = (tokens) => ffmpegHelpers.stripCodecArgs(tokens);
+    const rewriteStreamIndexTokens = (tokens, typeChar, outIndex) =>
+        ffmpegHelpers.rewriteStreamIndexTokens(tokens, typeChar, outIndex);
 
     function normalizeInputFile(value) {
         if (value === null || value === undefined) return '';
@@ -57,40 +68,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return '';
     }
 
-    function splitCommandLine(s) {
-        const input = String(s || '');
-        const out = [];
-        let cur = '';
-        let inQuotes = false;
-        let escape = false;
-        for (let i = 0; i < input.length; i++) {
-            const ch = input[i];
-            if (escape) {
-                cur += ch;
-                escape = false;
-                continue;
-            }
-            if (ch === '\\\\') {
-                escape = true;
-                continue;
-            }
-            if (ch === '"') {
-                inQuotes = !inQuotes;
-                continue;
-            }
-            if (!inQuotes && (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n')) {
-                if (cur.length) {
-                    out.push(cur);
-                    cur = '';
-                }
-                continue;
-            }
-            cur += ch;
-        }
-        if (cur.length) out.push(cur);
-        return out;
-    }
-
     function flattenTokenList(value) {
         const items = toEnumerableArray(value, 5000)
             .map(safeTokenString)
@@ -116,98 +93,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return tokens.join(' ');
     }
 
-    function splitFilterChain(chain) {
-        const s = String(chain || '');
-        const parts = [];
-        let cur = '';
-        let escaped = false;
-        for (let i = 0; i < s.length; i++) {
-            const ch = s[i];
-            if (escaped) {
-                cur += ch;
-                escaped = false;
-                continue;
-            }
-            if (ch === '\\\\') {
-                cur += ch;
-                escaped = true;
-                continue;
-            }
-            if (ch === ',') {
-                const t = cur.trim();
-                if (t) parts.push(t);
-                cur = '';
-                continue;
-            }
-            cur += ch;
-        }
-        const tail = cur.trim();
-        if (tail) parts.push(tail);
-        return parts;
-    }
-
-    function dedupePreserveOrder(items) {
-        const seen = {};
-        const out = [];
-        for (let i = 0; i < (items || []).length; i++) {
-            const v = String(items[i] || '').trim();
-            if (!v) continue;
-            if (seen[v]) continue;
-            seen[v] = true;
-            out.push(v);
-        }
-        return out;
-    }
-
-    function mergeFilters(filterExpressions) {
-        const flat = [];
-        for (let i = 0; i < (filterExpressions || []).length; i++) {
-            const f = String(filterExpressions[i] || '').trim();
-            if (!f) continue;
-            const parts = splitFilterChain(f);
-            for (let j = 0; j < parts.length; j++) flat.push(parts[j]);
-        }
-
-        // Common FileFlows/FFmpeg Builder artifact: injected `scale_qsv=format=p010le` for 10-bit output.
-        // If the chain already forces the same format (eg via vpp_qsv=...:format=p010le), drop the redundant segment.
-        const lowered = flat.map((x) => x.toLowerCase());
-        const hasP010 = lowered.some((x) => x.indexOf('format=p010le') >= 0 || x.indexOf('p010le') >= 0);
-        if (hasP010) {
-            for (let i = flat.length - 1; i >= 0; i--) {
-                const seg = lowered[i];
-                if (seg === 'scale_qsv=format=p010le') {
-                    flat.splice(i, 1);
-                    lowered.splice(i, 1);
-                }
-            }
-        }
-
-        return dedupePreserveOrder(flat).join(',');
-    }
-
-    function extractAndStripFilterArgs(tokens, typeChar) {
-        const out = [];
-        const filters = [];
-        for (let i = 0; i < (tokens || []).length; i++) {
-            const t = String(tokens[i] || '').trim();
-            const lower = t.toLowerCase();
-            const tc = String(typeChar || 'v').toLowerCase();
-            const isVideo = tc === 'v';
-            const isAudio = tc === 'a';
-            const isFilterFlag =
-                (isVideo && (lower === '-vf' || lower === '-filter:v' || lower.indexOf('-filter:v:') === 0)) ||
-                (isAudio && (lower === '-af' || lower === '-filter:a' || lower.indexOf('-filter:a:') === 0));
-            if (!isFilterFlag) {
-                out.push(t);
-                continue;
-            }
-            const val = i + 1 < tokens.length ? String(tokens[i + 1] || '').trim() : '';
-            if (val) filters.push(val);
-            i++; // skip value token
-        }
-        return { tokens: out, filters };
-    }
-
     function extractBareCodecToken(tokens) {
         const list = tokens || [];
         for (let i = 0; i < list.length; i++) {
@@ -221,35 +106,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             return { codec: t, tokens: out };
         }
         return { codec: '', tokens: list };
-    }
-
-    function extractCodecFromArgs(tokens) {
-        // Extracts codec from patterns like: -c:v:0 hevc_qsv, -c:v hevc_qsv, -c copy
-        for (let i = 0; i < (tokens || []).length - 1; i++) {
-            const t = String(tokens[i] || '')
-                .trim()
-                .toLowerCase();
-            if (t === '-c' || t.indexOf('-c:') === 0) {
-                const codec = String(tokens[i + 1] || '').trim();
-                if (codec) return codec;
-            }
-        }
-        return '';
-    }
-
-    function stripCodecArgs(tokens) {
-        const out = [];
-        for (let i = 0; i < (tokens || []).length; i++) {
-            const t = String(tokens[i] || '').trim();
-            if (!t) continue;
-            const lower = t.toLowerCase();
-            if (lower === '-c' || lower.indexOf('-c:') === 0) {
-                i++;
-                continue;
-            }
-            out.push(t);
-        }
-        return out;
     }
 
     function stripBareCodecToken(tokens, codec) {
@@ -272,20 +128,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 if (!prevIsCodecFlag) continue; // drop stray codec token
             }
             out.push(t);
-        }
-        return out;
-    }
-
-    function rewriteStreamIndexTokens(tokens, typeChar, outIndex) {
-        // Rewrites tokens like -c:v:0, -filter:v:0, -disposition:a:0 to use the provided outIndex.
-        // This avoids "gapped" indices when streams are deleted.
-        const out = [];
-        const re = new RegExp('(:' + typeChar + ':)(\\d+)$', 'i');
-        for (let i = 0; i < (tokens || []).length; i++) {
-            const t = String(tokens[i] || '').trim();
-            const m = t.match(re);
-            if (m) out.push(t.replace(re, '$1' + String(outIndex)));
-            else out.push(t);
         }
         return out;
     }

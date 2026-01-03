@@ -1,4 +1,5 @@
 import { ScriptHelpers } from 'Shared/ScriptHelpers';
+import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 
 /**
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
@@ -38,6 +39,7 @@ function Script(
     ScoreAggregation
 ) {
     const helpers = new ScriptHelpers();
+    const ffmpegHelpers = new FfmpegHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
     const safeString = (v) => helpers.safeString(v);
     const detectTargetBitDepth = (v) => helpers.detectTargetBitDepth(v);
@@ -45,6 +47,11 @@ function Script(
 
     // Local alias for safeString to match previous code style if preferred, or just use safeString directly.
     const safeTokenString = safeString;
+
+    // Use FfmpegHelpers for codec detection and filter manipulation
+    const getTargetCodec = (videoStream) => ffmpegHelpers.getTargetCodec(videoStream);
+    const getCRFArgument = (codec) => ffmpegHelpers.getCRFArgument(codec);
+    const splitFilterChain = (chain) => ffmpegHelpers.splitFilterChain(chain);
 
     function escapeFfmpegFilterArgValue(value) {
         // ffmpeg filter args use ':' as a separator, so escape it for Windows drive letters.
@@ -870,59 +877,6 @@ function Script(
         return bitrate || 0;
     }
 
-    function getTargetCodec(videoStream) {
-        // Try to detect from encoding parameters
-        const params = [];
-        try {
-            if (videoStream.EncodingParameters) {
-                const ep = videoStream.EncodingParameters;
-                if (typeof ep.GetEnumerator === 'function') {
-                    const enumerator = ep.GetEnumerator();
-                    while (enumerator.MoveNext()) {
-                        params.push(String(enumerator.Current));
-                    }
-                } else if (ep.length) {
-                    for (let i = 0; i < ep.length; i++) params.push(String(ep[i]));
-                }
-            }
-        } catch (e) {}
-
-        const signature = params.join(' ').toLowerCase();
-
-        // Check for specific encoders in parameters
-        if (signature.includes('hevc_qsv') || signature.includes('h265_qsv')) return 'hevc_qsv';
-        if (signature.includes('hevc_nvenc')) return 'hevc_nvenc';
-        if (signature.includes('hevc_vaapi')) return 'hevc_vaapi';
-        if (signature.includes('hevc_amf')) return 'hevc_amf';
-        if (signature.includes('libx265')) return 'libx265';
-        if (signature.includes('h264_qsv')) return 'h264_qsv';
-        if (signature.includes('h264_nvenc')) return 'h264_nvenc';
-        if (signature.includes('h264_vaapi')) return 'h264_vaapi';
-        if (signature.includes('libx264')) return 'libx264';
-        if (signature.includes('libsvtav1') || signature.includes('av1_qsv') || signature.includes('av1_nvenc')) {
-            if (signature.includes('av1_qsv')) return 'av1_qsv';
-            if (signature.includes('av1_nvenc')) return 'av1_nvenc';
-            return 'libsvtav1';
-        }
-
-        // Try to get from Codec property
-        const codec = String(videoStream.Codec || '').toLowerCase();
-        if (codec.includes('hevc') || codec.includes('h265') || codec.includes('x265')) return 'libx265';
-        if (codec.includes('h264') || codec.includes('x264') || codec.includes('avc')) return 'libx264';
-        if (codec.includes('av1')) return 'libsvtav1';
-
-        // Default to libx265
-        return 'libx265';
-    }
-
-    function getCRFArgument(codec) {
-        if (codec.includes('_vaapi')) return '-qp';
-        if (codec.includes('_nvenc')) return '-cq';
-        if (codec.includes('_qsv')) return '-global_quality:v';
-        if (codec.includes('_amf')) return '-qp_i';
-        return '-crf';
-    }
-
     function getReferenceQuality(minValue, targetCodec) {
         // Keep the reference noticeably higher quality than the search range.
         // For software CRF-like scales: lower is better; clamp to 0.
@@ -1323,36 +1277,6 @@ function Script(
 
         const baseEncodeTokens = buildBaseEncodeTokens();
 
-        function splitFilterChain(chain) {
-            const s = String(chain || '');
-            const parts = [];
-            let cur = '';
-            let escaped = false;
-            for (let i = 0; i < s.length; i++) {
-                const ch = s[i];
-                if (escaped) {
-                    cur += ch;
-                    escaped = false;
-                    continue;
-                }
-                if (ch === '\\\\') {
-                    cur += ch;
-                    escaped = true;
-                    continue;
-                }
-                if (ch === ',') {
-                    const t = cur.trim();
-                    if (t) parts.push(t);
-                    cur = '';
-                    continue;
-                }
-                cur += ch;
-            }
-            const tail = cur.trim();
-            if (tail) parts.push(tail);
-            return parts;
-        }
-
         function isHwuploadSegment(seg) {
             return /^hwupload(=|$)/i.test(String(seg || '').trim());
         }
@@ -1707,36 +1631,6 @@ function Script(
         }
 
         const baseEncodeTokens = buildBaseEncodeTokens();
-
-        function splitFilterChain(chain) {
-            const s = String(chain || '');
-            const parts = [];
-            let cur = '';
-            let escaped = false;
-            for (let i = 0; i < s.length; i++) {
-                const ch = s[i];
-                if (escaped) {
-                    cur += ch;
-                    escaped = false;
-                    continue;
-                }
-                if (ch === '\\\\') {
-                    cur += ch;
-                    escaped = true;
-                    continue;
-                }
-                if (ch === ',') {
-                    const t = cur.trim();
-                    if (t) parts.push(t);
-                    cur = '';
-                    continue;
-                }
-                cur += ch;
-            }
-            const tail = cur.trim();
-            if (tail) parts.push(tail);
-            return parts;
-        }
 
         function isHwuploadSegment(seg) {
             return /^hwupload(=|$)/i.test(String(seg || '').trim());

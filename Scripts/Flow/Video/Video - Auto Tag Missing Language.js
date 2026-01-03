@@ -42,6 +42,10 @@ function Script(
     const clampNumber = (v, min, max) => helpers.clampNumber(v, min, max);
     const truthy = (v) => helpers.truthy(v);
 
+    // Use ScriptHelpers for language normalization
+    const iso6392bToBcp47 = (code) => helpers.iso6392bToBcp47(code);
+    const guessLanguageFromText = (text) => helpers.guessLanguageFromText(text);
+
     function toInt(value, fallback) {
         const n = parseInt(value, 10);
         return isNaN(n) ? fallback : n;
@@ -213,105 +217,6 @@ function Script(
         // If it's already a 3-letter code (including ISO-639-3), keep it as-is.
         if (/^[a-z]{3}$/.test(raw)) return raw;
 
-        return '';
-    }
-
-    function iso6392bToBcp47(code) {
-        const raw = safeString(code).trim().toLowerCase();
-        if (!raw) return '';
-        if (raw === 'und' || raw === 'unknown' || raw === 'none' || raw === 'n/a') return '';
-
-        // Already BCP47 (e.g. "fr", "fr-ca").
-        // Note: 3-letter ISO-639 codes are technically valid BCP47 primary language subtags,
-        // but for common languages we prefer ISO-639-1 (2-letter) where available.
-        if (/^[a-z]{2}(-[a-z0-9]{2,8})*$/i.test(raw)) return raw.toLowerCase();
-
-        // Fast-path for common ISO-639-2/B -> ISO-639-1 mappings (preferred for BCP47 primary language subtag)
-        const mapToIso1 = {
-            eng: 'en',
-            fre: 'fr',
-            ger: 'de',
-            spa: 'es',
-            ita: 'it',
-            por: 'pt',
-            dut: 'nl',
-            swe: 'sv',
-            nor: 'no',
-            dan: 'da',
-            fin: 'fi',
-            rus: 'ru',
-            ukr: 'uk',
-            pol: 'pl',
-            cze: 'cs',
-            slo: 'sk',
-            bul: 'bg',
-            srp: 'sr',
-            hrv: 'hr',
-            slv: 'sl',
-            jpn: 'ja',
-            kor: 'ko',
-            chi: 'zh',
-            ara: 'ar',
-            heb: 'he',
-            per: 'fa',
-            hin: 'hi',
-            tha: 'th',
-            vie: 'vi',
-            ind: 'id',
-            may: 'ms',
-            gre: 'el',
-            tur: 'tr',
-            hun: 'hu',
-            est: 'et',
-            lav: 'lv',
-            lit: 'lt',
-            rum: 'ro'
-        };
-        if (mapToIso1[raw]) return mapToIso1[raw];
-
-        // Best-effort via FileFlows LanguageHelper if available.
-        try {
-            if (typeof LanguageHelper !== 'undefined' && LanguageHelper) {
-                const name = LanguageHelper.GetEnglishFor(raw);
-                const iso1 = LanguageHelper.GetIso1Code(name);
-                if (iso1) return String(iso1).trim().toLowerCase();
-            }
-        } catch (err) {}
-
-        // Fallback: use 3-letter code as BCP47 primary language subtag.
-        if (/^[a-z]{3}$/i.test(raw)) return raw;
-
-        return '';
-    }
-
-    function guessLanguageFromText(text) {
-        const s = safeString(text).toLowerCase();
-        if (!s) return '';
-
-        // Keep patterns conservative to avoid false positives (e.g., "encoder" matching "en").
-        const candidates = [
-            { iso: 'eng', re: /(^|[^a-z])(eng|english)([^a-z]|$)/i },
-            { iso: 'fre', re: /(^|[^a-z])(fre|fra|french)([^a-z]|$)/i },
-            { iso: 'ger', re: /(^|[^a-z])(ger|deu|german)([^a-z]|$)/i },
-            { iso: 'spa', re: /(^|[^a-z])(spa|spanish|español)([^a-z]|$)/i },
-            { iso: 'ita', re: /(^|[^a-z])(ita|italian)([^a-z]|$)/i },
-            { iso: 'por', re: /(^|[^a-z])(por|portuguese)([^a-z]|$)/i },
-            { iso: 'dut', re: /(^|[^a-z])(dut|nld|dutch)([^a-z]|$)/i },
-            { iso: 'rus', re: /(^|[^a-z])(rus|russian)([^a-z]|$)/i },
-            { iso: 'jpn', re: /(^|[^a-z])(jpn|japanese)([^a-z]|$)/i },
-            { iso: 'kor', re: /(^|[^a-z])(kor|korean)([^a-z]|$)/i },
-            { iso: 'chi', re: /(^|[^a-z])(chi|zho|chinese|mandarin)([^a-z]|$)/i },
-            { iso: 'ara', re: /(^|[^a-z])(ara|arabic)([^a-z]|$)/i },
-            { iso: 'heb', re: /(^|[^a-z])(heb|hebrew)([^a-z]|$)/i },
-            { iso: 'hin', re: /(^|[^a-z])(hin|hindi)([^a-z]|$)/i },
-            { iso: 'tha', re: /(^|[^a-z])(tha|thai)([^a-z]|$)/i },
-            { iso: 'vie', re: /(^|[^a-z])(vie|vietnamese)([^a-z]|$)/i },
-            { iso: 'ind', re: /(^|[^a-z])(ind|indonesian)([^a-z]|$)/i }
-        ];
-
-        for (const c of candidates) {
-            if (c.re.test(s)) return c.iso;
-        }
         return '';
     }
 
