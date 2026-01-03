@@ -16,6 +16,7 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
     - [Video - Cleaning Filters](#video---cleaning-filters)
     - [Video - FFmpeg Builder Executor (Single Filter)](#video---ffmpeg-builder-executor-single-filter)
     - [Video - Language Based Track Selection](#video---language-based-track-selection)
+    - [Video - Audio Format Converter](#video---audio-format-converter)
     - [Video - Resolution Fixed](#video---resolution-fixed)
 - [DockerMods](#dockermods)
 
@@ -221,24 +222,30 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - **Smart Deband:** Removes color banding in animation.
 - **MpDecimate:** Drops duplicate frames in animation (Variable Frame Rate) to save space.
 - **HDR/DoVi Safe:** Preserves dynamic range metadata.
+- **Attached Pictures Safe:** Scopes QSV tuning options to `v:0` when the file contains extra "attached picture" video streams (cover art/logo), preventing FFmpeg failures (eg MJPEG + B-frames).
 
 <details>
 <summary><strong>Configuration (Knobs & Dials)</strong></summary>
 
 #### Node Parameters
 
-| Parameter               | Description                                 | Pros / Cons                                                                                                 |
-| :---------------------- | :------------------------------------------ | :---------------------------------------------------------------------------------------------------------- |
-| `SkipDenoise`           | Disable all denoising.                      | **True:** Retains all film grain.<br>**False:** Better compression.                                         |
-| `AggressiveCompression` | Stronger filters for old/restored content.  | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                 |
-| `AutoDeinterlace`       | Probes for interlacing (idet) and fixes it. | Essential for old TV content. Adds probe time.                                                              |
-| `MpDecimateAnimation`   | Drop duplicate frames in Anime.             | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players). |
-| `UseCPUFilters`         | Prefer `hqdn3d` over hardware `vpp`.        | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                  |
+| Parameter               | Description                                 | Pros / Cons                                                                                                                                                                                        |
+| :---------------------- | :------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SkipDenoise`           | Disable all denoising.                      | **True:** Retains all film grain.<br>**False:** Better compression.                                                                                                                                |
+| `AggressiveCompression` | Stronger filters for old/restored content.  | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                                                                                                        |
+| `DenoiseMode`           | Select denoise strategy.                    | `auto`: Script chooses based on encoder/mode.<br>`qsv`: Use `vpp_qsv` denoise only.<br>`cpu`: Use `hqdn3d` CPU denoise (even with QSV encode).<br>`both`: QSV + CPU denoise.<br>`off`: No denoise. |
+| `AutoDeinterlace`       | Probes for interlacing (idet) and fixes it. | Essential for old TV content. Adds probe time.                                                                                                                                                     |
+| `MpDecimateAnimation`   | Drop duplicate frames in Anime.             | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players).                                                                                        |
+| `UseCPUFilters`         | Prefer `hqdn3d` over hardware `vpp`.        | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                                                                                                         |
 
 #### Advanced Variables
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
 - `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
+- `CleaningFilters.DenoiseMode`: Override the node `DenoiseMode` parameter.
+- `CleaningFilters.HybridCpuUpload`: When using hybrid CPU filters on QSV decode surfaces, also `hwupload` back to QSV surfaces (default: false; usually unnecessary since `hevc_qsv` can accept system-memory frames).
+- `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
+- `Variables.vpp_qsv`: Force QSV denoise level (0-100).
 - `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
 - `Variables.ForceMpDecimate`: Force-enable mpdecimate even if heuristics would disable it.
 - `Variables.MpDecimateCfrRate` / `Variables.CfrRate`: Override CFR output framerate.
@@ -262,6 +269,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.detected_hw_encoder`: Detected hardware encoder ('qsv', 'vaapi', 'nvenc', 'none').
 - `Variables.hw_frames_likely`: Whether hardware frames are likely in the filtergraph.
 - `Variables.target_bit_depth`: Target output bit depth (8 or 10).
+- `Variables.output_video_stream_count`: Count of non-deleted output video streams in the builder model (helps diagnose attached pictures).
 - `Variables.applied_qsv_profile`: QSV profile set ('main10' for 10-bit).
 - `Variables.source_bit_depth`: Source bit depth detected.
 - `Variables.is_hdr`: Whether source is HDR.
@@ -285,7 +293,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.denoise_boost`: Denoise boost applied.
 - `Variables.denoise_min` / `Variables.denoise_max`: Min/max clamps applied.
 - `Variables.applied_denoise`: The denoise filter applied (`hqdn3d=...` or `vpp_qsv=denoise=...`).
-- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-64).
+- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-100).
 
 **Deband:**
 
@@ -334,6 +342,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Guarantees all filters (Denoise, Subtitles, Watermarks) are applied.
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
+- Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**
@@ -353,6 +362,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 #### Advanced Variables
 
 - `Variables.ForceEncode`: Force execution even if no changes are detected.
+- `Variables['FFmpegExecutor.AudioFilterFallbackCodec']`: If audio filters are present but the audio codec is `copy`, re-encode audio using this codec (default: source codec when known/encodable, otherwise `eac3` for MKV and `aac` for MP4/MOV).
 - `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
 
 ##### Variables Set by Script (Output)
@@ -400,6 +410,29 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 - `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
 - `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
 - `Variables['TrackSelection.ReorderedCount']`: Number of subtitle streams reordered.
+
+</details>
+
+### Video - Audio Format Converter
+
+Converts remaining (non-deleted) audio tracks to a target codec and caps bitrate/sample rate. Intended to run after `Video - Language Based Track Selection` and before `Video - FFmpeg Builder Executor (Single Filter)`.
+
+Note: the script’s “smart copy” behavior is disabled when audio filters are present, since filters require decoding/re-encoding (stream copy can’t be filtered).
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+| Parameter           | Default | Description                                                                                                       |
+| :------------------ | :------ | :---------------------------------------------------------------------------------------------------------------- |
+| `Codec`             | eac3    | Target audio codec (`eac3`, `ac3`, `aac`, `libopus`, `flac`, or `copy`).                                          |
+| `BitratePerChannel` | 96      | Kbps per channel cap (total cap = channels × value). Source bitrate is kept if already lower. Set `0` to disable. |
+| `MaxSampleRate`     | 48000   | Maximum sample rate (`48000`, `44100`, or `Same as Source`).                                                      |
+
+##### Variables Modified
+
+- `Variables.FfmpegBuilderModel.AudioStreams[*].Codec`
+- `Variables.FfmpegBuilderModel.AudioStreams[*].EncodingParameters`
+- `Variables.FfmpegBuilderModel.ForceEncode` (set when changes are made)
 
 </details>
 
