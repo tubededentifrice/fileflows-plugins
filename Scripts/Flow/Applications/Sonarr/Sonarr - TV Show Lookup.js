@@ -4,8 +4,8 @@ import { SonarrVc } from 'Shared/SonarrVc';
  * @description This script looks up a TV Show from Sonarr and retrieves its metadata
  * @author Vincent Courcelle
  * @revision 2
- * @param {string} URL Sonarr root URL and port (e.g., http://sonarr:1234)
- * @param {string} ApiKey API Key for Sonarr
+ * @param {string} URL Sonarr root URL and port (e.g., http://sonarr:1234). If blank/unset, uses variable key(s): `Sonarr.Url`, `Sonarr.URI`.
+ * @param {string} ApiKey API Key for Sonarr. If blank/unset, uses variable key: `Sonarr.ApiKey`.
  * @param {bool} UseFolderName Whether to use the folder name instead of the file name for the search pattern.<br>If the folder starts with "Season", "Staffel", "Saison", or "Specials", the parent folder will be used.
  * @param {string} IgnoredFoldersRegex Ignore folders that match the regex pattern, takes the parent folder if matched; defaults to `^(Season|Staffel|Saison|Specials|S[0-9]+)` ; case insensitive
  * @output TV Show found

@@ -11,11 +11,11 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  * @param {bool} UseSpeechBrain Use offline CPU SpeechBrain language-id classifier (`fflangid-sb`). Default: true
  * @param {int} SpeechBrainMinConfidence Minimum confidence (0-100) required to accept SpeechBrain result. Default: 75
  * @param {bool} UseWhisperFallback If SpeechBrain is unavailable/low-confidence, fall back to whisper.cpp language detection (`fflangid-whisper`). Default: true
- * @param {int} SampleStartSeconds Start time for the audio sample (0 = auto). Default: 0
- * @param {int} SampleDurationSeconds Duration of the audio sample in seconds. Default: 25
+ * @param {int} SampleStartSeconds Start time for the audio sample (0 = auto). Default: 0. Override variable key: `AudioLangID.SampleStartSeconds`.
+ * @param {int} SampleDurationSeconds Duration of the audio sample in seconds. Default: 25. Override variable key: `AudioLangID.SampleDurationSeconds`.
  * @param {bool} PreferMkvPropEdit For MKV, prefer mkvpropedit over remuxing. Default: true
- * @param {bool} ForceRetag Force detection/tagging even if tracks already have a language tag. Can be overridden by `Variables['AudioLangID.ForceRetag']`. Default: false
- * @param {bool} TagSubtitles Also tag subtitle tracks that are missing a language tag. Can be overridden by `Variables['AudioLangID.TagSubtitles']`. Default: true
+ * @param {bool} ForceRetag Force detection/tagging even if tracks already have a language tag. Default: false. Override variable key: `AudioLangID.ForceRetag`.
+ * @param {bool} TagSubtitles Also tag subtitle tracks that are missing a language tag. Default: true. Override variable key: `AudioLangID.TagSubtitles`.
  * @output Tagged languages
  * @output No changes needed
  * @output Error

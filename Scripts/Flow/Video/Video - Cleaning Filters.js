@@ -5,14 +5,14 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
  * @revision 44
- * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3
- * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention)
- * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content)
- * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun) when available. Default: false (use hardware filters)
- * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (enables hybrid hw+cpu pipelines). Default: true
- * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable deinterlacing (uses a quick `idet` probe). Default: true
- * @param {bool} MpDecimateAnimation Enable `mpdecimate` for animation/anime sources (auto-detects from metadata; drops duplicate frames). Default: auto-detect
- * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower but better compression/quality). Default: true
+ * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3. Override variable key(s): `NoiseRetention`, `CleaningFilters.NoiseRetention`.
+ * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention). Override variable key: `SkipDenoise`.
+ * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content). Override variable key: `AggressiveCompression`.
+ * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun) when available. Default: false (use hardware filters). Override variable key: `UseCPUFilters`.
+ * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (enables hybrid hw+cpu pipelines). Default: true. Override variable key: `AllowCpuFiltersWithHardwareEncode`.
+ * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable deinterlacing (uses a quick `idet` probe). Default: true. Override variable key: `AutoDeinterlace`.
+ * @param {bool} MpDecimateAnimation Enable `mpdecimate` for animation/anime sources (auto-detects from metadata; drops duplicate frames). Default: auto-detect. Override variable key: `MpDecimateAnimation`.
+ * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower but better compression/quality). Default: true. Override variable key(s): `QsvLookAhead`, `CleaningFilters.QsvTune.LookAhead`.
  * @output Cleaned video
  */
 function Script(

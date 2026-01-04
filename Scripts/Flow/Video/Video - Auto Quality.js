@@ -7,19 +7,19 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @author Vincent Courcelle
  * @revision 28
  * @minimumVersion 24.0.0.0
- * @param {int} TargetVMAF Target VMAF score (0 = auto, 93-99 manual). Quality=97, Balanced=95, Compression=93. Default: 95
- * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Suggested: 16-20. Default: 18
- * @param {int} MaxCRF Maximum CRF to search (higher = lower quality, smaller file). Suggested: 24-30. Default: 26
+ * @param {int} TargetVMAF Target VMAF score (0 = auto, 93-99 manual). Quality=97, Balanced=95, Compression=93. Default: 95. Override variable key(s): `TargetVMAF`, `AutoQualityPreset`.
+ * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Suggested: 16-20. Default: 18. Override variable key(s): `MinCRF`, `AutoQualityPreset`.
+ * @param {int} MaxCRF Maximum CRF to search (higher = lower quality, smaller file). Suggested: 24-30. Default: 26. Override variable key(s): `MaxCRF`, `AutoQualityPreset`.
  * @param {int} SampleDurationSec Duration of each sample in seconds. Default: 8
  * @param {int} SampleCount Number of samples to take from video. Default: 3
  * @param {int} MaxSearchIterations Maximum binary search iterations. Default: 6
  * @param {bool} PreferSmaller When two CRFs meet target, prefer the smaller file (higher CRF). Default: true
  * @param {bool} UseTags Add FileFlows tags with CRF and quality info (premium feature). Default: false
- * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow
- * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0
- * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: auto (half CPU cores)
- * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false
- * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. 'average' recommended for most content. Default: average
+ * @param {('ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow')} Preset Encoder preset for quality testing and final encode. Slower = better compression. Default: veryslow. Override variable key: `Preset`.
+ * @param {int} MinSizeReduction Minimum percentage of file size reduction required to proceed (0-100). Default: 0. Override variable key: `MinSizeReduction`.
+ * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: auto (half CPU cores). Override variable key: `MaxParallel`.
+ * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false. Auto-enabled when variable key `MaxFileSize` is set (> 0).
+ * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. 'average' recommended for most content. Default: average. Override variable key: `ScoreAggregation`.
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */

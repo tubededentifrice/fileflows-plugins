@@ -4,8 +4,8 @@ import { RadarrVc } from 'Shared/RadarrVc';
  * @description This script looks up a Movie from Radarr and retrieves its metadata
  * @author Vincent Courcelle
  * @revision 2
- * @param {string} URL Radarr root URL and port (e.g., http://radarr:1234)
- * @param {string} ApiKey API Key for Radarr
+ * @param {string} URL Radarr root URL and port (e.g., http://radarr:1234). If blank/unset, uses variable key(s): `Radarr.Url`, `Radarr.URI`.
+ * @param {string} ApiKey API Key for Radarr. If blank/unset, uses variable key: `Radarr.ApiKey`.
  * @param {bool} UseFolderName Whether to use the folder name instead of the file name for search
  * @output Movie found
  * @output Movie NOT found or error
