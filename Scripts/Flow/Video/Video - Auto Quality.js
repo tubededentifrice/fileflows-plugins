@@ -879,6 +879,67 @@ function Script(
         return bitrate || 0;
     }
 
+    function getEstimatedAudioSize(ffmpegModel, duration) {
+        if (!ffmpegModel || !ffmpegModel.AudioStreams) return 0;
+        let totalBitrate = 0;
+        const audioStreams = toEnumerableArray(ffmpegModel.AudioStreams);
+
+        const sourceInfo = {};
+        if (ffmpegModel.VideoInfo && ffmpegModel.VideoInfo.AudioStreams) {
+            const sourceAudio = toEnumerableArray(ffmpegModel.VideoInfo.AudioStreams);
+            for (let i = 0; i < sourceAudio.length; i++) {
+                const sa = sourceAudio[i];
+                if (sa) {
+                    sourceInfo[sa.Index] = {
+                        Bitrate: sa.Bitrate,
+                        Codec: String(sa.Codec || '').toLowerCase()
+                    };
+                }
+            }
+        }
+
+        for (let i = 0; i < audioStreams.length; i++) {
+            const stream = audioStreams[i];
+            if (!stream || stream.Deleted) continue;
+
+            const src = sourceInfo[stream.Index] || { Bitrate: 0, Codec: '' };
+            const sourceBitrate = src.Bitrate || 0;
+            const sourceCodec = src.Codec;
+            const targetCodec = String(stream.Codec || '').toLowerCase();
+            const channels = stream.Channels || 2;
+
+            let isReencode = false;
+            if (targetCodec && targetCodec !== 'copy' && targetCodec !== sourceCodec) {
+                isReencode = true;
+            }
+
+            let estimatedStreamBitrate = stream.Bitrate || 0;
+
+            if (isReencode) {
+                if (estimatedStreamBitrate === 0 || estimatedStreamBitrate === sourceBitrate) {
+                    if (targetCodec.indexOf('ac3') >= 0 || targetCodec.indexOf('eac3') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 640000 : 256000;
+                    } else if (targetCodec.indexOf('aac') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 384000 : 128000;
+                    } else if (targetCodec.indexOf('mp3') >= 0) {
+                        estimatedStreamBitrate = 192000;
+                    } else if (targetCodec.indexOf('opus') >= 0) {
+                        estimatedStreamBitrate = channels >= 6 ? 192000 : 96000;
+                    } else {
+                        estimatedStreamBitrate = (channels / 2) * 128000;
+                    }
+                }
+            } else {
+                if (estimatedStreamBitrate <= 0) estimatedStreamBitrate = sourceBitrate;
+                if (estimatedStreamBitrate <= 0) estimatedStreamBitrate = channels * 64000;
+            }
+
+            totalBitrate += estimatedStreamBitrate;
+        }
+
+        return (totalBitrate * duration) / 8;
+    }
+
     function getReferenceQuality(minValue, targetCodec) {
         // Keep the reference noticeably higher quality than the search range.
         // For software CRF-like scales: lower is better; clamp to 0.
