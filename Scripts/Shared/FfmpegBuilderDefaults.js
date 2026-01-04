@@ -31,7 +31,7 @@ export class FfmpegBuilderDefaults {
      *
      * Defaults:
      * - `-fflags +genpts`
-     * - `-probesize 300M`
+     * - `-probesize 500M`
      * - `-analyzeduration 240000000`
      * - `-y`
      * - `-stats_period 5`
@@ -46,7 +46,7 @@ export class FfmpegBuilderDefaults {
         const out = [];
 
         if (!this.hasArg(input, '-fflags')) out.push('-fflags', '+genpts');
-        if (!this.hasArg(input, '-probesize')) out.push('-probesize', '300M');
+        if (!this.hasArg(input, '-probesize')) out.push('-probesize', '500M');
         if (!this.hasArg(input, '-analyzeduration')) out.push('-analyzeduration', '240000000');
         if (!this.hasArg(input, '-y')) out.push('-y');
         if (!this.hasArg(input, '-stats_period')) out.push('-stats_period', '5');

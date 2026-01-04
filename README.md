@@ -222,6 +222,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - **Smart Deband:** Removes color banding in animation.
 - **MpDecimate:** Drops duplicate frames in animation (Variable Frame Rate) to save space.
 - **HDR/DoVi Safe:** Preserves dynamic range metadata.
+- **Attached Pictures Safe:** Scopes QSV tuning options to `v:0` when the file contains extra "attached picture" video streams (cover art/logo), preventing FFmpeg failures (eg MJPEG + B-frames).
 
 <details>
 <summary><strong>Configuration (Knobs & Dials)</strong></summary>
@@ -243,6 +244,10 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
 - `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
+- `CleaningFilters.DenoiseMode`: Override the node `DenoiseMode` parameter.
+- `CleaningFilters.HybridCpuUpload`: When using hybrid CPU filters on QSV decode surfaces, also `hwupload` back to QSV surfaces (default: false; usually unnecessary since `hevc_qsv` can accept system-memory frames).
+- `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
+- `Variables.vpp_qsv`: Force QSV denoise level (0-100).
 - `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
 - `Variables.ForceMpDecimate`: Force-enable mpdecimate even if heuristics would disable it.
 - `Variables.MpDecimateCfrRate` / `Variables.CfrRate`: Override CFR output framerate.
@@ -266,6 +271,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.detected_hw_encoder`: Detected hardware encoder ('qsv', 'vaapi', 'nvenc', 'none').
 - `Variables.hw_frames_likely`: Whether hardware frames are likely in the filtergraph.
 - `Variables.target_bit_depth`: Target output bit depth (8 or 10).
+- `Variables.output_video_stream_count`: Count of non-deleted output video streams in the builder model (helps diagnose attached pictures).
 - `Variables.applied_qsv_profile`: QSV profile set ('main10' for 10-bit).
 - `Variables.source_bit_depth`: Source bit depth detected.
 - `Variables.is_hdr`: Whether source is HDR.
@@ -292,7 +298,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.denoise_boost`: Denoise boost applied.
 - `Variables.denoise_min` / `Variables.denoise_max`: Min/max clamps applied.
 - `Variables.applied_denoise`: The denoise filter applied (`hqdn3d=...` or `vpp_qsv=denoise=...`).
-- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-64).
+- `Variables.qsv_denoise_value`: Raw QSV denoise value (0-100).
 
 **Deband:**
 
@@ -411,6 +417,29 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 - `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
 - `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
 - `Variables['TrackSelection.ReorderedCount']`: Number of streams reordered.
+
+</details>
+
+### Video - Audio Format Converter
+
+Converts remaining (non-deleted) audio tracks to a target codec and caps bitrate/sample rate. Intended to run after `Video - Language Based Track Selection` and before `Video - FFmpeg Builder Executor (Single Filter)`.
+
+Note: the script’s “smart copy” behavior is disabled when audio filters are present, since filters require decoding/re-encoding (stream copy can’t be filtered).
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+| Parameter           | Default | Description                                                                                                       |
+| :------------------ | :------ | :---------------------------------------------------------------------------------------------------------------- |
+| `Codec`             | eac3    | Target audio codec (`eac3`, `ac3`, `aac`, `libopus`, `flac`, or `copy`).                                          |
+| `BitratePerChannel` | 96      | Kbps per channel cap (total cap = channels × value). Source bitrate is kept if already lower. Set `0` to disable. |
+| `MaxSampleRate`     | 48000   | Maximum sample rate (`48000`, `44100`, or `Same as Source`).                                                      |
+
+##### Variables Modified
+
+- `Variables.FfmpegBuilderModel.AudioStreams[*].Codec`
+- `Variables.FfmpegBuilderModel.AudioStreams[*].EncodingParameters`
+- `Variables.FfmpegBuilderModel.ForceEncode` (set when changes are made)
 
 </details>
 

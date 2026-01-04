@@ -926,8 +926,8 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     if (!result || result.exitCode !== 0) {
         const code = result ? result.exitCode : -1;
         Logger.ELog(`FFmpeg failed (exitCode=${code}).`);
-        if (result && result.output) Logger.ELog(String(result.output).substring(0, 3000));
-        if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 3000));
+        if (result && result.output) Logger.ELog(String(result.output).substring(0, 20000));
+        if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 20000));
         return -1;
     }
 

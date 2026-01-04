@@ -562,7 +562,9 @@ function Script(
             }
 
             const qualityScore = result.score;
-            const estimatedSize = result.bitrate > 0 ? result.bitrate * duration : 0;
+            const estimatedVideoSize = result.bitrate > 0 ? result.bitrate * duration : 0;
+            const estimatedAudioSize = getEstimatedAudioSize(ffmpegModel, duration);
+            const estimatedSize = estimatedVideoSize + estimatedAudioSize;
 
             searchResults.push({
                 crf: testCRF,
