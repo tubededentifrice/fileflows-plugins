@@ -3,23 +3,32 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 /**
  * @description Keeps only audio tracks matching the original language or specified additional languages.
  *              Unknown-language audio tracks are kept unless an original-language audio track exists (then unknown audio is removed).
- *              Subtitle tracks are NEVER deleted; they are only reordered using the same language priority rules as audio.
- *              Tracks are reordered: original language first (preserving relative order within each language), then additional languages in provided order, then unknown.
+ *              Subtitle tracks are NEVER deleted; they are only reordered (if enabled) by subtitle preference order.
+ *              Audio tracks are reordered: original language first (preserving relative order within each language), then additional languages in provided order, then unknown.
+ *              Subtitle tracks are reordered: SubtitleSortLanguages (or AdditionalLanguages if unset), then original language, then unknown, then everything else.
  *              Requires "Movie Lookup"/"TV Show Lookup" node to be executed first to set Variables.OriginalLanguage.
  * @author Vincent Courcelle
- * @revision 4
+ * @revision 5
  * @minimumVersion 24.0.0.0
  * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Also accepts an array (e.g., ["eng","fra"]). Original language is always kept first.
  * @param {bool} ProcessAudio Apply to audio streams (default: true)
  * @param {bool} ProcessSubtitles Reorder subtitle streams (default: true). Subtitles are always kept.
  * @param {bool} KeepFirstIfNoneMatch If no audio tracks match any language, keep the first audio track to avoid empty audio.
  * @param {bool} ReorderTracks Reorder tracks so original language comes first, then additional languages in order specified.
+ * @param {string} SubtitleSortLanguages Subtitle language preference order (comma-separated ISO 639-2/B codes, e.g. "eng,fra"). Also accepts an array. If empty/not set, defaults to AdditionalLanguages.
  * @output Tracks were modified (deleted/undeleted or reordered)
  * @output No changes were made
  * @output No original language found (lookup node not executed?)
  */
-function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIfNoneMatch, ReorderTracks) {
-    Logger.ILog('Video - Language Based Track Selection.js revision 4 loaded');
+function Script(
+    AdditionalLanguages,
+    ProcessAudio,
+    ProcessSubtitles,
+    KeepFirstIfNoneMatch,
+    ReorderTracks,
+    SubtitleSortLanguages
+) {
+    Logger.ILog('Video - Language Based Track Selection.js revision 5 loaded');
 
     const helpers = new ScriptHelpers();
     const toArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -64,6 +73,48 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
             const stream = streams[i];
             if (!stream) continue;
             const priority = getLanguagePriority(stream.Language, originalLang, additionalLangs);
+            decorated.push({ stream, priority, index: i });
+        }
+
+        decorated.sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            return a.index - b.index;
+        });
+
+        return decorated.map((x) => x.stream);
+    }
+
+    /**
+     * Subtitle sorting differs from audio sorting: it prioritizes preferred subtitle languages first,
+     * then original language (if not already preferred), then unknown, then everything else.
+     */
+    function getSubtitleLanguagePriority(streamLang, preferredSubtitleLangs, originalLang) {
+        // Preferred subtitle languages in order specified
+        if (streamLang) {
+            for (let i = 0; i < preferredSubtitleLangs.length; i++) {
+                if (languagesMatch(streamLang, preferredSubtitleLangs[i])) {
+                    return i;
+                }
+            }
+
+            // Original language after preferred subtitle languages (if not already included)
+            if (originalLang && languagesMatch(streamLang, originalLang)) {
+                return preferredSubtitleLangs.length;
+            }
+        }
+
+        if (!streamLang) return preferredSubtitleLangs.length + 1; // Unknown next
+
+        // Other languages last
+        return preferredSubtitleLangs.length + 10;
+    }
+
+    function stableSortSubtitleStreamsByLanguagePreference(streams, originalLang, preferredSubtitleLangs) {
+        const decorated = [];
+        for (let i = 0; i < streams.length; i++) {
+            const stream = streams[i];
+            if (!stream) continue;
+            const priority = getSubtitleLanguagePriority(stream.Language, preferredSubtitleLangs, originalLang);
             decorated.push({ stream, priority, index: i });
         }
 
@@ -126,6 +177,38 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
         }
     }
     Logger.ILog(`Allowed languages (ISO-2): ${allowedLangs.join(', ')}`);
+
+    // =========================================================================
+    // PARSE SUBTITLE SORT LANGUAGES (defaults to AdditionalLanguages)
+    // =========================================================================
+    const subtitleSortLangs = [];
+    let subtitleSortTokens = [];
+
+    if (SubtitleSortLanguages) {
+        if (Array.isArray(SubtitleSortLanguages)) {
+            subtitleSortTokens = SubtitleSortLanguages;
+        } else if (typeof SubtitleSortLanguages === 'string') {
+            subtitleSortTokens = SubtitleSortLanguages.split(',');
+        } else {
+            subtitleSortTokens = toArray(SubtitleSortLanguages, 200);
+        }
+
+        for (let i = 0; i < subtitleSortTokens.length; i++) {
+            const raw = String(subtitleSortTokens[i] || '').trim();
+            if (!raw) continue;
+
+            const iso2 = normalizeToIso2(raw);
+            if (!iso2) continue;
+
+            if (subtitleSortLangs.indexOf(iso2) >= 0) continue;
+            subtitleSortLangs.push(iso2);
+        }
+
+        Logger.ILog(`Subtitle sort languages (ISO-2): ${subtitleSortLangs.join(', ')}`);
+    } else {
+        for (let i = 0; i < additionalLangs.length; i++) subtitleSortLangs.push(additionalLangs[i]);
+        Logger.ILog('Subtitle sort languages not set; defaulting to AdditionalLanguages');
+    }
 
     // =========================================================================
     // GET FFMPEG BUILDER MODEL
@@ -271,7 +354,7 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
 
         const sortedSubs =
             ProcessSubtitles && ReorderTracks && subtitles.length > 1
-                ? stableSortStreamsByLanguagePreference(subtitles, originalLang, additionalLangs)
+                ? stableSortSubtitleStreamsByLanguagePreference(subtitles, originalLang, subtitleSortLangs)
                 : subtitles;
 
         if (ProcessSubtitles && ReorderTracks && sortedSubs.length > 1) {
@@ -364,6 +447,8 @@ function Script(AdditionalLanguages, ProcessAudio, ProcessSubtitles, KeepFirstIf
  * SUBTITLES:
  *   - Subtitle tracks are never deleted by this script.
  *   - Any existing Deleted=true flags on subtitle streams are cleared (Deleted=false).
+ *   - If reordering is enabled, subtitles are ordered by SubtitleSortLanguages (or AdditionalLanguages when unset),
+ *     then original language, then unknown, then everything else.
  *
  * Note: Reordering depends on FileFlows supporting .NET List<T>.Clear/Add operations.
  * If not supported, only deletion is applied and tracks remain in original order.

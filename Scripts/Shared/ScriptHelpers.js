@@ -1031,4 +1031,267 @@ export class ScriptHelpers {
         const d = this.parseDurationSeconds(m[1]);
         return d > 0 ? d : 0;
     }
+
+    // =========================================================================
+    // LANGUAGE NORMALIZATION HELPERS
+    // =========================================================================
+
+    /**
+     * Normalize any language code/name to ISO-639-2/B (3-letter bibliographic code)
+     * @param {string} codeOrName - Language code or name (e.g., "en", "eng", "English", "fra")
+     * @returns {string} ISO-639-2/B code (e.g., "eng", "fre") or empty string if unknown
+     */
+    normalizeLangToIso6392b(codeOrName) {
+        var raw = this.safeString(codeOrName).trim().toLowerCase();
+        if (!raw) return '';
+        if (raw === 'und' || raw === 'unknown' || raw === 'none' || raw === 'n/a') return '';
+
+        // ISO-639-2/B mapping (Matroska/MKV uses ISO-639-2)
+        var map = {
+            en: 'eng',
+            eng: 'eng',
+            english: 'eng',
+            fr: 'fre',
+            fra: 'fre',
+            fre: 'fre',
+            french: 'fre',
+            de: 'ger',
+            deu: 'ger',
+            ger: 'ger',
+            german: 'ger',
+            es: 'spa',
+            spa: 'spa',
+            spanish: 'spa',
+            it: 'ita',
+            ita: 'ita',
+            italian: 'ita',
+            pt: 'por',
+            por: 'por',
+            portuguese: 'por',
+            nl: 'dut',
+            nld: 'dut',
+            dut: 'dut',
+            dutch: 'dut',
+            sv: 'swe',
+            swe: 'swe',
+            swedish: 'swe',
+            no: 'nor',
+            nor: 'nor',
+            norwegian: 'nor',
+            nb: 'nor',
+            nob: 'nor',
+            nn: 'nor',
+            nno: 'nor',
+            da: 'dan',
+            dan: 'dan',
+            danish: 'dan',
+            fi: 'fin',
+            fin: 'fin',
+            finnish: 'fin',
+            ru: 'rus',
+            rus: 'rus',
+            russian: 'rus',
+            uk: 'ukr',
+            ukr: 'ukr',
+            ukrainian: 'ukr',
+            pl: 'pol',
+            pol: 'pol',
+            polish: 'pol',
+            cs: 'cze',
+            ces: 'cze',
+            cze: 'cze',
+            czech: 'cze',
+            sk: 'slo',
+            slk: 'slo',
+            slo: 'slo',
+            slovak: 'slo',
+            bg: 'bul',
+            bul: 'bul',
+            bulgarian: 'bul',
+            sr: 'srp',
+            srp: 'srp',
+            serbian: 'srp',
+            hr: 'hrv',
+            hrv: 'hrv',
+            croatian: 'hrv',
+            sl: 'slv',
+            slv: 'slv',
+            slovenian: 'slv',
+            ja: 'jpn',
+            jpn: 'jpn',
+            japanese: 'jpn',
+            ko: 'kor',
+            kor: 'kor',
+            korean: 'kor',
+            zh: 'chi',
+            zho: 'chi',
+            chi: 'chi',
+            chinese: 'chi',
+            mandarin: 'chi',
+            ar: 'ara',
+            ara: 'ara',
+            arabic: 'ara',
+            he: 'heb',
+            iw: 'heb',
+            heb: 'heb',
+            hebrew: 'heb',
+            fa: 'per',
+            fas: 'per',
+            per: 'per',
+            persian: 'per',
+            hi: 'hin',
+            hin: 'hin',
+            hindi: 'hin',
+            th: 'tha',
+            tha: 'tha',
+            thai: 'tha',
+            vi: 'vie',
+            vie: 'vie',
+            vietnamese: 'vie',
+            id: 'ind',
+            ind: 'ind',
+            indonesian: 'ind',
+            ms: 'may',
+            msa: 'may',
+            may: 'may',
+            malay: 'may',
+            el: 'gre',
+            ell: 'gre',
+            gre: 'gre',
+            greek: 'gre',
+            tr: 'tur',
+            tur: 'tur',
+            turkish: 'tur',
+            hu: 'hun',
+            hun: 'hun',
+            hungarian: 'hun',
+            et: 'est',
+            est: 'est',
+            estonian: 'est',
+            lv: 'lav',
+            lav: 'lav',
+            latvian: 'lav',
+            lt: 'lit',
+            lit: 'lit',
+            lithuanian: 'lit',
+            ro: 'rum',
+            ron: 'rum',
+            rum: 'rum',
+            romanian: 'rum'
+        };
+
+        if (map[raw]) return map[raw];
+
+        // If it's already a 3-letter code, keep it as-is
+        if (/^[a-z]{3}$/.test(raw)) return raw;
+
+        return '';
+    }
+
+    /**
+     * Convert ISO-639-2/B code to BCP47 (prefers 2-letter codes)
+     * @param {string} code - ISO-639-2/B code (e.g., "eng", "fre")
+     * @returns {string} BCP47 code (e.g., "en", "fr") or empty string
+     */
+    iso6392bToBcp47(code) {
+        var raw = this.safeString(code).trim().toLowerCase();
+        if (!raw) return '';
+        if (raw === 'und' || raw === 'unknown' || raw === 'none' || raw === 'n/a') return '';
+
+        // Already BCP47 (e.g. "fr", "fr-ca")
+        if (/^[a-z]{2}(-[a-z0-9]{2,8})*$/i.test(raw)) return raw.toLowerCase();
+
+        // ISO-639-2/B to ISO-639-1 mapping (preferred for BCP47)
+        var mapToIso1 = {
+            eng: 'en',
+            fre: 'fr',
+            ger: 'de',
+            spa: 'es',
+            ita: 'it',
+            por: 'pt',
+            dut: 'nl',
+            swe: 'sv',
+            nor: 'no',
+            dan: 'da',
+            fin: 'fi',
+            rus: 'ru',
+            ukr: 'uk',
+            pol: 'pl',
+            cze: 'cs',
+            slo: 'sk',
+            bul: 'bg',
+            srp: 'sr',
+            hrv: 'hr',
+            slv: 'sl',
+            jpn: 'ja',
+            kor: 'ko',
+            chi: 'zh',
+            ara: 'ar',
+            heb: 'he',
+            per: 'fa',
+            hin: 'hi',
+            tha: 'th',
+            vie: 'vi',
+            ind: 'id',
+            may: 'ms',
+            gre: 'el',
+            tur: 'tr',
+            hun: 'hu',
+            est: 'et',
+            lav: 'lv',
+            lit: 'lt',
+            rum: 'ro'
+        };
+        if (mapToIso1[raw]) return mapToIso1[raw];
+
+        // Try FileFlows LanguageHelper if available
+        try {
+            if (typeof LanguageHelper !== 'undefined' && LanguageHelper) {
+                var name = LanguageHelper.GetEnglishFor(raw);
+                var iso1 = LanguageHelper.GetIso1Code(name);
+                if (iso1) return String(iso1).trim().toLowerCase();
+            }
+        } catch (err) {}
+
+        // Fallback: use 3-letter code as BCP47 primary language subtag
+        if (/^[a-z]{3}$/i.test(raw)) return raw;
+
+        return '';
+    }
+
+    /**
+     * Guess language from text (track title, filename, etc.)
+     * @param {string} text - Text to analyze
+     * @returns {string} ISO-639-2/B code or empty string
+     */
+    guessLanguageFromText(text) {
+        var s = this.safeString(text).toLowerCase();
+        if (!s) return '';
+
+        // Conservative patterns to avoid false positives
+        var candidates = [
+            { iso: 'eng', re: /(^|[^a-z])(eng|english)([^a-z]|$)/i },
+            { iso: 'fre', re: /(^|[^a-z])(fre|fra|french)([^a-z]|$)/i },
+            { iso: 'ger', re: /(^|[^a-z])(ger|deu|german)([^a-z]|$)/i },
+            { iso: 'spa', re: /(^|[^a-z])(spa|spanish|español)([^a-z]|$)/i },
+            { iso: 'ita', re: /(^|[^a-z])(ita|italian)([^a-z]|$)/i },
+            { iso: 'por', re: /(^|[^a-z])(por|portuguese)([^a-z]|$)/i },
+            { iso: 'dut', re: /(^|[^a-z])(dut|nld|dutch)([^a-z]|$)/i },
+            { iso: 'rus', re: /(^|[^a-z])(rus|russian)([^a-z]|$)/i },
+            { iso: 'jpn', re: /(^|[^a-z])(jpn|japanese)([^a-z]|$)/i },
+            { iso: 'kor', re: /(^|[^a-z])(kor|korean)([^a-z]|$)/i },
+            { iso: 'chi', re: /(^|[^a-z])(chi|zho|chinese|mandarin)([^a-z]|$)/i },
+            { iso: 'ara', re: /(^|[^a-z])(ara|arabic)([^a-z]|$)/i },
+            { iso: 'heb', re: /(^|[^a-z])(heb|hebrew)([^a-z]|$)/i },
+            { iso: 'hin', re: /(^|[^a-z])(hin|hindi)([^a-z]|$)/i },
+            { iso: 'tha', re: /(^|[^a-z])(tha|thai)([^a-z]|$)/i },
+            { iso: 'vie', re: /(^|[^a-z])(vie|vietnamese)([^a-z]|$)/i },
+            { iso: 'ind', re: /(^|[^a-z])(ind|indonesian)([^a-z]|$)/i }
+        ];
+
+        for (var i = 0; i < candidates.length; i++) {
+            if (candidates[i].re.test(s)) return candidates[i].iso;
+        }
+        return '';
+    }
 }
