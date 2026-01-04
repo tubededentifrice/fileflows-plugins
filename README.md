@@ -377,7 +377,7 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 1.  Always keeps **Original Language** (found via Lookup script).
 2.  Keeps **Additional Languages** specified in settings.
 3.  Keeps **Unknown** language tracks _only_ if no Original Language track exists.
-4.  **Subtitles** are never deleted, only reordered (Original -> Additional -> Others).
+4.  **Subtitles** are never deleted, only reordered (Preferred Subs -> Original -> Unknown -> Others).
 
 **Requirements:**
 
@@ -387,12 +387,14 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 <details>
 <summary><strong>Configuration</strong></summary>
 
-| Parameter              | Description                                               |
-| :--------------------- | :-------------------------------------------------------- |
-| `AdditionalLanguages`  | Comma-separated list (e.g., `eng,fra`).                   |
-| `ProcessAudio`         | Apply logic to audio tracks.                              |
-| `ProcessSubtitles`     | Reorder subtitle tracks.                                  |
-| `KeepFirstIfNoneMatch` | Safety net: keep track 1 if nothing matches requirements. |
+| Parameter               | Description                                                                      |
+| :---------------------- | :------------------------------------------------------------------------------- |
+| `AdditionalLanguages`   | Comma-separated list (e.g., `eng,fra`).                                          |
+| `ProcessAudio`          | Apply logic to audio tracks.                                                     |
+| `ProcessSubtitles`      | Reorder subtitle tracks.                                                         |
+| `KeepFirstIfNoneMatch`  | Safety net: keep track 1 if nothing matches requirements.                        |
+| `ReorderTracks`         | Enable reordering (audio + subtitles).                                           |
+| `SubtitleSortLanguages` | Subtitle language priority (e.g., `eng,fra`); defaults to `AdditionalLanguages`. |
 
 #### Advanced Variables
 
@@ -405,7 +407,7 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 - `Variables['TrackSelection.AllowedLanguages']`: All allowed languages (original + additional).
 - `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
 - `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
-- `Variables['TrackSelection.ReorderedCount']`: Number of subtitle streams reordered.
+- `Variables['TrackSelection.ReorderedCount']`: Number of streams reordered.
 
 </details>
 
