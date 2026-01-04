@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 12
+ * @revision 13
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -228,6 +228,50 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     function isQsvCodec(codec) {
         const c = String(codec || '').toLowerCase();
         return c.indexOf('_qsv') >= 0;
+    }
+
+    function getStreamSourceCodecLower(stream) {
+        try {
+            const s = stream && stream.Stream ? stream.Stream : null;
+            if (s && s.Codec)
+                return String(s.Codec || '')
+                    .trim()
+                    .toLowerCase();
+        } catch (err) {}
+        return '';
+    }
+
+    function normalizeSourceAudioCodec(codecLower) {
+        const s = String(codecLower || '')
+            .trim()
+            .toLowerCase();
+        if (!s) return '';
+        if (s.indexOf('eac3') >= 0 || s.indexOf('e-ac-3') >= 0 || s.indexOf('eac-3') >= 0) return 'eac3';
+        if (s.indexOf('ac3') >= 0) return 'ac3';
+        if (s.indexOf('aac') >= 0) return 'aac';
+        if (s.indexOf('flac') >= 0) return 'flac';
+        if (s.indexOf('alac') >= 0) return 'alac';
+        if (s.indexOf('pcm_s16le') >= 0) return 'pcm_s16le';
+        if (s.indexOf('pcm_s24le') >= 0) return 'pcm_s24le';
+        if (s.indexOf('pcm_s32le') >= 0) return 'pcm_s32le';
+        if (s.indexOf('pcm_f32le') >= 0) return 'pcm_f32le';
+        if (s.indexOf('pcm_f64le') >= 0) return 'pcm_f64le';
+        return '';
+    }
+
+    function chooseAudioCodecForFilters(stream, outputExtension) {
+        const override = String(Variables['FFmpegExecutor.AudioFilterFallbackCodec'] || '').trim();
+        if (override) return override;
+
+        const sourceCodec = normalizeSourceAudioCodec(getStreamSourceCodecLower(stream));
+        if (sourceCodec) return sourceCodec;
+
+        const ext = String(outputExtension || '')
+            .trim()
+            .toLowerCase();
+        if (ext === 'mkv') return 'eac3';
+        if (ext === 'mp4' || ext === 'm4v' || ext === 'mov') return 'aac';
+        return 'aac';
     }
 
     function hasLowPowerOption(tokens, outIndex) {
@@ -547,6 +591,22 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const outExt = getOutputExtension(model);
     const outFile = `${Flow.TempPath}/${Flow.NewGuid()}.${outExt}`;
 
+    // Some files have "attached picture" streams (cover art / logos) which FFmpeg Builder exposes as additional
+    // video streams. Unscoped encoder options (eg `-bf 7`) can unintentionally apply to those streams and cause
+    // FFmpeg to fail (eg MJPEG does not support B-frames). When multiple output video streams exist, force-scope
+    // common encoder options to the current output stream index.
+    const modelVideoStreams = toEnumerableArray(model.VideoStreams, 50);
+    let outputVideoStreamCount = 0;
+    for (let i = 0; i < modelVideoStreams.length; i++) {
+        const v = modelVideoStreams[i];
+        if (!v || v.Deleted) continue;
+        outputVideoStreamCount++;
+    }
+    const hasMultipleOutputVideoStreams = outputVideoStreamCount > 1;
+    try {
+        Variables.output_video_stream_count = outputVideoStreamCount;
+    } catch (err) {}
+
     // ===== GLOBAL ARGS =====
     // Match FFmpeg Builder executor defaults as closely as possible.
     // Note: These are placed before inputs so they apply as input options.
@@ -572,6 +632,59 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     for (let i = 0; i < inputFiles.length; i++) args = args.concat(['-i', inputFiles[i]]);
 
     // ===== STREAMS =====
+    function scopeTokenToStream(token, typeChar, outIndex) {
+        const t = String(token || '').trim();
+        if (!t) return t;
+        const tc = String(typeChar || '').toLowerCase();
+        if (!tc) return t;
+
+        // Already fully scoped (eg -bf:v:0)
+        if (t.toLowerCase().indexOf(`:${tc}:`) >= 0) return t;
+
+        // Partially scoped (eg -g:v, -preset:v)
+        if (t.toLowerCase().indexOf(`:${tc}`) >= 0) return `${t}:${outIndex}`;
+
+        // Unscoped
+        return `${t}:${tc}:${outIndex}`;
+    }
+
+    function scopeCommonEncoderOptions(tokens, typeChar, outIndex) {
+        const tc = String(typeChar || '').toLowerCase();
+        if (tc !== 'v') return tokens || [];
+        if (!hasMultipleOutputVideoStreams) return tokens || [];
+
+        // Only scope a small set of common options that are known to break when they "bleed" into attached picture streams.
+        const shouldScope = {
+            '-bf': true,
+            '-refs': true,
+            '-adaptive_i': true,
+            '-adaptive_b': true,
+            '-look_ahead': true,
+            '-look_ahead_depth': true,
+            '-extbrc': true,
+            '-g': true,
+            '-g:v': true,
+            '-pix_fmt': true,
+            '-pix_fmt:v': true,
+            '-preset': true,
+            '-preset:v': true,
+            '-global_quality': true,
+            '-global_quality:v': true,
+            '-low_power': true,
+            '-low_power:v': true
+        };
+
+        const out = [];
+        for (let i = 0; i < (tokens || []).length; i++) {
+            const tok = String(tokens[i] || '').trim();
+            if (!tok) continue;
+            const lower = tok.toLowerCase();
+            if (shouldScope[lower]) out.push(scopeTokenToStream(tok, typeChar, outIndex));
+            else out.push(tok);
+        }
+        return out;
+    }
+
     function buildStream(typeChar, stream, outIndex) {
         const filterExpressions = [];
         const filtersFromModel = []
@@ -592,6 +705,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         }
 
         tokens = rewriteStreamIndexTokens(tokens, typeChar, outIndex);
+        tokens = scopeCommonEncoderOptions(tokens, typeChar, outIndex);
         tokens = replaceIndexPlaceholders(tokens, outIndex);
         tokens = replaceSourcePlaceholders(tokens, stream);
         tokens = stripMapArgs(tokens);
@@ -610,13 +724,30 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         // Some codecs (like PGS/DVD subs) are decoder-only names; we shouldn't try to use them as encoders.
         const isDecoderOnly = /^(hdmv_pgs_subtitle|dvd_subtitle|dvb_subtitle)$/i.test(streamCodec);
         const acceptStreamCodec = streamCodec && streamCodec.indexOf('-') === -1 && !isDecoderOnly;
-        const codec = String(codecFromArgs || bare.codec || (acceptStreamCodec ? streamCodec : '') || 'copy').trim();
+        let codec = String(codecFromArgs || bare.codec || (acceptStreamCodec ? streamCodec : '') || 'copy').trim();
 
         if (filterChain && codec.toLowerCase() === 'copy') {
-            Logger.ELog(
-                `Filters are present for ${typeChar}:${outIndex} but codec is copy; cannot filter with stream copy.`
-            );
-            return { ok: false, reason: 'copy-with-filters' };
+            const tc = String(typeChar || '')
+                .trim()
+                .toLowerCase();
+            if (tc === 'a') {
+                const fallback = String(chooseAudioCodecForFilters(stream, outExt) || '').trim();
+                if (!fallback || fallback.toLowerCase() === 'copy') {
+                    Logger.ELog(
+                        `Filters are present for a:${outIndex} but codec is copy; no fallback codec is configured.`
+                    );
+                    return { ok: false, reason: 'copy-with-filters' };
+                }
+                Logger.WLog(
+                    `Filters are present for a:${outIndex} but codec is copy; using '${fallback}' to allow filtering.`
+                );
+                codec = fallback;
+            } else {
+                Logger.ELog(
+                    `Filters are present for ${typeChar}:${outIndex} but codec is copy; cannot filter with stream copy.`
+                );
+                return { ok: false, reason: 'copy-with-filters' };
+            }
         }
 
         tokens = stripCodecArgs(tokens);

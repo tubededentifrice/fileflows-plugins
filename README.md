@@ -16,6 +16,7 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
     - [Video - Cleaning Filters](#video---cleaning-filters)
     - [Video - FFmpeg Builder Executor (Single Filter)](#video---ffmpeg-builder-executor-single-filter)
     - [Video - Language Based Track Selection](#video---language-based-track-selection)
+    - [Video - Audio Format Converter](#video---audio-format-converter)
     - [Video - Resolution Fixed](#video---resolution-fixed)
 - [DockerMods](#dockermods)
 
@@ -340,6 +341,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Guarantees all filters (Denoise, Subtitles, Watermarks) are applied.
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
+- Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**
@@ -359,6 +361,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 #### Advanced Variables
 
 - `Variables.ForceEncode`: Force execution even if no changes are detected.
+- `Variables['FFmpegExecutor.AudioFilterFallbackCodec']`: If audio filters are present but the audio codec is `copy`, re-encode audio using this codec (default: source codec when known/encodable, otherwise `eac3` for MKV and `aac` for MP4/MOV).
 - `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
 
 ##### Variables Set by Script (Output)
@@ -408,6 +411,29 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 - `Variables['TrackSelection.DeletedCount']`: Number of streams marked for deletion.
 - `Variables['TrackSelection.UndeletedCount']`: Number of streams kept (undeleted).
 - `Variables['TrackSelection.ReorderedCount']`: Number of streams reordered.
+
+</details>
+
+### Video - Audio Format Converter
+
+Converts remaining (non-deleted) audio tracks to a target codec and caps bitrate/sample rate. Intended to run after `Video - Language Based Track Selection` and before `Video - FFmpeg Builder Executor (Single Filter)`.
+
+Note: the script’s “smart copy” behavior is disabled when audio filters are present, since filters require decoding/re-encoding (stream copy can’t be filtered).
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+| Parameter           | Default | Description                                                                                                       |
+| :------------------ | :------ | :---------------------------------------------------------------------------------------------------------------- |
+| `Codec`             | eac3    | Target audio codec (`eac3`, `ac3`, `aac`, `libopus`, `flac`, or `copy`).                                          |
+| `BitratePerChannel` | 96      | Kbps per channel cap (total cap = channels × value). Source bitrate is kept if already lower. Set `0` to disable. |
+| `MaxSampleRate`     | 48000   | Maximum sample rate (`48000`, `44100`, or `Same as Source`).                                                      |
+
+##### Variables Modified
+
+- `Variables.FfmpegBuilderModel.AudioStreams[*].Codec`
+- `Variables.FfmpegBuilderModel.AudioStreams[*].EncodingParameters`
+- `Variables.FfmpegBuilderModel.ForceEncode` (set when changes are made)
 
 </details>
 
