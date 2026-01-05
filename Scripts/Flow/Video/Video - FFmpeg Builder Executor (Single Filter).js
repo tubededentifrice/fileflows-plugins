@@ -1129,7 +1129,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             );
 
             const retryArgs = buildQsvSafeRetryArgs(args);
-            let retryResult = Flow.Execute({ command: ffmpegPath, argumentList: retryArgs, timeout: timeout });
+            const retryResult = Flow.Execute({ command: ffmpegPath, argumentList: retryArgs, timeout: timeout });
             if (retryResult && retryResult.exitCode === 0) {
                 progress.complete();
                 Flow.SetWorkingFile(outFile);
