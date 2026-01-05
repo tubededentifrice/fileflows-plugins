@@ -155,7 +155,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         }
         out = cleaned;
 
-        if (crf !== null && crf !== undefined) {
+        if (crf != null) {
             out.push('-crf:v:0');
             out.push(String(crf));
         }
