@@ -1158,8 +1158,11 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                     return 1;
                 }
 
+                // Preserve the most recent failure result (software fallback preferred over retry, then original)
+                // so that diagnostic logging below reflects the last attempt that actually failed.
                 result = softwareResult || retryResult || result;
             } else {
+                // Preserve the retry failure result (if any) over the original so logging reflects the latest attempt.
                 result = retryResult || result;
             }
         }
