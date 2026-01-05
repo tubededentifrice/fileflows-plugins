@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 13
+ * @revision 17
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -38,6 +38,161 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const stripCodecArgs = (tokens) => ffmpegHelpers.stripCodecArgs(tokens);
     const rewriteStreamIndexTokens = (tokens, typeChar, outIndex) =>
         ffmpegHelpers.rewriteStreamIndexTokens(tokens, typeChar, outIndex);
+
+    function getResultText(result) {
+        if (!result) return '';
+        let s = '';
+        try {
+            if (result.output) s += String(result.output) + '\n';
+        } catch (err) {}
+        try {
+            if (result.standardError) s += String(result.standardError) + '\n';
+        } catch (err) {}
+        try {
+            if (result.standardOutput) s += String(result.standardOutput) + '\n';
+        } catch (err) {}
+        return s;
+    }
+
+    function looksLikeQsvEncoderInitFailure(outputText) {
+        const s = String(outputText || '').toLowerCase();
+        if (!s) return false;
+        if (s.indexOf('error while opening encoder') >= 0 && s.indexOf('_qsv') >= 0) return true;
+        if (s.indexOf('current profile is unsupported') >= 0 && s.indexOf('_qsv') >= 0) return true;
+        if (s.indexOf('some encoding parameters are not supported by the qsv runtime') >= 0) return true;
+        if (s.indexOf('low power mode is unsupported') >= 0 && s.indexOf('_qsv') >= 0) return true;
+        return false;
+    }
+
+    function removeFlagAndValue(tokens, isFlagToRemove) {
+        const list = tokens || [];
+        const out = [];
+        for (let i = 0; i < list.length; i++) {
+            const t = String(list[i] || '').trim();
+            const lower = t.toLowerCase();
+            if (isFlagToRemove(lower)) {
+                i++; // skip value token too
+                continue;
+            }
+            out.push(t);
+        }
+        return out;
+    }
+
+    function buildQsvSafeRetryArgs(tokens) {
+        function isRemovableQsvOption(lower) {
+            // Retry without the "advanced" QSV knobs that are commonly unsupported depending on driver/runtime/hardware.
+            if (lower === '-load_plugin') return true;
+            if (lower === '-extbrc' || lower.indexOf('-extbrc:') === 0) return true;
+            if (lower === '-look_ahead' || lower.indexOf('-look_ahead:') === 0) return true;
+            if (lower === '-adaptive_i' || lower.indexOf('-adaptive_i:') === 0) return true;
+            if (lower === '-adaptive_b' || lower.indexOf('-adaptive_b:') === 0) return true;
+            if (lower === '-bf' || lower.indexOf('-bf:') === 0) return true;
+            if (lower === '-refs' || lower.indexOf('-refs:') === 0) return true;
+            if (lower === '-profile' || lower.indexOf('-profile:') === 0) return true;
+            if (lower === '-low_power' || lower.indexOf('-low_power:') === 0) return true;
+            return false;
+        }
+
+        return removeFlagAndValue(tokens, isRemovableQsvOption);
+    }
+
+    function buildSoftwareFallbackArgs(tokens) {
+        const list = tokens || [];
+        let out = buildQsvSafeRetryArgs(list);
+
+        // Swap encoder: hevc_qsv -> libx265, h264_qsv -> libx264.
+        const videoCodec = String(extractCodecFromArgs(out) || '').toLowerCase();
+        const isHevcQsv = videoCodec === 'hevc_qsv';
+        const isH264Qsv = videoCodec === 'h264_qsv';
+        if (!isHevcQsv && !isH264Qsv) return out;
+
+        // Determine if this looks like HDR/10-bit intent, so we can pick a safer pixel format.
+        const argsStr = out.join(' ').toLowerCase();
+        const wants10Bit =
+            argsStr.indexOf('p010') >= 0 ||
+            argsStr.indexOf('main10') >= 0 ||
+            argsStr.indexOf('smpte2084') >= 0 ||
+            argsStr.indexOf('bt2020') >= 0;
+
+        // Replace -c:v:0 value (preferred), otherwise replace bare -c:v.
+        let replacedCodec = false;
+        for (let i = 0; i < out.length - 1; i++) {
+            const flag = String(out[i] || '').toLowerCase();
+            if (flag === '-c:v:0' || flag === '-codec:v:0') {
+                out[i + 1] = isHevcQsv ? 'libx265' : 'libx264';
+                replacedCodec = true;
+                break;
+            }
+        }
+        if (!replacedCodec) {
+            for (let i = 0; i < out.length - 1; i++) {
+                const flag = String(out[i] || '').toLowerCase();
+                if (flag === '-c:v' || flag === '-codec:v') {
+                    out[i + 1] = isHevcQsv ? 'libx265' : 'libx264';
+                    replacedCodec = true;
+                    break;
+                }
+            }
+        }
+
+        // Convert QSV quality knob to CRF as a reasonable fallback.
+        let crf = null;
+        const cleaned = [];
+        for (let i = 0; i < out.length; i++) {
+            const t = String(out[i] || '').trim();
+            const lower = t.toLowerCase();
+            if (lower === '-global_quality' || lower.indexOf('-global_quality:') === 0) {
+                const v = i + 1 < out.length ? out[i + 1] : null;
+                i++;
+                try {
+                    const n = parseInt(String(v || '').trim());
+                    if (!isNaN(n)) crf = clampNumber(n, 0, 51);
+                } catch (err) {}
+                continue;
+            }
+            cleaned.push(t);
+        }
+        out = cleaned;
+
+        if (crf != null) {
+            out.push('-crf:v:0');
+            out.push(String(crf));
+        }
+
+        // Ensure software encoders aren't fed QSV surfaces.
+        for (let i = 0; i < out.length - 1; i++) {
+            const flag = String(out[i] || '').toLowerCase();
+            if (flag === '-filter:v:0') {
+                const filter = String(out[i + 1] || '');
+                const lowerFilter = filter.toLowerCase();
+                const hasQsvFilters = lowerFilter.indexOf('_qsv') >= 0 || lowerFilter.indexOf('hwupload') >= 0;
+                const hasHwdownload = lowerFilter.indexOf('hwdownload') >= 0;
+                if (hasQsvFilters && !hasHwdownload) {
+                    out[i + 1] = filter + ',hwdownload,format=' + (wants10Bit ? 'p010le' : 'nv12');
+                }
+                break;
+            }
+        }
+
+        // Safer pix_fmt for libx265 10-bit HDR: yuv420p10le.
+        if (isHevcQsv && wants10Bit) {
+            let hasPixFmt = false;
+            for (let i = 0; i < out.length; i++) {
+                const flag = String(out[i] || '').toLowerCase();
+                if (flag === '-pix_fmt') {
+                    hasPixFmt = true;
+                    break;
+                }
+            }
+            if (!hasPixFmt) {
+                out.push('-pix_fmt');
+                out.push('yuv420p10le');
+            }
+        }
+
+        return out;
+    }
 
     function normalizeInputFile(value) {
         if (value === null || value === undefined) return '';
@@ -151,6 +306,28 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             if (s && s.TypeIndex !== undefined && s.TypeIndex !== null) return parseInt(s.TypeIndex);
         } catch (err) {}
         return -1;
+    }
+
+    function isImageStream(stream) {
+        try {
+            if (stream && stream.IsImage === true) return true;
+        } catch (err) {}
+        try {
+            const s = stream && stream.Stream ? stream.Stream : null;
+            if (s && s.IsImage === true) return true;
+        } catch (err) {}
+        return false;
+    }
+
+    function isImageCodec(codec) {
+        const c = String(codec || '')
+            .trim()
+            .toLowerCase();
+        if (!c) return false;
+        // Common attached-picture codecs in containers.
+        return (
+            c === 'png' || c === 'mjpeg' || c === 'jpeg' || c === 'bmp' || c === 'tiff' || c === 'gif' || c === 'webp'
+        );
     }
 
     function replaceSourcePlaceholders(tokens, stream) {
@@ -776,17 +953,38 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     for (let i = 0; i < videoStreams.length; i++) {
         const v = videoStreams[i];
         if (!v || v.Deleted) continue;
+        const imageStream = isImageStream(v);
         const idx = getStreamIndexString(v);
         if (!idx) {
             Logger.ELog('Could not determine video stream map index');
             return -1;
         }
         args = args.concat(['-map', idx]);
-        const built = buildStream('v', v, outV);
+        let built = buildStream('v', v, outV);
         if (!built.ok) return -1;
+
+        // Attached pictures / cover art streams can be very poorly tagged (missing pix_fmt, crazy fps, etc).
+        // If we don't need to filter them, prefer stream copy instead of re-encoding to avoid decode failures.
+        const likelyArtwork =
+            imageStream ||
+            (outV > 0 && (isImageCodec(built.codec) || isImageCodec(v.Codec) || isImageCodec(v.CodecName)));
+        if (likelyArtwork && !built.filterChain) {
+            built = {
+                ok: true,
+                codec: 'copy',
+                tokens: [],
+                filterChain: ''
+            };
+        }
+
         args = args.concat([`-c:v:${outV}`, built.codec || 'copy']);
         // Force full-power QSV encode unless already specified (avoids unexpected low_power defaults).
-        if (isQsvCodec(built.codec) && !hasLowPowerOption(args, outV) && !hasLowPowerOption(built.tokens, outV)) {
+        if (
+            !likelyArtwork &&
+            isQsvCodec(built.codec) &&
+            !hasLowPowerOption(args, outV) &&
+            !hasLowPowerOption(built.tokens, outV)
+        ) {
             args = args.concat([`-low_power:v:${outV}`, '0']);
         }
         if (built.tokens.length) args = args.concat(built.tokens);
@@ -924,10 +1122,55 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     if (!result || result.exitCode !== 0) {
+        const originalText = getResultText(result);
+        if (looksLikeQsvEncoderInitFailure(originalText)) {
+            Logger.WLog(
+                'Detected QSV encoder init failure. Retrying without advanced QSV encoder options (profile/low_power/lookahead/extbrc/bframes/refs).'
+            );
+
+            const retryArgs = buildQsvSafeRetryArgs(args);
+            const retryResult = Flow.Execute({ command: ffmpegPath, argumentList: retryArgs, timeout: timeout });
+            if (retryResult && retryResult.exitCode === 0) {
+                progress.complete();
+                Flow.SetWorkingFile(outFile);
+                tryClearModel(KeepModel);
+                return 1;
+            }
+
+            // Default: do NOT fall back to software (too slow for many setups).
+            // Opt-in via variable; keep legacy DisableSoftwareFallback for backward compatibility with earlier revision.
+            const disableSoftwareFallback = truthy(Variables['FFmpegExecutor.DisableSoftwareFallbackOnQsvFailure']);
+            const enableSoftwareFallback = truthy(Variables['FFmpegExecutor.EnableSoftwareFallbackOnQsvFailure']);
+            if (!disableSoftwareFallback && enableSoftwareFallback) {
+                Logger.WLog(
+                    'QSV encoder init still failing after retry. Falling back to software encoder (libx265/libx264) for the main video stream.'
+                );
+                const softwareArgs = buildSoftwareFallbackArgs(retryArgs);
+                const softwareResult = Flow.Execute({
+                    command: ffmpegPath,
+                    argumentList: softwareArgs,
+                    timeout: timeout
+                });
+                if (softwareResult && softwareResult.exitCode === 0) {
+                    progress.complete();
+                    Flow.SetWorkingFile(outFile);
+                    tryClearModel(KeepModel);
+                    return 1;
+                }
+
+                // Preserve the most recent failure result (software fallback preferred over retry, then original)
+                // so that diagnostic logging below reflects the last attempt that actually failed.
+                result = softwareResult || retryResult || result;
+            } else {
+                // Preserve the retry failure result (if any) over the original so logging reflects the latest attempt.
+                result = retryResult || result;
+            }
+        }
+
         const code = result ? result.exitCode : -1;
         Logger.ELog(`FFmpeg failed (exitCode=${code}).`);
-        if (result && result.output) Logger.ELog(String(result.output).substring(0, 20000));
-        if (result && result.standardError) Logger.ELog(String(result.standardError).substring(0, 20000));
+        const text = getResultText(result);
+        if (text) Logger.ELog(String(text).substring(0, 20000));
         return -1;
     }
 
