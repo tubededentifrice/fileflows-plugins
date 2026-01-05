@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 15
+ * @revision 17
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -306,6 +306,28 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             if (s && s.TypeIndex !== undefined && s.TypeIndex !== null) return parseInt(s.TypeIndex);
         } catch (err) {}
         return -1;
+    }
+
+    function isImageStream(stream) {
+        try {
+            if (stream && stream.IsImage === true) return true;
+        } catch (err) {}
+        try {
+            const s = stream && stream.Stream ? stream.Stream : null;
+            if (s && s.IsImage === true) return true;
+        } catch (err) {}
+        return false;
+    }
+
+    function isImageCodec(codec) {
+        const c = String(codec || '')
+            .trim()
+            .toLowerCase();
+        if (!c) return false;
+        // Common attached-picture codecs in containers.
+        return (
+            c === 'png' || c === 'mjpeg' || c === 'jpeg' || c === 'bmp' || c === 'tiff' || c === 'gif' || c === 'webp'
+        );
     }
 
     function replaceSourcePlaceholders(tokens, stream) {
@@ -931,17 +953,38 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     for (let i = 0; i < videoStreams.length; i++) {
         const v = videoStreams[i];
         if (!v || v.Deleted) continue;
+        const imageStream = isImageStream(v);
         const idx = getStreamIndexString(v);
         if (!idx) {
             Logger.ELog('Could not determine video stream map index');
             return -1;
         }
         args = args.concat(['-map', idx]);
-        const built = buildStream('v', v, outV);
+        let built = buildStream('v', v, outV);
         if (!built.ok) return -1;
+
+        // Attached pictures / cover art streams can be very poorly tagged (missing pix_fmt, crazy fps, etc).
+        // If we don't need to filter them, prefer stream copy instead of re-encoding to avoid decode failures.
+        const likelyArtwork =
+            imageStream ||
+            (outV > 0 && (isImageCodec(built.codec) || isImageCodec(v.Codec) || isImageCodec(v.CodecName)));
+        if (likelyArtwork && !built.filterChain) {
+            built = {
+                ok: true,
+                codec: 'copy',
+                tokens: [],
+                filterChain: ''
+            };
+        }
+
         args = args.concat([`-c:v:${outV}`, built.codec || 'copy']);
         // Force full-power QSV encode unless already specified (avoids unexpected low_power defaults).
-        if (isQsvCodec(built.codec) && !hasLowPowerOption(args, outV) && !hasLowPowerOption(built.tokens, outV)) {
+        if (
+            !likelyArtwork &&
+            isQsvCodec(built.codec) &&
+            !hasLowPowerOption(args, outV) &&
+            !hasLowPowerOption(built.tokens, outV)
+        ) {
             args = args.concat([`-low_power:v:${outV}`, '0']);
         }
         if (built.tokens.length) args = args.concat(built.tokens);

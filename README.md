@@ -348,6 +348,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
 - Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
+- Copies cover-art/attached-picture streams (when unfiltered) instead of re-encoding to avoid ffmpeg decode/probe failures on badly-tagged inputs.
 - Retries QSV encoder init failures with safer options; optional software fallback for the main video stream (opt-in).
 - Writes full FFmpeg command to metadata for auditing.
 
