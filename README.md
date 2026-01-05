@@ -348,6 +348,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
 - Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
+- Retries QSV encoder init failures with safer options; optional software fallback for the main video stream (opt-in).
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**
@@ -368,6 +369,8 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 
 - `Variables.ForceEncode`: Force execution even if no changes are detected.
 - `Variables['FFmpegExecutor.AudioFilterFallbackCodec']`: If audio filters are present but the audio codec is `copy`, re-encode audio using this codec (default: source codec when known/encodable, otherwise `eac3` for MKV and `aac` for MP4/MOV).
+- `Variables['FFmpegExecutor.EnableSoftwareFallbackOnQsvFailure']`: Set to `true` to fall back to software encoding for the main video stream when the QSV encoder cannot be initialized (unsupported profile/driver/runtime options).
+- `Variables['FFmpegExecutor.DisableSoftwareFallbackOnQsvFailure']`: Legacy override; set to `true` to forcibly disable software fallback.
 - `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
 
 ##### Variables Set by Script (Output)
