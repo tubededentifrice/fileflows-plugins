@@ -4,14 +4,14 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
  * @author Vincent Courcelle
- * @revision 44
+ * @revision 45
  * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3. Override variable key(s): `NoiseRetention`, `CleaningFilters.NoiseRetention`.
  * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention). Override variable key: `SkipDenoise`.
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content). Override variable key: `AggressiveCompression`.
  * @param {bool} UseCPUFilters Prefer CPU filters (hqdn3d, deband, gradfun) when available. Default: false (use hardware filters). Override variable key: `UseCPUFilters`.
  * @param {bool} AllowCpuFiltersWithHardwareEncode Allow CPU filters even when a hardware encoder is detected (enables hybrid hw+cpu pipelines). Default: true. Override variable key: `AllowCpuFiltersWithHardwareEncode`.
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable deinterlacing (uses a quick `idet` probe). Default: true. Override variable key: `AutoDeinterlace`.
- * @param {bool} MpDecimateAnimation Enable `mpdecimate` for animation/anime sources (auto-detects from metadata; drops duplicate frames). Default: auto-detect. Override variable key: `MpDecimateAnimation`.
+ * @param {bool} MpDecimateAnimation Enable auto `mpdecimate` for animation/anime sources (drops duplicate frames). Default: false. Override variable key: `MpDecimateAnimation`.
  * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower but better compression/quality). Default: true. Override variable key(s): `QsvLookAhead`, `CleaningFilters.QsvTune.LookAhead`.
  * @output Cleaned video
  */
@@ -26,7 +26,7 @@ function Script(
     QsvLookAhead,
     DenoiseMode
 ) {
-    Logger.ILog('Cleaning filters.js revision 44 loaded');
+    Logger.ILog('Cleaning filters.js revision 45 loaded');
 
     const helpers = new ScriptHelpers();
     const ffmpegHelpers = new FfmpegHelpers();
@@ -72,8 +72,28 @@ function Script(
     }
     AutoDeinterlace = AutoDeinterlace !== false; // default true
 
-    // MpDecimateAnimation: if explicitly set use it, otherwise auto-detect
-    const MpDecimateAnimationExplicit = truthy(MpDecimateAnimation) || truthy(Variables.MpDecimateAnimation);
+    function optionalBool(value) {
+        if (value === null || value === undefined) return null;
+        if (value === true || value === 1) return true;
+        if (value === false || value === 0) return false;
+        const s = String(value).trim().toLowerCase();
+        if (!s) return null;
+        if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+        if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
+        return null;
+    }
+
+    function firstOptionalBool(values, defaultValue) {
+        for (let i = 0; i < values.length; i++) {
+            const parsed = optionalBool(values[i]);
+            if (parsed !== null) return parsed;
+        }
+        return defaultValue;
+    }
+
+    // MpDecimateAnimation defaults to FALSE. When true, animation/anime sources are probed before enabling
+    // mpdecimate. Use Variables.ForceMpDecimate to bypass the probe and force it on.
+    const mpDecimateAnimationEnabled = firstOptionalBool([MpDecimateAnimation, Variables.MpDecimateAnimation], false);
 
     // QsvLookAhead defaults to TRUE
     if (QsvLookAhead === undefined || QsvLookAhead === null) {
@@ -1161,12 +1181,15 @@ function Script(
     const hybridCpuFormat = targetBitDepth >= 10 ? 'p010le' : 'yuv420p';
     const uploadHwFormat = targetBitDepth >= 10 ? 'p010le' : 'nv12';
     const skipMpDecimate = truthy(Variables.SkipMpDecimate) || truthy(Variables.SkipDecimate);
-    const forceMpDecimate = MpDecimateAnimationExplicit || truthy(Variables.ForceMpDecimate);
+    const forceMpDecimate = truthy(Variables.ForceMpDecimate);
     let enableMpDecimate = false;
     let mpDecimateReason = 'disabled';
     if (skipMpDecimate) {
         enableMpDecimate = false;
         mpDecimateReason = 'skipped (Variables.SkipMpDecimate=true)';
+    } else if (!mpDecimateAnimationEnabled && !forceMpDecimate) {
+        enableMpDecimate = false;
+        mpDecimateReason = 'disabled (MpDecimateAnimation=false)';
     } else if (!isAnimation) {
         enableMpDecimate = false;
         mpDecimateReason = 'not-animation';

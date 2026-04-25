@@ -229,16 +229,16 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 #### Node Parameters
 
-| Parameter                           | Default     | Description                                                                                               | Pros / Cons                                                                                                 |
-| :---------------------------------- | :---------- | :-------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------- |
-| `NoiseRetention`                    | 3           | How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Animation tolerates lower values. | **Lower (1-3):** Maximum compression, may smooth fine detail.<br>**Higher (7-10):** Preserves film grain.   |
-| `SkipDenoise`                       | false       | Disable all denoising (overrides NoiseRetention).                                                         | **True:** Retains all film grain.<br>**False:** Better compression.                                         |
-| `AggressiveCompression`             | false       | Stronger filters for old/restored content (auto-enabled for pre-1990).                                    | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                 |
-| `AutoDeinterlace`                   | true        | Probes for interlacing (idet) and fixes it.                                                               | Essential for old TV content. Adds probe time.                                                              |
-| `MpDecimateAnimation`               | auto-detect | Drop duplicate frames in Anime (auto-detects from metadata).                                              | **True:** Massive space savings for Anime.<br>**False:** Keeps Constant Frame Rate (safer for old players). |
-| `UseCPUFilters`                     | false       | Prefer `hqdn3d` over hardware `vpp`.                                                                      | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                  |
-| `AllowCpuFiltersWithHardwareEncode` | true        | Allow CPU filters with hardware encoders (hybrid hw+cpu pipelines).                                       | **True:** More filter options.<br>**False:** Pure hardware pipeline (faster but limited).                   |
-| `QsvLookAhead`                      | true        | Enable QSV encoder lookahead (slower but better compression/quality).                                     | **True:** Better compression at cost of ~10-20% slower encode.<br>**False:** Faster encodes.                |
+| Parameter                           | Default | Description                                                                                               | Pros / Cons                                                                                                  |
+| :---------------------------------- | :------ | :-------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
+| `NoiseRetention`                    | 3       | How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Animation tolerates lower values. | **Lower (1-3):** Maximum compression, may smooth fine detail.<br>**Higher (7-10):** Preserves film grain.    |
+| `SkipDenoise`                       | false   | Disable all denoising (overrides NoiseRetention).                                                         | **True:** Retains all film grain.<br>**False:** Better compression.                                          |
+| `AggressiveCompression`             | false   | Stronger filters for old/restored content (auto-enabled for pre-1990).                                    | **True:** Removes heavy grain/noise.<br>**False:** More faithful to source.                                  |
+| `AutoDeinterlace`                   | true    | Probes for interlacing (idet) and fixes it.                                                               | Essential for old TV content. Adds probe time.                                                               |
+| `MpDecimateAnimation`               | false   | Allow duplicate-frame removal for Animation/Anime after an auto probe.                                    | **True:** Can save space but may affect A/V sync on some sources.<br>**False:** Keeps original timing safer. |
+| `UseCPUFilters`                     | false   | Prefer `hqdn3d` over hardware `vpp`.                                                                      | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                   |
+| `AllowCpuFiltersWithHardwareEncode` | true    | Allow CPU filters with hardware encoders (hybrid hw+cpu pipelines).                                       | **True:** More filter options.<br>**False:** Pure hardware pipeline (faster but limited).                    |
+| `QsvLookAhead`                      | true    | Enable QSV encoder lookahead (slower but better compression/quality).                                     | **True:** Better compression at cost of ~10-20% slower encode.<br>**False:** Faster encodes.                 |
 
 #### Advanced Variables
 
@@ -249,7 +249,7 @@ Applies video filters based on the movie's age, genre, and technical properties 
 - `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
 - `Variables.vpp_qsv`: Force QSV denoise level (0-100).
 - `CleaningFilters.SkipMpDecimate` / `Variables.SkipDecimate`: Disable mpdecimate completely.
-- `Variables.ForceMpDecimate`: Force-enable mpdecimate even if heuristics would disable it.
+- `Variables.ForceMpDecimate`: Force-enable mpdecimate even if `MpDecimateAnimation` is false or heuristics would disable it.
 - `Variables.MpDecimateCfrRate` / `Variables.CfrRate`: Override CFR output framerate.
 - `CleaningFilters.SkipQsvTuning`: Skip all QSV encoder tuning parameter application.
 - `CleaningFilters.QsvTune.Override`: Override existing QSV tuning parameters instead of only adding missing ones.
@@ -348,6 +348,8 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Prevents "only the last filter was applied" bugs.
 - Supports progress reporting in the FileFlows UI.
 - Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
+- Copies cover-art/attached-picture streams (when unfiltered) instead of re-encoding to avoid ffmpeg decode/probe failures on badly-tagged inputs.
+- Retries QSV encoder init failures with safer options; optional software fallback for the main video stream (opt-in).
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**
@@ -368,6 +370,8 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 
 - `Variables.ForceEncode`: Force execution even if no changes are detected.
 - `Variables['FFmpegExecutor.AudioFilterFallbackCodec']`: If audio filters are present but the audio codec is `copy`, re-encode audio using this codec (default: source codec when known/encodable, otherwise `eac3` for MKV and `aac` for MP4/MOV).
+- `Variables['FFmpegExecutor.EnableSoftwareFallbackOnQsvFailure']`: Set to `true` to fall back to software encoding for the main video stream when the QSV encoder cannot be initialized (unsupported profile/driver/runtime options).
+- `Variables['FFmpegExecutor.DisableSoftwareFallbackOnQsvFailure']`: Legacy override; set to `true` to forcibly disable software fallback.
 - `Variables['ffmpeg']` / `Variables['FFmpeg']` / `Variables.ffmpeg` / `Variables.FFmpeg`: Custom FFmpeg binary path.
 
 ##### Variables Set by Script (Output)
