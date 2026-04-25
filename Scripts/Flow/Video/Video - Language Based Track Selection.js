@@ -8,7 +8,7 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
  *              Subtitle tracks are reordered: SubtitleSortLanguages (or AdditionalLanguages if unset), then original language, then unknown, then everything else.
  *              Requires "Movie Lookup"/"TV Show Lookup" node to be executed first to set Variables.OriginalLanguage.
  * @author Vincent Courcelle
- * @revision 5
+ * @revision 6
  * @minimumVersion 24.0.0.0
  * @param {string} AdditionalLanguages Comma-separated ISO 639-2/B language codes to keep IN ORDER (e.g., "eng,fra,deu"). Also accepts an array (e.g., ["eng","fra"]). Original language is always kept first.
  * @param {bool} ProcessAudio Apply to audio streams (default: true)
@@ -28,7 +28,7 @@ function Script(
     ReorderTracks,
     SubtitleSortLanguages
 ) {
-    Logger.ILog('Video - Language Based Track Selection.js revision 5 loaded');
+    Logger.ILog('Video - Language Based Track Selection.js revision 6 loaded');
 
     const helpers = new ScriptHelpers();
     const toArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -124,6 +124,118 @@ function Script(
         });
 
         return decorated.map((x) => x.stream);
+    }
+
+    function getStreamIndex(stream) {
+        if (!stream) return null;
+        try {
+            if (stream.Index !== null && stream.Index !== undefined) return Number(stream.Index);
+        } catch (err) {}
+        return null;
+    }
+
+    function getStreamTypeIndex(stream) {
+        if (!stream) return null;
+        try {
+            if (stream.TypeIndex !== null && stream.TypeIndex !== undefined) return Number(stream.TypeIndex);
+        } catch (err) {}
+        return null;
+    }
+
+    function findMatchingVideoInfoStream(videoInfoStreams, ffStream, used) {
+        const streamIndex = getStreamIndex(ffStream);
+        if (streamIndex !== null && !isNaN(streamIndex)) {
+            for (let i = 0; i < videoInfoStreams.length; i++) {
+                if (used[i]) continue;
+                if (getStreamIndex(videoInfoStreams[i]) === streamIndex) {
+                    used[i] = true;
+                    return videoInfoStreams[i];
+                }
+            }
+        }
+
+        const typeIndex = getStreamTypeIndex(ffStream);
+        if (typeIndex !== null && !isNaN(typeIndex)) {
+            for (let i = 0; i < videoInfoStreams.length; i++) {
+                if (used[i]) continue;
+                if (getStreamTypeIndex(videoInfoStreams[i]) === typeIndex) {
+                    used[i] = true;
+                    return videoInfoStreams[i];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function reorderVideoInfoStreamList(videoInfoStreamList, orderedFfmpegStreams, label) {
+        if (!videoInfoStreamList || !orderedFfmpegStreams || orderedFfmpegStreams.length < 2) return false;
+
+        const videoInfoStreams = toArray(videoInfoStreamList, 200);
+        if (videoInfoStreams.length < 2) return false;
+
+        const used = [];
+        const orderedVideoInfoStreams = [];
+        for (let i = 0; i < orderedFfmpegStreams.length; i++) {
+            const match = findMatchingVideoInfoStream(videoInfoStreams, orderedFfmpegStreams[i], used);
+            if (match) orderedVideoInfoStreams.push(match);
+        }
+
+        for (let i = 0; i < videoInfoStreams.length; i++) {
+            if (!used[i]) orderedVideoInfoStreams.push(videoInfoStreams[i]);
+        }
+
+        if (orderedVideoInfoStreams.length !== videoInfoStreams.length) {
+            Logger.WLog(`  Could not sync ${label} VideoInfo order (stream count mismatch)`);
+            return false;
+        }
+
+        if (tryReorderNetList(videoInfoStreamList, orderedVideoInfoStreams)) {
+            Logger.ILog(`  Synced ${label} VideoInfo stream order`);
+            return true;
+        }
+
+        Logger.WLog(`  Could not sync ${label} VideoInfo order (list manipulation not supported)`);
+        return false;
+    }
+
+    function syncVideoInfoStreamOrder(ffModelObj, streamListName, orderedFfmpegStreams, label) {
+        let synced = false;
+
+        try {
+            if (ffModelObj && ffModelObj.VideoInfo && ffModelObj.VideoInfo[streamListName]) {
+                synced =
+                    reorderVideoInfoStreamList(ffModelObj.VideoInfo[streamListName], orderedFfmpegStreams, label) ||
+                    synced;
+            }
+        } catch (err) {
+            Logger.WLog(`  Failed syncing ${label} order on FfmpegBuilderModel.VideoInfo: ${err}`);
+        }
+
+        try {
+            if (Variables.vi && Variables.vi.VideoInfo && Variables.vi.VideoInfo[streamListName]) {
+                synced =
+                    reorderVideoInfoStreamList(Variables.vi.VideoInfo[streamListName], orderedFfmpegStreams, label) ||
+                    synced;
+            }
+        } catch (err) {
+            Logger.WLog(`  Failed syncing ${label} order on Variables.vi.VideoInfo: ${err}`);
+        }
+
+        try {
+            if (Variables.video && Variables.video.VideoInfo && Variables.video.VideoInfo[streamListName]) {
+                synced =
+                    reorderVideoInfoStreamList(
+                        Variables.video.VideoInfo[streamListName],
+                        orderedFfmpegStreams,
+                        label
+                    ) || synced;
+            }
+        } catch (err) {
+            Logger.WLog(`  Failed syncing ${label} order on Variables.video.VideoInfo: ${err}`);
+        }
+
+        return synced;
     }
 
     // =========================================================================
@@ -316,6 +428,7 @@ function Script(
             for (let i = 0; i < sortedKeep.length; i++) orderedAll.push(sortedKeep[i]);
             for (let i = 0; i < toDelete.length; i++) orderedAll.push(toDelete[i]);
             if (tryReorderNetList(ffModel.AudioStreams, orderedAll)) {
+                syncVideoInfoStreamOrder(ffModel, 'AudioStreams', orderedAll, 'audio');
                 totalReordered += sortedKeep.length;
                 Logger.ILog(`  Reordered ${sortedKeep.length} audio streams`);
             } else {
@@ -359,6 +472,7 @@ function Script(
 
         if (ProcessSubtitles && ReorderTracks && sortedSubs.length > 1) {
             if (tryReorderNetList(ffModel.SubtitleStreams, sortedSubs)) {
+                syncVideoInfoStreamOrder(ffModel, 'SubtitleStreams', sortedSubs, 'subtitle');
                 totalReordered += sortedSubs.length;
                 Logger.ILog(`  Reordered ${sortedSubs.length} subtitle streams`);
             } else {

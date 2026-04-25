@@ -392,6 +392,7 @@ Keeps only specific languages and removes the rest. Designed to keep "Original L
 2.  Keeps **Additional Languages** specified in settings.
 3.  Keeps **Unknown** language tracks _only_ if no Original Language track exists.
 4.  **Subtitles** are never deleted, only reordered (Preferred Subs -> Original -> Unknown -> Others).
+5.  When audio or subtitle streams are reordered, the matching `VideoInfo` stream metadata arrays are reordered too so downstream scripts see the same order that FFmpeg will output.
 
 **Requirements:**
 
