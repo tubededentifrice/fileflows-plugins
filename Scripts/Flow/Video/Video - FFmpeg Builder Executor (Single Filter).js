@@ -862,6 +862,73 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return out;
     }
 
+    function isAc3FamilyCodec(codec) {
+        const c = String(codec || '')
+            .trim()
+            .toLowerCase();
+        return c === 'ac3' || c === 'eac3';
+    }
+
+    function isAudioChannelCountFlag(token) {
+        const t = String(token || '')
+            .trim()
+            .toLowerCase();
+        return t === '-ac' || t === '-ac:a' || t.indexOf('-ac:a:') === 0;
+    }
+
+    function getAudioChannelCount(stream) {
+        try {
+            if (stream && stream.Channels > 0) return parseInt(stream.Channels);
+        } catch (err) {}
+        try {
+            const s = stream && stream.Stream ? stream.Stream : null;
+            if (s && s.Channels > 0) return parseInt(s.Channels);
+        } catch (err) {}
+        return 0;
+    }
+
+    function ensureAc3CompatibleChannels(tokens, codec, stream, outIndex) {
+        if (!isAc3FamilyCodec(codec)) return tokens || [];
+
+        const out = [];
+        let found = false;
+        let changed = false;
+        for (let i = 0; i < (tokens || []).length; i++) {
+            const t = String(tokens[i] || '').trim();
+            if (!isAudioChannelCountFlag(t)) {
+                out.push(t);
+                continue;
+            }
+
+            found = true;
+            out.push(t);
+            const value = i + 1 < tokens.length ? String(tokens[i + 1] || '').trim() : '';
+            const count = parseInt(value);
+            if (!isNaN(count) && count > 6) {
+                out.push('6');
+                changed = true;
+            } else {
+                out.push(value);
+            }
+            i++;
+        }
+
+        const sourceChannels = getAudioChannelCount(stream);
+        if (!found && sourceChannels > 6) {
+            out.push(`-ac:a:${outIndex}`);
+            out.push('6');
+            changed = true;
+        }
+
+        if (changed) {
+            Logger.WLog(
+                `Audio stream a:${outIndex} uses ${codec}; limiting output channels to 5.1 because FFmpeg's ${codec} encoder does not support 7.1.`
+            );
+        }
+
+        return out;
+    }
+
     function buildStream(typeChar, stream, outIndex) {
         const filterExpressions = [];
         const filtersFromModel = []
@@ -929,6 +996,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
         tokens = stripCodecArgs(tokens);
         tokens = stripBareCodecToken(tokens, codec);
+        if (String(typeChar || '').toLowerCase() === 'a') {
+            tokens = ensureAc3CompatibleChannels(tokens, codec, stream, outIndex);
+        }
         return { ok: true, codec, tokens, filterChain };
     }
 

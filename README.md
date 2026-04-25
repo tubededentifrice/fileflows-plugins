@@ -350,6 +350,7 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - Prevents unscoped video encoder options from breaking attached picture streams (eg `-bf` bleeding into MJPEG cover art).
 - Copies cover-art/attached-picture streams (when unfiltered) instead of re-encoding to avoid ffmpeg decode/probe failures on badly-tagged inputs.
 - Retries QSV encoder init failures with safer options; optional software fallback for the main video stream (opt-in).
+- Caps AC3/EAC3 output at 5.1 when upstream audio parameters request unsupported 7.1/8-channel output.
 - Writes full FFmpeg command to metadata for auditing.
 
 **Cons:**
