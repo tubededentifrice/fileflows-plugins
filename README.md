@@ -4,6 +4,7 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
 
 ## Table of Contents
 
+- [FileFlows Tools](#fileflows-tools)
 - [Integration Pattern](#integration-pattern)
 - [Application Scripts](#application-scripts)
     - [Radarr - Movie Lookup](#radarr---movie-lookup)
@@ -21,6 +22,45 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
 - [DockerMods](#dockermods)
 
 ---
+
+## FileFlows Tools
+
+Use `python3 Tools/fileflows.py` from this repository. It needs Python 3.8 or later locally and in the container, Docker, and SSH access. It uses the API inside the container through SSH. Defaults: host `naze`, container `fileflows`, API `http://localhost:5000`. Set `--host`, `--container`, and `--base` before the command for another server.
+
+```sh
+python3 Tools/fileflows.py status
+python3 Tools/fileflows.py wait FILE_UID --timeout 1800
+python3 Tools/fileflows.py failed
+python3 Tools/fileflows.py scripts
+python3 Tools/fileflows.py flows
+python3 Tools/fileflows.py upload Scripts/Shared/FfmpegHelpers.js
+python3 Tools/fileflows.py upload "Scripts/Flow/Video/Video - Auto Quality.js"
+python3 Tools/fileflows.py log FILE_UID --match 'CRF|complete|ERRR' --lines 30
+python3 Tools/fileflows.py get flow FLOW_UID --output /tmp/flow.json
+python3 Tools/fileflows.py save-flow /tmp/flow.json
+python3 Tools/fileflows.py backup script SCRIPT_UID
+python3 Tools/fileflows.py restore /path/to/backup/object.json
+python3 Tools/fileflows.py reprocess FILE_UID --var MinCRF=10
+python3 Tools/fileflows.py add --flow-uid TEST_FLOW_UID /temp/extract.mkv
+```
+
+Upload finds an existing script by name. Use `--uid SCRIPT_UID` for an exact match. It validates the source, makes a backup, saves, and compares the saved code. FileFlows removes the metadata comment on save. Script header UIDs can differ from the installed object UID; use the `scripts` command to find the installed UID.
+
+Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir` to change this path. Each script backup includes `object.json` and the complete exported `source.js`. Flow backups contain the full object. Restore makes a new backup before it writes. Keep backups outside Git: flow objects can contain credentials. Log output removes credential lines and image data. `get --output` keeps exact data in a new file with mode 0600.
+
+`wait` shows progress changes until the file finishes, fails, is held, or reaches the timeout. Exit 0 means processed; exit 2 means failure, hold, or timeout.
+
+Reprocess accepts selected file UIDs. `--flow-uid` selects another flow; `--bottom` queues the files last. `add` accepts paths inside the container. `--var NAME=VALUE` reads JSON values when possible, or uses text. Reprocess uses API `Mode=1` to merge these values with the file’s stored variables; without `--var`, it keeps the stored values. Test extracts with a flow that writes to a test directory before you use a flow that replaces media.
+
+Use `Tools/qsv_benchmark.py` inside the container to compare QSV denoise levels and encoder quality values. It makes short video-only extracts, removes inherited duration tags, and records bytes, speed, MiB/hour, mean VMAF, and the 10th percentile frame score. It also measures VMAF against an identical reference. Results and video extracts stay in a new output directory.
+
+```sh
+ssh naze 'docker exec -i fileflows python3 - /temp/source.mkv --output /temp/qsv-test --starts 30 120 --duration 12 --denoise 0 30 50 --quality 14 18' < Tools/qsv_benchmark.py
+```
+
+Set `--ffmpeg`, `--ffprobe`, `--metric-ffmpeg`, `--device`, `--crop`, and `--preset` for another installation. The QSV device must be named `gpu`. VMAF compares each candidate with a high-quality reference at the same denoise level. Compare the source and denoised frames visually to check detail loss from denoise. Use moderate levels first. Native HDR VMAF is an encoding check; inspect tone-mapped frames for visual review. This tool keeps source files.
+
+Checks: `npm test` and `python3 -m unittest discover -s Tests -p 'test_*.py'`.
 
 ## Integration Pattern
 
@@ -114,7 +154,7 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 
 **Pros:**
 
-- Guarantees specific visual quality regardless of source.
+- Requires the selected sample scores to meet the quality target.
 - Prevents bloated files (stops if no size reduction).
 - Content-aware defaults (Animation gets different targets than Live Action).
 
@@ -140,14 +180,18 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 
 #### Advanced Variables
 
+- Manual `TargetVMAF` values stay fixed. `TargetVMAF=0` uses content and dark-scene adjustments. Set `AutoQuality.DarkSceneBoost=true` to also apply the dark-scene adjustment to a manual target. VMAF can score an identical animation below 100; do not assume that 98 or 99 is reachable for every scene.
 - `Variables.AutoQualityPreset`: Set to 'quality', 'balanced', or 'compression' to override numerical targets.
 - `Variables.ForceCRF`: If set, bypasses quality search and forces this CRF value (e.g. "23"). Useful for manual overrides.
-- `Variables.MaxFileSize`: If set, the script will increase CRF if the estimated size exceeds this limit (in bytes).
-- `Variables.EnforceMaxSize`: Set to `true` to enable MaxFileSize enforcement (otherwise MaxFileSize is only informational).
+- `Variables.MaxFileSize`: Sets the size limit in bytes. A positive value enables size enforcement. The search stops with an error if no tested value meets both quality and size limits.
+- `AutoQuality.SizeSafetyPercent`: Reserves part of the size limit for sample variation and container overhead. The full-movie test was about 31% larger than its sample estimate; the default reserve covers a 33% increase. Default: 25; range: 0–30. Use `ScoreAggregation=min` to require every sample to pass.
+- `EnforceMaxSize`: Node parameter. A positive `MaxFileSize` also enables it.
+- QSV sample uploads use the source bit depth. The executor uses the tested encoder options. An encoder error after a successful quality search stops the job; it does not change the settings and retry the full encode.
 - `Variables['AutoQuality_VmafFps']`: Override VMAF subsampling FPS (default is source FPS). Lower values = faster VMAF calculation.
 
 ##### Variables Set by Script (Output)
 
+- The Single Filter executor copies the primary video stream when Auto Quality returns copy mode, even if output 2 connects to that executor.
 - `Variables.AutoQuality_CRF`: Final CRF value chosen ('copy', 'unchanged', or numeric value).
 - `Variables.AutoQuality_Reason`: Why the decision was made (e.g., 'forced_by_variable', 'already_optimal', 'insufficient_reduction').
 - `Variables.AutoQuality_Metric`: Quality metric used ('vmaf' or 'ssim').
@@ -163,7 +207,10 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 - `Variables.AutoQuality_UpstreamVideoFilters`: Video filters detected upstream (e.g., from Cleaning Filters).
 - `Variables.AutoQuality_EncodingParamFilter`: Any `-filter:v:*` found in EncodingParameters.
 - `Variables.AutoQuality_FilterSource`: Source of filters ('variables-filters', 'encoding-params', or 'model').
-- `Variables.AutoQuality_FilterMode`: Filter mode used ('software-fallback', 'upstream', or 'none').
+- `Variables.AutoQuality_FilterMode`: Filter mode used ('upstream' or 'none').
+- `Variables.AutoQuality_Validated`: True after a successful search. Used by the executor to keep the tested settings.
+- `Variables.AutoQuality_SizeBudget`: Size limit after the safety margin, in bytes.
+- Reference and metric runs must succeed for all samples. Metric logs must cover at least 85% of the requested frames. Extracts remove inherited duration tags. Hardware filters are not removed to make a failed test pass. Explicit audio bitrate arguments are included in the size estimate.
 
 </details>
 
@@ -213,15 +260,17 @@ Detects language for "Unknown" (und) audio/subtitle tracks using heuristics (fil
 
 ### Video - Cleaning Filters
 
+QSV denoise runs in the source format. Crop uses a separate GPU pass, followed by output format conversion if needed. On the tested Intel driver, a combined crop/denoise or conversion/denoise pass skipped denoise. The same filter plan is used for sample and final encodes.
+
 **Intelligent Filter Pipeline.**
 Applies video filters based on the movie's age, genre, and technical properties (HDR, Grain, Interlacing).
 
 **Features:**
 
-- **Auto-Denoise:** Stronger for 90s anime, lighter for 2000s live action, off for modern clean digital.
+- **Auto-Denoise:** Selects noise removal from the source and content settings. QSV noise removal uses the source format. A separate `scale_qsv` pass converts 8-bit sources to Main10. This avoids skipped denoise on Intel drivers when format conversion and denoise share one pass.
 - **Smart Deband:** Removes color banding in animation.
 - **MpDecimate:** Drops duplicate frames in animation (Variable Frame Rate) to save space.
-- **HDR/DoVi Safe:** Preserves dynamic range metadata.
+- **10-bit processing:** Keeps 10-bit sources in P010. Dynamic Dolby Vision and HDR10+ metadata require a separate preservation path during re-encoding.
 - **Attached Pictures Safe:** Scopes QSV tuning options to `v:0` when the file contains extra "attached picture" video streams (cover art/logo), preventing FFmpeg failures (eg MJPEG + B-frames).
 
 <details>
@@ -238,13 +287,14 @@ Applies video filters based on the movie's age, genre, and technical properties 
 | `MpDecimateAnimation`               | false   | Allow duplicate-frame removal for Animation/Anime after an auto probe.                                    | **True:** Can save space but may affect A/V sync on some sources.<br>**False:** Keeps original timing safer. |
 | `UseCPUFilters`                     | false   | Prefer `hqdn3d` over hardware `vpp`.                                                                      | **True:** Consistent visual result across GPUs.<br>**False:** Faster (keeps video on GPU).                   |
 | `AllowCpuFiltersWithHardwareEncode` | true    | Allow CPU filters with hardware encoders (hybrid hw+cpu pipelines).                                       | **True:** More filter options.<br>**False:** Pure hardware pipeline (faster but limited).                    |
+| `DenoiseMode`                       | auto    | Select `auto`, `qsv`, `cpu`, `both`, or `off`.                                                            | Use `qsv` for GPU denoise on an Intel QSV encoder.                                                           |
 | `QsvLookAhead`                      | true    | Enable QSV encoder lookahead (slower but better compression/quality).                                     | **True:** Better compression at cost of ~10-20% slower encode.<br>**False:** Faster encodes.                 |
 
 #### Advanced Variables
 
 - `CleaningFilters.DenoiseBoost`: Add/subtract from the calculated denoise level (e.g., +10 or -10).
 - `CleaningFilters.DenoiseMin` / `CleaningFilters.DenoiseMax`: Clamp denoise level to a specific range.
-- `CleaningFilters.DenoiseMode`: Override the node `DenoiseMode` parameter.
+- `CleaningFilters.DenoiseMode`: Override the node `DenoiseMode` parameter (`auto`, `qsv`, `cpu`, `both`, or `off`). For GPU processing, set `UseCPUFilters=false` and `AllowCpuFiltersWithHardwareEncode=false`. These settings also disable CPU deband and gradfun.
 - `CleaningFilters.HybridCpuUpload`: When using hybrid CPU filters on QSV decode surfaces, also `hwupload` back to QSV surfaces (default: false; usually unnecessary since `hevc_qsv` can accept system-memory frames).
 - `Variables.hqdn3d`: Force CPU denoise filter params (e.g. `2:2:6:6`). When set, the script auto-enables CPU filters (including with QSV hardware encode) to apply it.
 - `Variables.vpp_qsv`: Force QSV denoise level (0-100).

@@ -2,9 +2,9 @@ import { ScriptHelpers } from 'Shared/ScriptHelpers';
 import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 
 /**
- * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Preserves HDR10/DoVi color metadata.
+ * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Retains static HDR color tags.
  * @author Vincent Courcelle
- * @revision 45
+ * @revision 47
  * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3. Override variable key(s): `NoiseRetention`, `CleaningFilters.NoiseRetention`.
  * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention). Override variable key: `SkipDenoise`.
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content). Override variable key: `AggressiveCompression`.
@@ -13,6 +13,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @param {bool} AutoDeinterlace Auto-detect interlaced content and enable deinterlacing (uses a quick `idet` probe). Default: true. Override variable key: `AutoDeinterlace`.
  * @param {bool} MpDecimateAnimation Enable auto `mpdecimate` for animation/anime sources (drops duplicate frames). Default: false. Override variable key: `MpDecimateAnimation`.
  * @param {bool} QsvLookAhead Enable QSV encoder lookahead (slower but better compression/quality). Default: true. Override variable key(s): `QsvLookAhead`, `CleaningFilters.QsvTune.LookAhead`.
+ * @param {('auto'|'qsv'|'cpu'|'both'|'off')} DenoiseMode Denoise method. Auto selects QSV for QSV encoders and CPU for software encoders. Default: auto.
  * @output Cleaned video
  */
 function Script(
@@ -26,7 +27,7 @@ function Script(
     QsvLookAhead,
     DenoiseMode
 ) {
-    Logger.ILog('Cleaning filters.js revision 45 loaded');
+    Logger.ILog('Cleaning filters.js revision 47 loaded');
 
     const helpers = new ScriptHelpers();
     const ffmpegHelpers = new FfmpegHelpers();
@@ -304,13 +305,16 @@ function Script(
         }
 
         const isFormatOnlyScaleQsv = (p) => p === 'scale_qsv=format=p010le' || p === 'scale_qsv=format=nv12';
-        const desiredHasVpp = partsToApply.some((p) => p.startsWith('vpp_qsv='));
+        const hasSeparateQsvPasses = partsToApply.filter((p) => p.startsWith('vpp_qsv=')).length > 1;
+        if (hasSeparateQsvPasses) {
+            mergedParts = mergedParts.filter((p) => !p.startsWith('vpp_qsv=') && !isFormatOnlyScaleQsv(p));
+        }
 
         for (let i = 0; i < partsToApply.length; i++) {
             const desired = partsToApply[i];
             if (!desired) continue;
 
-            if (desired.startsWith('vpp_qsv=')) {
+            if (desired.startsWith('vpp_qsv=') && !hasSeparateQsvPasses) {
                 const vppIndex = mergedParts.findIndex((p) => p.startsWith('vpp_qsv='));
                 if (vppIndex >= 0) {
                     mergedParts[vppIndex] = mergeVppQsv(mergedParts[vppIndex], desired);
@@ -326,13 +330,7 @@ function Script(
             if (mergedParts.indexOf(desired) < 0) mergedParts.push(desired);
         }
 
-        // If we have vpp_qsv with an explicit format, drop redundant format-only scale_qsv.
-        if (desiredHasVpp) {
-            const hasFormatInVpp = mergedParts.some((p) => p.startsWith('vpp_qsv=') && p.indexOf('format=') >= 0);
-            if (hasFormatInVpp) mergedParts = mergedParts.filter((p) => !isFormatOnlyScaleQsv(p));
-        }
-
-        const after = mergedParts.join(',');
+        const after = ffmpegHelpers.mergeFilters(mergedParts);
 
         const removedEp = removeAllVideoFilterArgs(ep);
         const removedAp = removeAllVideoFilterArgs(ap);
@@ -676,32 +674,12 @@ function Script(
         return s.replace(',hwupload=', `,${fmt},hwupload=`).replace(',hwupload', `,${fmt},hwupload`);
     }
 
-    function getVppQsvFormat(bitDepth) {
-        return bitDepth >= 10 ? 'p010le' : 'nv12';
-    }
-
     function hasCrop(videoStream) {
         try {
             return !!(videoStream.Crop && (videoStream.Crop.Width > 0 || videoStream.Crop.Height > 0));
         } catch (err) {
             return false;
         }
-    }
-
-    function buildVppQsvFilterWithExistingCrop(videoStream, options) {
-        const parts = [];
-
-        const crop = videoStream.Crop;
-        if (crop && crop.Width && crop.Height) {
-            if (crop.Width > 0) parts.push(`cw=${crop.Width}`);
-            if (crop.Height > 0) parts.push(`ch=${crop.Height}`);
-            if (crop.X !== null && crop.X !== undefined) parts.push(`cx=${crop.X}`);
-            if (crop.Y !== null && crop.Y !== undefined) parts.push(`cy=${crop.Y}`);
-        }
-
-        for (const opt of options) parts.push(opt);
-
-        return `vpp_qsv=${parts.join(':')}`;
     }
 
     function detectInterlacedWithIdet(ffmpegPath, inputFile, durationSeconds) {
@@ -1406,21 +1384,24 @@ function Script(
                         );
                     }
 
-                    const vppFormat = getVppQsvFormat(targetBitDepth);
-
-                    // FileFlows generates a vpp_qsv filter when crop/scale is configured. Adding a second vpp_qsv filter is dropped.
-                    // To ensure denoise is actually applied, take over the crop and generate a single vpp_qsv filter with denoise+crop+format.
+                    // Keep denoise in the source format. Fusing NV12 -> P010 conversion
+                    // or crop with denoise skips noise removal on some Intel drivers.
+                    const denoiseBits = sourceBits || (isHDR || isDolbyVision ? 10 : targetBitDepth);
+                    let cropOptions = '';
                     if (hasCrop(video)) {
-                        vppFilter = buildVppQsvFilterWithExistingCrop(video, [
-                            `denoise=${qsvDenoiseValue}`,
-                            `format=${vppFormat}`
-                        ]);
+                        const crop = video.Crop;
+                        cropOptions = `cw=${crop.Width}:ch=${crop.Height}:cx=${crop.X || 0}:cy=${crop.Y || 0}`;
                         try {
                             video.Crop = null;
                         } catch (err) {}
-                    } else {
-                        vppFilter = `vpp_qsv=denoise=${qsvDenoiseValue}:format=${vppFormat}`;
                     }
+                    vppFilter = ffmpegHelpers.buildQsvDenoiseFilter(
+                        qsvDenoiseValue,
+                        denoiseBits,
+                        targetBitDepth,
+                        cropOptions
+                    );
+                    Variables.qsv_denoise_source_format = denoiseBits >= 10 ? 'p010le' : 'nv12';
                     Variables.applied_vpp_qsv_filter = vppFilter;
                     addedHardwareOnlyFilters = true;
 
@@ -1429,7 +1410,7 @@ function Script(
                     const removedScaleQsv = removeScaleQsvFormatFilters(video);
                     if (removedScaleQsv > 0) {
                         Logger.ILog(
-                            `Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; vpp_qsv will handle format conversion`
+                            `Removed ${removedScaleQsv} scale_qsv format filter(s) from video stream; the planned GPU chain handles format conversion`
                         );
                     }
                 } else {

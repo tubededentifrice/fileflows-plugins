@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 17
+ * @revision 18
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -402,11 +402,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return Variables['ffmpeg'] || Variables['FFmpeg'] || Variables.ffmpeg || Variables.FFmpeg || '';
     }
 
-    function isQsvCodec(codec) {
-        const c = String(codec || '').toLowerCase();
-        return c.indexOf('_qsv') >= 0;
-    }
-
     function getStreamSourceCodecLower(stream) {
         try {
             const s = stream && stream.Stream ? stream.Stream : null;
@@ -449,19 +444,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         if (ext === 'mkv') return 'eac3';
         if (ext === 'mp4' || ext === 'm4v' || ext === 'mov') return 'aac';
         return 'aac';
-    }
-
-    function hasLowPowerOption(tokens, outIndex) {
-        // Treat "-low_power" and "-low_power:v" as global for all video streams.
-        const target = `-low_power:v:${outIndex}`;
-        for (let i = 0; i < (tokens || []).length; i++) {
-            const t = String(tokens[i] || '')
-                .trim()
-                .toLowerCase();
-            if (!t) continue;
-            if (t === '-low_power' || t === '-low_power:v' || t === target) return true;
-        }
-        return false;
     }
 
     function stripExistingCommentMetadata(tokens) {
@@ -1030,7 +1012,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             return -1;
         }
         args = args.concat(['-map', idx]);
-        let built = buildStream('v', v, outV);
+        let built =
+            outV === 0 && Variables.AutoQuality_CRF === 'copy'
+                ? { ok: true, codec: 'copy', tokens: [], filterChain: '' }
+                : buildStream('v', v, outV);
         if (!built.ok) return -1;
 
         // Attached pictures / cover art streams can be very poorly tagged (missing pix_fmt, crazy fps, etc).
@@ -1048,15 +1033,6 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         }
 
         args = args.concat([`-c:v:${outV}`, built.codec || 'copy']);
-        // Force full-power QSV encode unless already specified (avoids unexpected low_power defaults).
-        if (
-            !likelyArtwork &&
-            isQsvCodec(built.codec) &&
-            !hasLowPowerOption(args, outV) &&
-            !hasLowPowerOption(built.tokens, outV)
-        ) {
-            args = args.concat([`-low_power:v:${outV}`, '0']);
-        }
         if (built.tokens.length) args = args.concat(built.tokens);
         if (built.filterChain) args = args.concat([`-filter:v:${outV}`, built.filterChain]);
         addStreamMetadata('v', v, outV);
@@ -1193,6 +1169,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     if (!result || result.exitCode !== 0) {
         const originalText = getResultText(result);
+        if (looksLikeQsvEncoderInitFailure(originalText) && truthy(Variables.AutoQuality_Validated)) {
+            Logger.ELog('The tested QSV settings failed. Run Auto Quality again with supported encoder settings.');
+            return -1;
+        }
         if (looksLikeQsvEncoderInitFailure(originalText)) {
             Logger.WLog(
                 'Detected QSV encoder init failure. Retrying without advanced QSV encoder options (profile/low_power/lookahead/extbrc/bframes/refs).'

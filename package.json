@@ -7,7 +7,8 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "format": "prettier --write .",
-        "format:check": "prettier --check ."
+        "format:check": "prettier --check .",
+        "test": "node --test Tests/*.test.mjs"
     },
     "repository": {
         "type": "git",

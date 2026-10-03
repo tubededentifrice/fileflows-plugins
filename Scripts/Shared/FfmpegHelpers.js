@@ -3,7 +3,7 @@
  * @uid 8A3F2E91-4B7C-49D8-B5E6-1C9D3A8F7E2B
  * @description FFmpeg filter manipulation, codec detection, and command-line utilities
  * @author Vincent Courcelle
- * @revision 1
+ * @revision 3
  * @minimumVersion 24.0.0.0
  */
 
@@ -164,24 +164,38 @@ export class FfmpegHelpers {
             for (var j = 0; j < parts.length; j++) flat.push(parts[j]);
         }
 
-        // Remove redundant scale_qsv=format=p010le if already present elsewhere
-        var lowered = flat.map(function (x) {
-            return x.toLowerCase();
-        });
-        var hasP010 = lowered.some(function (x) {
-            return x.indexOf('format=p010le') >= 0 || x.indexOf('p010le') >= 0;
-        });
-        if (hasP010) {
-            for (var k = flat.length - 1; k >= 0; k--) {
-                var seg = lowered[k];
-                if (seg === 'scale_qsv=format=p010le') {
-                    flat.splice(k, 1);
-                    lowered.splice(k, 1);
-                }
-            }
+        // A format conversion after denoise must remain a separate GPU pass.
+        // Only an adjacent filter with the same output format makes a scale redundant.
+        for (var k = flat.length - 1; k > 0; k--) {
+            var match = /^scale_qsv=format=(p010le|nv12)$/.exec(flat[k]);
+            if (!match) continue;
+            var previousFormat = /(?:^|:)format=(p010le|nv12)(?:$|:)/.exec(flat[k - 1]);
+            if (previousFormat && previousFormat[1] === match[1]) flat.splice(k, 1);
         }
 
         return this.dedupePreserveOrder(flat).join(',');
+    }
+
+    /** Build QSV denoise in the source format, then convert for the encoder. */
+    buildQsvDenoiseFilter(level, sourceBits, targetBits, cropOptions) {
+        var sourceFormat = sourceBits >= 10 ? 'p010le' : 'nv12';
+        var targetFormat = targetBits >= 10 ? 'p010le' : 'nv12';
+        var filter = 'vpp_qsv=denoise=' + level + ':format=' + sourceFormat;
+        if (cropOptions) filter += ',vpp_qsv=' + cropOptions + ':format=' + sourceFormat;
+        if (sourceFormat !== targetFormat) filter += ',scale_qsv=format=' + targetFormat;
+        return filter;
+    }
+
+    /** Select a tested result only when both size and quality pass. */
+    selectQualityResult(results, target, maxSize, preferSmaller) {
+        var best = null;
+        for (var i = 0; i < results.length; i++) {
+            var result = results[i];
+            if (!(result.score >= target)) continue;
+            if (maxSize > 0 && (!(result.size > 0) || result.size > maxSize)) continue;
+            if (!best || (preferSmaller ? result.size < best.size : result.score > best.score)) best = result;
+        }
+        return best;
     }
 
     /**
