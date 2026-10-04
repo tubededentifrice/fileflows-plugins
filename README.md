@@ -16,6 +16,7 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
     - [Video - Auto Tag Missing Language](#video---auto-tag-missing-language)
     - [Video - Cleaning Filters](#video---cleaning-filters)
     - [Video - FFmpeg Builder Executor (Single Filter)](#video---ffmpeg-builder-executor-single-filter)
+    - [Video - Safe Replace Original](#video---safe-replace-original)
     - [Video - Language Based Track Selection](#video---language-based-track-selection)
     - [Video - Audio Format Converter](#video---audio-format-converter)
     - [Video - Resolution Fixed](#video---resolution-fixed)
@@ -34,6 +35,7 @@ python3 Tools/fileflows.py --host SSH_HOST failed
 python3 Tools/fileflows.py --host SSH_HOST diagnose --output /tmp/fileflows-diagnosis.json
 python3 Tools/fileflows.py --host SSH_HOST media-check FILE_UID --output /tmp/media-check.json
 python3 Tools/fileflows.py --host SSH_HOST media-check FILE_UID --starts 500 --duration 15 --no-qsv
+python3 Tools/fileflows.py --host SSH_HOST replacement-check FILE_UID --user 99:100
 python3 Tools/fileflows.py --host SSH_HOST docker-logs --since 48h --match 'error|failed|warning' --context 3
 python3 Tools/fileflows.py --host SSH_HOST docker-logs --since 48h --output /tmp/fileflows-docker.log
 python3 Tools/fileflows.py --host SSH_HOST mods
@@ -54,6 +56,8 @@ python3 Tools/fileflows.py --host SSH_HOST add --flow-uid TEST_FLOW_UID /temp/ex
 
 Upload finds an existing script by name. Use `--uid SCRIPT_UID` for an exact match. It validates the source, makes a backup, saves, and compares the saved code. FileFlows removes the metadata comment on save. Script header UIDs can differ from the installed object UID; use the `scripts` command to find the installed UID.
 
+Use `upload --create` to install an absent flow script, or `upload --create --type shared` for a shared helper. Existing scripts are still backed up and updated. A new script uses its declared UID and must pass validation and source/type readback.
+
 Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir` to change this path. Each script backup includes `object.json` and the complete exported `source.js`. Flow backups contain the full object. Restore makes a new backup before it writes. Keep backups outside Git: flow objects can contain credentials. Log output removes credential lines and image data. `get --output` keeps exact data in a new file with mode 0600.
 
 `docker-logs` reads both Docker output streams through SSH. It defaults to the last 48 hours and all retained lines. Use `--tail COUNT` to limit the input, `--match REGEX` to filter it, and `--context COUNT` to keep adjacent lines. Plain Docker text keeps comparison operators such as `setuptools<82`. Output files are private and must be new.
@@ -61,6 +65,8 @@ Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir`
 `log --source nas` reads retained `.log` and `.log.gz` files directly from the container. Use it when the API's HTML log ends before the failure. It requires the file log to be stored on the selected NAS. The default source is `api`.
 
 `diagnose [FILE_UID ...]` reads retained plain logs for selected files, or all failed files. It reports the failure class, terminal errors, quality trials, recorded size limits, automatic target steps, actual-size attempts, and TrueHD checksum error count. It identifies retention at the automatic quality floor. A missing log has its own result. The failure class is based on log text. Use source decode checks to assess file damage. Old logs can omit the working size budget.
+
+`replacement-check FILE_UID` reads the original and recorded output paths, directory entries, ownership, free space, mount options, and matching recovery manifests. It writes no media. Use `--user UID:GID` to check runner access and `--output` to save a private report. `--recovery-directory` selects a custom recovery root. Diagnosis distinguishes replacement errors, including read-only storage, from quality failures.
 
 `media-check FILE_UID` runs `Tools/media_check.py` inside the container. It probes all tracks, then decodes eight seconds near the start, middle, and end. Software checks include all audio and non-cover video tracks. QSV checks decode the primary video. It enables CRC checks and records error-level text even when FFmpeg returns zero. VA-API information lines are counted separately. Default decoder threads: 1; `--threads 2` can help compare decoder behavior. `--starts`, `--duration`, `--timeout`, `--ffmpeg`, `--ffprobe`, and `--no-qsv` control the tests. `--full-audio-index N` checks a complete audio track by absolute stream index. Exit 0 means the selected checks were clean; exit 2 means a check failed, timed out, or logged diagnostics. Reports save to new private files with `--output`. The tool writes no media files. Sample checks cover only the selected intervals.
 
@@ -485,6 +491,16 @@ A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical 
 - `Variables['FFmpegExecutor.LastArgumentsLine']`: Full FFmpeg arguments as a single string.
 
 </details>
+
+### Video - Safe Replace Original
+
+Use this flow script after the final size check in place of the built-in Replace Original node. Install `Scripts/Shared/SafeFileReplace.js` first. Requires Linux and Python 3.
+
+The script retains the encoded file in `/temp/FileFlows-Recovery`, outside runner cleanup. It copies into the original directory, checks SHA-256, preserves ownership, permissions, and modification/access times, and keeps a hard-link backup of the original. It then replaces the path with one rename and syncs the directory. An extension change publishes the new path before removing the old path. It refuses to overwrite a separate existing output or an original that changed during copying.
+
+On failure, the flow fails and recovery files remain with a manifest. On success, recovery copies are removed. Recovery paths are recorded in the log. Set `RecoveryDirectory` to a writable directory outside `Flow.TempPath`; use the same temporary share to retain the output with a hard link. Another filesystem needs a checked copy. Budget free space for one complete output copy on the media share. Linux cannot restore file creation time; the script preserves modification and access times.
+
+---
 
 ### Video - Language Based Track Selection
 

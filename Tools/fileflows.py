@@ -48,6 +48,45 @@ for path in files:
         print(path.read_text(errors='replace'))
 '''
 
+REPLACEMENT_BRIDGE = r'''
+import json, os, sys
+from pathlib import Path
+request = json.load(sys.stdin)
+def inspect(value):
+    p = Path(value)
+    result = {'path': str(p), 'exists': p.exists()}
+    try:
+        s = p.lstat()
+        result.update(bytes=s.st_size, uid=s.st_uid, gid=s.st_gid, mode=oct(s.st_mode & 0o777),
+                      device=s.st_dev, inode=s.st_ino, writable=os.access(p, os.W_OK))
+    except OSError as error:
+        result['error'] = str(error)
+    return result
+original, output = request['original'], request.get('output')
+parent = Path(original).parent
+result = {'original': inspect(original), 'output': inspect(output) if output else None,
+          'directory': inspect(parent), 'entries': [], 'recovery': []}
+try:
+    result['entries'] = [inspect(p) for p in sorted(parent.iterdir())][:1000]
+    fs = os.statvfs(parent)
+    result['directory'].update(available_bytes=fs.f_bavail * fs.f_frsize,
+                               read_only=bool(fs.f_flag & os.ST_RDONLY))
+except OSError as error:
+    result['directory']['error'] = str(error)
+for manifest in Path(request['recovery']).glob('*/manifest.json'):
+    try:
+        data = json.loads(manifest.read_text())
+        if data.get('original') == original:
+            result['recovery'].append({'manifest': str(manifest), 'state': data.get('state'),
+                'encoded': inspect(data['encoded']),
+                'original_backup': inspect(data['original_backup']) if data.get('original_backup') else None})
+    except (OSError, ValueError, KeyError):
+        continue
+result['mounts'] = [line for line in Path('/proc/self/mountinfo').read_text().splitlines()
+                    if ' /temp ' in line or ' /data/media ' in line]
+print(json.dumps(result))
+'''
+
 
 def clean_code(code):
     """Save removes the script metadata comment. Keep all other comments."""
@@ -121,6 +160,22 @@ class FileFlows:
             raise RuntimeError(redact(result.stderr, html=False).strip() or 'No retained file log on this NAS')
         return result.stdout
 
+    def replacement_check(self, uid, recovery='/temp/FileFlows-Recovery', user=None):
+        uid = str(uuid.UUID(uid))
+        obj = self.api('GET', '/api/library-file/' + uid)
+        if not obj or not obj.get('Name'):
+            raise ValueError('Library file was not found')
+        args = ['docker', 'exec', '-i'] + (['-u', user] if user else [])
+        args += [self.container, 'python3', '-c', REPLACEMENT_BRIDGE]
+        result = subprocess.run(['ssh', '-o', 'BatchMode=yes', self.host, shlex.join(args)],
+                                input=json.dumps({'original': obj['Name'], 'output': obj.get('OutputPath'),
+                                                  'recovery': recovery}), text=True, capture_output=True, timeout=90)
+        if result.returncode:
+            raise RuntimeError(redact(result.stderr, html=False))
+        report = json.loads(result.stdout)
+        report.update(Uid=uid, status=obj.get('Status'))
+        return report
+
     def backup(self, kind, uid):
         uid = str(uuid.UUID(uid))
         obj = self.api('GET', f'/api/{kind}/{uid}')
@@ -157,12 +212,27 @@ class FileFlows:
             raise RuntimeError(f'Saved DockerMod differs. Recovery copy: {backup}')
         return {'name': saved['Name'], 'uid': uid, 'verified': True, 'backup': str(backup)}
 
-    def upload(self, path, name=None, uid=None):
+    def upload(self, path, name=None, uid=None, create=False, script_type='flow'):
         code = Path(path).read_text()
         name = name or script_name(path, code)
         uid = str(uuid.UUID(uid)) if uid else None
         scripts = self.api('GET', '/api/script')
         matches = [s for s in scripts if s['Uid'] == uid] if uid else [s for s in scripts if s['Name'] == name]
+        if not matches and create:
+            if script_type not in ['flow', 'shared']:
+                raise ValueError('Script type must be flow or shared')
+            declared = re.search(r'^\s*\*\s*@uid\s+([\w-]+)', code, re.MULTILINE)
+            new_uid = uid or (str(uuid.UUID(declared[1])) if declared else str(uuid.uuid4()))
+            if any(s['Uid'].lower() == new_uid.lower() for s in scripts):
+                raise ValueError('Script UID already exists under another name')
+            self.api('POST', '/api/script/validate', {'Code': code, 'IsFunction': False, 'Variables': {}})
+            obj = {'Uid': new_uid, 'Name': name, 'Code': code, 'Type': 2 if script_type == 'shared' else 0,
+                   'Language': 0, 'Repository': False}
+            self.api('POST', '/api/script', obj)
+            saved = self.api('GET', '/api/script/' + new_uid)
+            if clean_code(saved['Code']) != clean_code(code) or saved['Type'] != obj['Type']:
+                raise RuntimeError('Created script differs: ' + new_uid)
+            return {'name': saved['Name'], 'uid': saved['Uid'], 'verified': True, 'created': True}
         if len(matches) != 1:
             raise ValueError(f'Expected one existing script for {name}; found {len(matches)}. Use --uid.')
         obj = self.api('GET', '/api/script/' + matches[0]['Uid'])
@@ -305,7 +375,10 @@ def diagnose_log(log):
     lines = log.splitlines()
     quality = 'No tested quality value meets' in log or 'Size validation failed:' in log
     retained = any(re.search(r'\[WARN\].*Original retained: no (?:tested|measured)', line) for line in lines)
-    cause = 'original_retained_quality_floor' if retained else 'quality_size_conflict' if quality else (
+    replacement = any('[ERRR]' in line and re.search(r'Failed to move file|Replacement (?:failed|error)', line) for line in lines)
+    read_only = any(('[ERRR]' in line or line.startswith('Replacement error:')) and
+                    'Read-only file system' in line for line in lines)
+    cause = 'replacement_read_only' if replacement and read_only else 'replacement_failed' if replacement else 'original_retained_quality_floor' if retained else 'quality_size_conflict' if quality else (
         'qsv_software_frame_conversion' if 'Impossible to convert between the formats supported' in log else 'unknown')
     # Exclude logged FFmpeg stderr metadata, including titles containing 'error'.
     errors = [line for line in lines if '[ERRR]' in line and not re.search(r'->\s+(title|comment)\s*:', line)]
@@ -399,10 +472,17 @@ def main(argv=None):
     media.add_argument('--no-qsv', action='store_true')
     media.add_argument('--full-audio-index', type=int)
     media.add_argument('--output', help='Save the report in a new private file')
+    replacement = sub.add_parser('replacement-check', help='Read original, output, directory, mounts, and recovery files')
+    replacement.add_argument('uid')
+    replacement.add_argument('--recovery-directory', default='/temp/FileFlows-Recovery')
+    replacement.add_argument('--user', help='Container user or UID:GID to check runner access')
+    replacement.add_argument('--output', help='Save the report in a new private file')
     upload = sub.add_parser('upload', help='Update an existing script; back up and verify it')
     upload.add_argument('files', nargs='+')
     upload.add_argument('--name')
     upload.add_argument('--uid')
+    upload.add_argument('--create', action='store_true', help='Create the script if it is absent')
+    upload.add_argument('--type', choices=['flow', 'shared'], default='flow', help='Type for a new script')
     mod = sub.add_parser('upload-mod', help='Back up, save, and verify a custom DockerMod')
     mod.add_argument('file')
     mod.add_argument('--uid', required=True)
@@ -449,6 +529,10 @@ def main(argv=None):
         result = client.diagnose(args.uids)
         if args.output:
             write_private(Path(args.output), json.dumps(result, indent=2) + '\n')
+    elif args.command == 'replacement-check':
+        result = client.replacement_check(args.uid, args.recovery_directory, args.user)
+        if args.output:
+            write_private(Path(args.output), json.dumps(result, indent=2) + '\n')
     elif args.command == 'media-check':
         options = ['--duration', str(args.duration), '--timeout', str(args.timeout), '--threads', str(args.threads),
                    '--ffmpeg', args.ffmpeg, '--ffprobe', args.ffprobe]
@@ -490,7 +574,7 @@ def main(argv=None):
     elif args.command == 'upload':
         if len(args.files) > 1 and (args.name or args.uid):
             parser.error('--name and --uid require one input file')
-        result = [client.upload(p, args.name, args.uid) for p in args.files]
+        result = [client.upload(p, args.name, args.uid, create=args.create, script_type=args.type) for p in args.files]
     elif args.command == 'backup':
         result = {'backup': str(client.backup(args.kind, args.uid))}
     elif args.command == 'restore':

@@ -408,3 +408,5 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 - Keep Python dependency constraints equal across installer steps. Build Whisper with a fresh CMake cache and the exact `whisper-cli` target; check the binary before replacement.
 
 For size-limited conversion, a retained original is a failure. SizePriority may reduce quality below the preferred VMAF floor. Rebuild filtered references and clear measurements when QSV denoise changes. Two GPU denoise passes still feed one original-source encode.
+
+Use Video - Safe Replace Original after the final size check. Keep recovery outside runner cleanup. Test copy, checksum, read-only rename, and cleanup failures before replacement changes. Use `replacement-check` to inspect the original, encoded output, and recovery records.

@@ -18,6 +18,55 @@ CODE = '/**\n * @description Test\n */\nfunction Script() { return 1; }\n'
 
 
 class ToolTests(unittest.TestCase):
+    def test_replacement_failure_has_priority_over_old_quality_errors(self):
+        row = ff.diagnose_log('[ERRR] -> Size validation failed: earlier attempt\n'
+                              '[ERRR] -> Failed to move file to: /movie.mkv => Read-only file system\n'
+                              'Finishing file: ProcessingFailed')
+        self.assertEqual(row['cause'], 'replacement_read_only')
+        row = ff.diagnose_log('[ERRR] -> Replacement failed.\n'
+                              'Replacement error: [Errno 30] Read-only file system\n')
+        self.assertEqual(row['cause'], 'replacement_read_only')
+
+    def test_replacement_check_reports_missing_files_and_matching_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / 'movie.mkv'
+            manifest = root / 'recovery' / 'job' / 'manifest.json'
+            manifest.parent.mkdir(parents=True)
+            encoded = manifest.parent / 'encoded.mkv'
+            encoded.write_bytes(b'encoded')
+            manifest.write_text(json.dumps({'original': str(original), 'encoded': str(encoded), 'state': 'failed'}))
+            request = {'original': str(original), 'output': str(root / 'missing.mkv'), 'recovery': str(root / 'recovery')}
+            # The Linux mount read is independent of file inspection.
+            payload = ff.REPLACEMENT_BRIDGE.replace("Path('/proc/self/mountinfo').read_text()", "''")
+            result = subprocess.run([sys.executable, '-c', payload], input=json.dumps(request), text=True,
+                                    capture_output=True, check=True)
+            report = json.loads(result.stdout)
+            self.assertFalse(report['original']['exists'])
+            self.assertFalse(report['output']['exists'])
+            self.assertEqual(report['recovery'][0]['encoded']['bytes'], 7)
+
+    def test_upload_create_requires_an_explicit_flag_and_verifies_type(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'Helper.js'
+            source.write_text('/**\n * @name Helper\n * @uid ' + UID + '\n */\nexport class Helper {}')
+            client = ff.FileFlows(host='server.example')
+            saved = {}
+            def api(method, path, body=None):
+                if method == 'GET' and path == '/api/script':
+                    return []
+                if method == 'POST' and path == '/api/script':
+                    saved.update(body)
+                return saved.copy()
+            client.api = api
+            with self.assertRaises(ValueError):
+                client.upload(source)
+            self.assertFalse(saved)
+            result = client.upload(source, create=True, script_type='shared')
+            self.assertTrue(result['created'])
+            self.assertEqual(saved['Type'], 2)
+            self.assertEqual(result['uid'], UID)
+
     def test_cli_requires_host_before_remote_access(self):
         with patch('subprocess.run') as run, patch('sys.stderr'), self.assertRaises(SystemExit) as error:
             ff.main(['status'])
