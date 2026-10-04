@@ -152,6 +152,9 @@ function runAuto(options = {}) {
             Orig: options.missingOriginal ? null : { FullName: '/original.mkv' }
         },
         'AutoQuality.MinimumVMAF': options.minimum || 0,
+        'AutoQuality.SizePriority': options.sizePriority || false,
+        'AutoQuality.MaximumDenoise': options.maximumDenoise || 0,
+        'AutoQuality.MaximumDenoisePasses': options.denoisePasses || 1,
         AutoQuality_ReferenceMode: options.referenceMode || 'auto',
         AutoQuality_Validated: true,
         MaxFileSize: options.maxSize || 0,
@@ -398,7 +401,8 @@ function runExecutor(copy, fail = false, options = {}) {
             source: '/original.mkv',
             sourceStamp: JSON.stringify({ bytes: 100000000, modified: '123' }),
             maxBytes: 1000,
-            minimum: 90,
+            minimum: options.sizePriority ? 0 : 90,
+            sizePriority: !!options.sizePriority,
             requested: 95,
             selectedTarget: 95,
             useTags: options.tagsEnabled,
@@ -406,8 +410,8 @@ function runExecutor(copy, fail = false, options = {}) {
             signature,
             candidates: [
                 { crf: 18, score: 96, size: 900 },
-                { crf: 19, score: 94, size: 800 },
-                { crf: 20, score: 91, size: 700 }
+                { crf: 19, score: options.sizePriority ? 85 : 94, size: 800 },
+                { crf: 20, score: options.sizePriority ? 80 : 91, size: 700 }
             ]
         });
         if (options.changedSettings) variables.FfmpegBuilderModel.VideoStreams[0].Filter.push('scale_qsv=w=640:h=360');
@@ -514,10 +518,10 @@ test('Adaptive search uses filtered high-quality references and raw samples for 
     assert.ok(extracts.every((a) => a[a.indexOf('-i') + 1] === '/original.mkv'));
 });
 
-test('Adaptive search keeps the original when the quality floor cannot fit', () => {
+test('Adaptive search fails when the quality floor cannot fit', () => {
     const { result, variables } = runAuto({ minimum: 90, maxSize: 1 });
-    assert.equal(result, 0);
-    assert.equal(variables.AutoQuality_Reason, 'original_retained_quality_floor');
+    assert.equal(result, -1);
+    assert.equal(variables.AutoQuality_Reason, 'quality_size_conflict');
     assert.equal(variables.AutoQuality_Validated, false);
 });
 
@@ -549,12 +553,12 @@ test('Size retries keep original video inputs and publish only the fitting outpu
     assert.equal(calls[1][calls[1].indexOf('-global_quality:v:0') + 1], '19');
 });
 
-test('Size retries stop at the measured floor and retain the original', () => {
+test('Size retries fail at the measured floor and preserve the original', () => {
     const { result, calls, working, deleted } = runExecutor(false, false, {
         adaptive: true,
         sizes: [1200, 1150, 1100]
     });
-    assert.equal(result, 0);
+    assert.equal(result, -1);
     assert.equal(calls.length, 3);
     assert.equal(deleted.length, 3);
     assert.deepEqual(working, ['/original.mkv']);
@@ -594,13 +598,13 @@ test('Original source lookup supports flat runner variables and refuses the work
 test('Adaptive size checks cannot use unmeasured skip paths', () => {
     for (const duration of [0, 20]) {
         const result = runAuto({ minimum: 90, maxSize: 100000000, duration });
-        assert.equal(result.result, 0);
+        assert.equal(result.result, -1);
         assert.equal(result.variables.AutoQuality_Validated, false);
         assert.ok(!result.calls.some((a) => a.includes('-global_quality:v')));
     }
     assert.equal(runAuto({ minimum: 90, maxSize: 100000000, forceCrf: 20 }).result, -1);
     assert.equal(runAuto({ minimum: 96, maxSize: 100000000 }).result, -1);
-    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, minReduction: 100 }).result, 0);
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, minReduction: 100 }).result, -1);
     assert.equal(runAuto({ minimum: 90, maxSize: 100000000, minReduction: -1 }).result, -1);
     const copy = runAuto({ minimum: 90, maxSize: 100000000, alreadyOptimal: true });
     assert.equal(copy.result, 1);
@@ -618,4 +622,76 @@ test('Adaptive tags record only the output that passes actual-size checks', () =
     assert.deepEqual(pass.tags, ['CRF 19', 'VMAF 94']);
     const retain = runExecutor(false, false, { adaptive: true, tagsEnabled: true, sizes: [1200, 1150, 1100] });
     assert.deepEqual(retain.tags, []);
+});
+
+test('Size priority selects the best measured quality that fits below the preferred floor', () => {
+    const { result, variables, calls } = runAuto({
+        minimum: 90,
+        sizePriority: true,
+        maxSize: 700000,
+        score: (q) => 110 - q
+    });
+    assert.equal(result, 1);
+    const plan = JSON.parse(variables.AutoQuality_AdaptivePlan);
+    assert.equal(plan.minimum, 0);
+    assert.equal(plan.sizePriority, true);
+    assert.ok(variables.AutoQuality_Score < 90);
+    assert.ok(plan.candidates[0].size <= plan.maxBytes);
+    assert.ok(plan.candidates.every((c) => c.score >= 0));
+    assert.ok(calls.filter((a) => a.includes('copy')).every((a) => a[a.indexOf('-i') + 1] === '/original.mkv'));
+});
+
+test('Size priority rebuilds references and measurements after stronger denoise', () => {
+    const { result, variables, video, calls } = runAuto({
+        minimum: 90,
+        sizePriority: true,
+        maximumDenoise: 100,
+        denoisePasses: 2,
+        maxSize: 700000,
+        score: (q) => 110 - q
+    });
+    assert.equal(result, 1);
+    assert.equal(variables.AutoQuality_DenoiseLevel, 100);
+    assert.equal(variables.AutoQuality_DenoisePasses, 2);
+    assert.ok(video.EncodingParameters.some((t) => t.includes('denoise=100')));
+    const encodes = calls.filter((a) => a.includes('-global_quality:v'));
+    const refs = encodes.filter((a) => a[a.length - 1].includes('_reference'));
+    assert.equal(refs.length, 6);
+    const stronger = encodes.filter((a) => a[a.indexOf('-vf') + 1].includes('denoise=100'));
+    assert.ok(stronger.every((a) => (a[a.indexOf('-vf') + 1].match(/denoise=100/g) || []).length === 2));
+    assert.ok(
+        stronger.every(
+            (a) => !a[a.indexOf('-i') + 1].includes('_reference') && !a[a.indexOf('-i') + 1].includes('_quality_')
+        )
+    );
+});
+
+test('Size priority has no unmeasured success path or missing size limit', () => {
+    assert.equal(runAuto({ sizePriority: true }).result, -1);
+    assert.equal(runAuto({ sizePriority: true, maxSize: 1 }).result, -1);
+    assert.equal(runAuto({ sizePriority: true, maxSize: 700000, maximumDenoise: 101 }).result, -1);
+});
+
+test('Size priority retries below VMAF 90 and records the fitting score', () => {
+    const { result, variables, calls, working } = runExecutor(false, false, {
+        adaptive: true,
+        sizePriority: true,
+        sizes: [1200, 900]
+    });
+    assert.equal(result, 1);
+    assert.equal(variables.AutoQuality_Score, 85);
+    assert.equal(variables.AutoQuality_TargetVMAF, 85);
+    assert.equal(calls.length, 2);
+    assert.equal(working.length, 1);
+});
+
+test('Two denoise passes survive filter merging and retain source format before crop', () => {
+    const h = loadHelpers();
+    const source = h.buildQsvDenoiseFilter(40, 8, 10, 'cw=1920:ch=1040:cx=0:cy=20');
+    const raised = h.raiseQsvDenoise(source, 100, 2);
+    assert.equal((raised.match(/denoise=100/g) || []).length, 2);
+    assert.equal(h.mergeFilters([raised, raised]), raised);
+    assert.equal(h.raiseQsvDenoise(raised, 100, 2), raised);
+    assert.ok(raised.indexOf('passthrough=0') < raised.indexOf('cw=1920'));
+    assert.equal(h.raiseQsvDenoise('scale_qsv=format=p010le', 100, 2), 'scale_qsv=format=p010le');
 });

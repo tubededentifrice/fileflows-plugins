@@ -59,6 +59,39 @@ Finishing file: Processed'''
         self.assertEqual(row['size_attempts'], [{'bytes': 1200, 'limit_bytes': 1000}, {'bytes': 900, 'limit_bytes': 1000}])
         self.assertTrue(row['log_finished'])
 
+    def test_retained_audit_confirms_the_log_and_keeps_normal_jobs_out(self):
+        client = ff.FileFlows(host='server.example')
+        files = [
+            {'Uid': UID, 'Status': 1, 'OriginalSize': 1000, 'FinalSize': 1000},
+            {'Uid': 'normal', 'Status': 1, 'OriginalSize': 1000, 'FinalSize': 1000},
+            {'Uid': 'encoded', 'Status': 1, 'OriginalSize': 1000, 'FinalSize': 500},
+            {'Uid': 'failed', 'Status': 4, 'OriginalSize': 1000, 'FinalSize': 1000}
+        ]
+        def log(uid):
+            return '[WARN] -> Original retained: no tested encode meets VMAF 90 and the size budget.' if uid == UID else 'Already optimal'
+        with patch.object(client, 'api', return_value=files), patch.object(client, 'file_log', side_effect=log) as logs:
+            rows = client.retained_originals()
+        self.assertEqual([row['Uid'] for row in rows], [UID])
+        self.assertEqual(logs.call_count, 2)
+
+    def test_retained_audit_limits_old_log_reads_by_date(self):
+        client = ff.FileFlows(host='server.example')
+        files = [{'Uid': UID, 'Status': 1, 'OriginalSize': 1000, 'FinalSize': 1000,
+                  'DateModified': '2026-01-01T00:00:00Z'}]
+        with patch.object(client, 'api', return_value=files), patch.object(client, 'file_log') as logs:
+            self.assertEqual(client.retained_originals('2026-02-01T00:00:00Z'), [])
+            logs.assert_not_called()
+        with self.assertRaisesRegex(ValueError, 'timezone'):
+            client.retained_originals('2026-02-01T00:00:00')
+
+    def test_diagnosis_reports_visible_size_failure_and_stronger_denoise(self):
+        row = ff.diagnose_log('[INFO] -> Size fallback: raising QSV denoise to 100.\n'
+                              '[INFO] -> Size fallback: prioritizing the size limit; VMAF remains measured.\n'
+                              '[ERRR] -> Size validation failed: no measured encode fits the 1000-byte limit.')
+        self.assertEqual(row['cause'], 'quality_size_conflict')
+        self.assertTrue(row['size_priority'])
+        self.assertTrue(row['denoise_escalated'])
+
     def test_diagnosis_identifies_frame_conversion_and_missing_logs(self):
         self.assertEqual(ff.diagnose_log('Impossible to convert between the formats supported')['cause'],
                          'qsv_software_frame_conversion')

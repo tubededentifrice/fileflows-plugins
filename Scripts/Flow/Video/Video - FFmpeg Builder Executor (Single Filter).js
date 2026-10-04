@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 20
+ * @revision 21
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -708,7 +708,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     }
 
     // ===== SKIP IF NO WORK =====
-    if (!shouldExecute(model)) {
+    if (!Variables.AutoQuality_AdaptivePlan && !shouldExecute(model)) {
         Logger.ILog('FFmpeg Builder Executor (Single Filter): no changes detected; skipping encode.');
         tryClearModel(KeepModel);
         return 2;
@@ -770,7 +770,9 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
                 sizePlan.source !== original ||
                 helpers.fileStamp(original) !== sizePlan.sourceStamp ||
                 !(sizePlan.maxBytes > 0) ||
-                !(sizePlan.minimum >= 90) ||
+                !(sizePlan.sizePriority === true
+                    ? sizePlan.minimum === 0
+                    : sizePlan.minimum >= 90 && sizePlan.minimum <= 99) ||
                 !sizePlan.candidates.length ||
                 sizePlan.candidates[0].crf !== Number(Variables.AutoQuality_CRF) ||
                 sizePlan.signature !== ffmpegHelpers.videoSettingsSignature(primary, toEnumerableArray, safeString) ||
@@ -1336,6 +1338,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             Logger.ILog(`Encoded size: ${bytes} bytes; limit: ${sizePlan.maxBytes} bytes.`);
             if (bytes <= sizePlan.maxBytes) {
                 Variables.AutoQuality_CRF = candidate.crf;
+                Variables.AutoQuality_Reason =
+                    sizePlan.sizePriority && candidate.score < sizePlan.requested
+                        ? 'size_priority'
+                        : 'quality_selected';
                 Variables.AutoQuality_Score = candidate.score;
                 Variables.AutoQuality_Target = Math.max(
                     sizePlan.minimum,
@@ -1354,11 +1360,11 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             }
             System.IO.File.Delete(outFile);
             if (i === sizePlan.candidates.length - 1) {
-                Variables.AutoQuality_Reason = 'original_retained_quality_floor';
-                Logger.WLog(`Original retained: no measured VMAF ${sizePlan.minimum} encode fits the size limit.`);
+                Variables.AutoQuality_Reason = 'quality_size_conflict';
+                Logger.ELog(`Size validation failed: no measured encode fits the ${sizePlan.maxBytes}-byte limit.`);
                 Flow.ResetWorkingFile();
                 tryClearModel(KeepModel);
-                return 0;
+                return -1;
             }
         }
     }

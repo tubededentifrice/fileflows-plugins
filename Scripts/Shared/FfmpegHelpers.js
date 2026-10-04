@@ -222,6 +222,66 @@ export class FfmpegHelpers {
         return out;
     }
 
+    /** Measured retry ladder: small initial steps, then larger steps to the encoder limit. */
+    qualityRetryValues(selected, maximum) {
+        var values = [];
+        var step = 1;
+        while (selected + step < maximum) {
+            values.push(selected + step);
+            step *= 2;
+        }
+        if (selected < maximum) values.push(maximum);
+        return values;
+    }
+
+    /** Raise only existing QSV denoise options. Keep format and crop passes separate. */
+    raiseQsvDenoise(chain, level, passes) {
+        var raised = String(chain || '').replace(/(vpp_qsv=[^,]*?\bdenoise=)(\d+)/g, function (all, prefix, current) {
+            return prefix + String(Math.max(Number(current), Math.round(level)));
+        });
+        var parts = this.splitFilterChain(raised);
+        var denoiseParts = [];
+        for (var i = 0; i < parts.length; i++) {
+            if (/^vpp_qsv=.*\bdenoise=/.test(parts[i])) denoiseParts.push(i);
+        }
+        if (passes === 2 && denoiseParts.length === 1) {
+            var first = denoiseParts[0];
+            var second = parts[first].replace(/:passthrough=(?:0|1|true|false)/g, '') + ':passthrough=0';
+            if (second === parts[first]) second = second.replace(/:passthrough=0/, ':passthrough=false');
+            parts.splice(first + 1, 0, second);
+        }
+        return parts.join(',');
+    }
+
+    raiseModelQsvDenoise(video, level, passes, toArray, safeString) {
+        var fields = [
+            'EncodingParameters',
+            'OptionalEncodingParameters',
+            'AdditionalParameters',
+            'Filter',
+            'Filters',
+            'OptionalFilter'
+        ];
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            var list = video[field];
+            if (!list) continue;
+            if (typeof list === 'string') {
+                video[field] = this.raiseQsvDenoise(list, level, passes);
+                continue;
+            }
+            var values = toArray(list, 5000).slice();
+            if (typeof list.Clear === 'function') list.Clear();
+            else if (Array.isArray(list)) list.length = 0;
+            else throw new Error('Cannot update QSV denoise in ' + field);
+            for (var j = 0; j < values.length; j++) {
+                var value = this.raiseQsvDenoise(safeString(values[j]), level, passes);
+                if (typeof list.Add === 'function') list.Add(value);
+                else list.push(value);
+            }
+        }
+    }
+
     /** Record video settings so full-size retries use the measured filter plan. */
     videoSettingsSignature(video, toArray, safeString) {
         var settings = {};

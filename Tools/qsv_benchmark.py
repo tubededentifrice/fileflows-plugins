@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--starts', type=float, nargs='+', default=[30])
     parser.add_argument('--duration', type=float, default=12)
     parser.add_argument('--denoise', type=int, nargs='+', default=[0, 30, 50])
+    parser.add_argument('--denoise-passes', type=int, choices=[1, 2], default=1, help='GPU denoise passes before one encode')
     parser.add_argument('--quality', type=int, nargs='+', default=[14, 18])
     parser.add_argument('--ffmpeg', default='/usr/local/bin/ffmpeg')
     parser.add_argument('--ffprobe', default='ffprobe')
@@ -78,6 +79,8 @@ def main():
             if args.field_mode == 'deinterlace':
                 prefix += 'deinterlace_qsv=mode=advanced,'
             vf = prefix + f'vpp_qsv=denoise={denoise}:format={native}'
+            if denoise > 0 and args.denoise_passes == 2:
+                vf += f',vpp_qsv=denoise={denoise}:format={native}:passthrough=0'
             if args.crop:
                 vf += ',vpp_qsv=' + args.crop + ':format=' + native
             if native == 'nv12':

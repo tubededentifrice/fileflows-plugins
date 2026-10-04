@@ -186,6 +186,35 @@ class FileFlows:
                 return files
             skip += batch
 
+    def retained_originals(self, since=None):
+        """Find legacy successful jobs that stopped at the quality floor."""
+        since_time = dt.datetime.fromisoformat(since.replace('Z', '+00:00')) if since else None
+        if since_time and since_time.tzinfo is None:
+            raise ValueError('Use an ISO timestamp with a timezone for --since')
+        rows, skip, batch = [], 0, 500
+        while True:
+            page = self.api('GET', f'/api/library-file?status=1&skip={skip}&top={batch}')
+            if not isinstance(page, list):
+                raise RuntimeError('Expected a file list from FileFlows')
+            for obj in page:
+                if obj.get('Status') != 1 or not obj.get('OriginalSize') or obj.get('FinalSize') != obj.get('OriginalSize'):
+                    continue
+                if since_time:
+                    modified = dt.datetime.fromisoformat(str(obj.get('DateModified', '')).replace('Z', '+00:00'))
+                    if modified < since_time:
+                        continue
+                try:
+                    report = diagnose_log(redact(self.file_log(obj['Uid']), html=False))
+                except RuntimeError:
+                    continue
+                if report['cause'] == 'original_retained_quality_floor':
+                    row = {k: obj.get(k) for k in ['Uid', 'Name', 'Status', 'OriginalSize', 'FinalSize']}
+                    row.update(report)
+                    rows.append(row)
+            if len(page) < batch:
+                return rows
+            skip += batch
+
     def diagnose(self, uids=None):
         files = []
         if uids:
@@ -274,7 +303,7 @@ def write_private(path, text):
 def diagnose_log(log):
     """Extract terminal errors and the last quality table from a plain file log."""
     lines = log.splitlines()
-    quality = 'No tested quality value meets' in log
+    quality = 'No tested quality value meets' in log or 'Size validation failed:' in log
     retained = any(re.search(r'\[WARN\].*Original retained: no (?:tested|measured)', line) for line in lines)
     cause = 'original_retained_quality_floor' if retained else 'quality_size_conflict' if quality else (
         'qsv_software_frame_conversion' if 'Impossible to convert between the formats supported' in log else 'unknown')
@@ -297,6 +326,8 @@ def diagnose_log(log):
                  for m in [re.search(r'\[INFO\].*Size fallback: testing VMAF target ([\d.]+)', line)] if m]
     return {'cause': cause, 'errors': errors[-8:], 'quality_trials': trials,
             'size_attempts': attempts, 'fallback_targets': fallbacks,
+            'size_priority': 'prioritizing the size limit; VMAF remains measured' in log,
+            'denoise_escalated': 'raising QSV denoise to' in log,
             'quality_target': float(target[1]) if target else None,
             'max_size_gib': float(limit[1]) if limit else None,
             'size_budget_gib': float(budget[1]) if budget else None,
@@ -351,6 +382,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     for name in ['status', 'failed', 'scripts', 'flows', 'mods']:
         sub.add_parser(name)
+    retained = sub.add_parser('retained', help='Find successful jobs that kept the original after a quality/size conflict')
+    retained.add_argument('--since', help='Only jobs modified since this ISO timestamp with timezone')
     diagnose = sub.add_parser('diagnose', help='Read complete failure logs and extract causes and quality trials')
     diagnose.add_argument('uids', nargs='*', help='Default: all failed files')
     diagnose.add_argument('--output', help='Save the report in a new private file')
@@ -433,6 +466,8 @@ def main(argv=None):
         if not result['clean']:
             sys.exit(2)
         return
+    elif args.command == 'retained':
+        result = client.retained_originals(args.since)
     elif args.command == 'failed':
         files = client.failed()
         result = [{k: f.get(k) for k in ['Uid', 'Name', 'Status', 'FailureReason', 'OriginalSize', 'FinalSize']}

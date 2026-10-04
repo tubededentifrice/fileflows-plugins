@@ -406,3 +406,5 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 - Run the Python tool tests with `python3 -m unittest discover -s Tests -p 'test_*.py'`.
 - Use `docker-logs` for container startup logs and `upload-mod --uid UID` for custom DockerMod changes. Check active jobs first; saves can update agent configuration.
 - Keep Python dependency constraints equal across installer steps. Build Whisper with a fresh CMake cache and the exact `whisper-cli` target; check the binary before replacement.
+
+For size-limited conversion, a retained original is a failure. SizePriority may reduce quality below the preferred VMAF floor. Rebuild filtered references and clear measurements when QSV denoise changes. Two GPU denoise passes still feed one original-source encode.
