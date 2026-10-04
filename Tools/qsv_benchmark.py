@@ -48,15 +48,19 @@ def main():
     parser.add_argument('--preset', default='veryslow')
     parser.add_argument('--crop', help='QSV crop options, for example cw=1920:ch=1024:cx=0:cy=28')
     parser.add_argument('--field-mode', choices=['source', 'progressive', 'deinterlace'], default='source')
+    parser.add_argument('--compare-denoise', action='store_true', help='Measure denoise change against the zero-denoise reference')
     parser.add_argument('--software-decode', action='store_true', help='Use software decode and upload, as in Auto Quality')
     args = parser.parse_args()
     if args.duration <= 0 or any(x < 0 for x in args.starts):
         parser.error('Use a positive duration and non-negative start times')
     if any(not 0 <= x <= 100 for x in args.denoise) or any(not 1 <= x <= 51 for x in args.quality):
         parser.error('Use denoise 0–100 and quality 1–51')
+    if args.compare_denoise and 0 not in args.denoise:
+        parser.error('Denoise comparison requires level zero')
+    args.denoise = sorted(set(args.denoise))
     source = Path(args.source).resolve(strict=True)
     root = Path(args.output).resolve()
-    root.mkdir(mode=0o700)  # Refuse an existing directory.
+    root.mkdir(mode=0o700, parents=True)  # Refuse an existing directory.
     report = {'source': str(source), 'settings': vars(args), 'samples': [], 'results': []}
     for index, start in enumerate(args.starts):
         clip = root / f'sample{index}.mkv'
@@ -99,6 +103,8 @@ def main():
                     row['vmaf_identity'] = metric(args.metric_ffmpeg, dst, dst, root / f'{dst.stem}-identity.json')
                 else:
                     row['vmaf_encoding'] = metric(args.metric_ffmpeg, dst, references[denoise], root / f'{dst.stem}-encoding.json')
+                if quality == 1 and args.compare_denoise and denoise != 0:
+                    row['vmaf_denoise'] = metric(args.metric_ffmpeg, dst, references[0], root / f'{dst.stem}-denoise.json')
                 report['results'].append(row)
                 (root / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
                 print(json.dumps({k: v for k, v in row.items() if k != 'command'}), flush=True)

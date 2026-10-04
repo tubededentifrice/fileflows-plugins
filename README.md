@@ -60,7 +60,7 @@ Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir`
 
 `log --source nas` reads retained `.log` and `.log.gz` files directly from the container. Use it when the API's HTML log ends before the failure. It requires the file log to be stored on the selected NAS. The default source is `api`.
 
-`diagnose [FILE_UID ...]` reads retained plain logs for selected files, or all failed files. It reports the failure class, terminal errors, quality trials, recorded size limits, and TrueHD checksum error count. A missing log has its own result. The failure class is based on log text. Use source decode checks to assess file damage. Old logs can omit the working size budget.
+`diagnose [FILE_UID ...]` reads retained plain logs for selected files, or all failed files. It reports the failure class, terminal errors, quality trials, recorded size limits, automatic target steps, actual-size attempts, and TrueHD checksum error count. It identifies retention at the automatic quality floor. A missing log has its own result. The failure class is based on log text. Use source decode checks to assess file damage. Old logs can omit the working size budget.
 
 `media-check FILE_UID` runs `Tools/media_check.py` inside the container. It probes all tracks, then decodes eight seconds near the start, middle, and end. Software checks include all audio and non-cover video tracks. QSV checks decode the primary video. It enables CRC checks and records error-level text even when FFmpeg returns zero. VA-API information lines are counted separately. Default decoder threads: 1; `--threads 2` can help compare decoder behavior. `--starts`, `--duration`, `--timeout`, `--ffmpeg`, `--ffprobe`, and `--no-qsv` control the tests. `--full-audio-index N` checks a complete audio track by absolute stream index. Exit 0 means the selected checks were clean; exit 2 means a check failed, timed out, or logged diagnostics. Reports save to new private files with `--output`. The tool writes no media files. Sample checks cover only the selected intervals.
 
@@ -77,6 +77,14 @@ ssh SSH_HOST 'docker exec -u RUNNER_UID:RUNNER_GID -i fileflows python3 - /temp/
 ```
 
 Set `--ffmpeg`, `--ffprobe`, `--metric-ffmpeg`, `--device`, `--crop`, and `--preset` for another installation. The QSV device must be named `gpu`. VMAF compares each candidate with a high-quality reference at the same denoise level. Compare the source and denoised frames visually to check detail loss from denoise. Use moderate levels first. Native HDR VMAF is an encoding check; inspect tone-mapped frames for visual review. This tool keeps source files.
+
+`--compare-denoise` also compares each high-quality denoised reference with the zero-denoise reference. Include level 0 in `--denoise`. This measures filter changes separately from encoding loss. The tool creates missing parent directories and refuses an existing output directory.
+
+Use `Tools/denoise_detail.py` to check existing high-quality reference clips without more encodes. It compares center crops at native resolution and reports decoded hashes, changed pixels, mean differences, and fine brightness/color variation separately. High-frequency values include grain and image detail. Use frames with the same filters and quality apart from denoise.
+
+```sh
+ssh SSH_HOST 'docker exec -i fileflows python3 - --reference /temp/qsv-test/sample0-d0-q1.mkv --candidates /temp/qsv-test/sample0-d30-q1.mkv /temp/qsv-test/sample0-d50-q1.mkv' < Tools/denoise_detail.py
+```
 
 `--software-decode` uses software decode and hardware upload, as in Auto Quality. `--field-mode progressive` adds `setfield=prog` before hardware processing; use it for content confirmed as progressive. `--field-mode deinterlace` adds QSV deinterlacing. Default field mode: `source`. Compare these modes when an interlaced source has unusually low quality scores at near-lossless settings.
 
@@ -204,14 +212,15 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 | `Preset`            | veryslow | Encoder preset for tests and final encode.                               | **Slower:** Better compression/quality ratio.<br>**Faster:** Quicker processing, larger files.                |
 | `SampleDurationSec` | 8        | Length of each test sample.                                              | **Longer:** More accurate score.<br>**Shorter:** Faster testing.                                              |
 | `ScoreAggregation`  | average  | How to aggregate scores from multiple samples ('min', 'max', 'average'). | **min:** Safest (all parts must look good).<br>**average:** Best for overall quality.<br>**max:** Optimistic. |
+| `MinimumVMAF`       | 0        | Permitted target floor: 90–99; 0 keeps the requested target.             | A lower floor can meet the size limit. More sample tests and complete encodes can take longer.                |
 | `MinSizeReduction`  | 0        | Minimum % size reduction to proceed.                                     | Set to e.g., 10 to skip files that won't shrink much.                                                         |
 
 #### Advanced Variables
 
-- Manual `TargetVMAF` values stay fixed. `TargetVMAF=0` uses content and dark-scene adjustments. Set `AutoQuality.DarkSceneBoost=true` to also apply the dark-scene adjustment to a manual target. VMAF can score an identical animation below 100; do not assume that 98 or 99 is reachable for every scene.
+- With `MinimumVMAF=0`, manual `TargetVMAF` values stay fixed. `TargetVMAF=0` uses content and dark-scene adjustments. Set `AutoQuality.DarkSceneBoost=true` to also apply the dark-scene adjustment to a manual target. VMAF can score an identical animation below 100; do not assume that 98 or 99 is reachable for every scene.
 - `Variables.AutoQualityPreset`: Set to 'quality', 'balanced', or 'compression' to override numerical targets.
 - `Variables.ForceCRF`: If set, bypasses quality search and forces this CRF value (e.g. "23"). Useful for manual overrides.
-- `Variables.MaxFileSize`: Sets the size limit in bytes. A positive value enables size enforcement. The search stops with an error if no tested value meets both quality and size limits.
+- `Variables.MaxFileSize`: Sets the size limit in bytes. A positive value enables size enforcement. Strict mode fails if no tested value meets both limits. Adaptive mode retains the original at its quality floor.
 - `AutoQuality.SizeSafetyPercent`: Reserves part of the size limit for sample variation and container overhead. The full-movie test was about 31% larger than its sample estimate; the default reserve covers a 33% increase. Default: 25; range: 0–30. Use `ScoreAggregation=min` to require every sample to pass.
 - The results log shows the working `Size Budget` in GiB. Each trial reports `Quality Fail`, `Size Fail`, or `Pass`. A quality pass above the working budget is rejected. Older Auto Quality logs label these binary sizes as GB.
 - `EnforceMaxSize`: Node parameter. A positive `MaxFileSize` also enables it.
@@ -233,6 +242,14 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 - `Variables.AutoQuality_Score`: Final quality score achieved.
 - `Variables.AutoQuality_EstimatedReduction`: Estimated size reduction percentage.
 - `Variables.AutoQuality_TargetVMAF`: Backwards compatible VMAF target.
+- `MinimumVMAF`: Lowest permitted automatic target, 90–99. Default 0 keeps strict target enforcement. Set it to 90 to try VMAF 95, 94, 93, 92, 91, then 90 when the size limit requires it. `AutoQuality.MinimumVMAF` is the variable override.
+- Adaptive mode rejects `ForceCRF` and a floor above the requested target. It retains clips with missing duration or less than 30 seconds. It requires libvmaf and an explicit original source path. It compares each candidate with a separate high-quality reference encoded from the same source samples with the same cleaning filters. It never encodes a candidate from the reference or a prior candidate.
+- Measurements are reused across target steps. Auto Quality prepares measured higher-Q options for the executor. The executor checks the complete output size, including audio and attachments, and retries from the original video until a measured option fits. Filters, preset, frame size, and bit depth stay fixed. Secondary video tracks must be copied.
+- Adaptive mode uses the full size limit for its default sample budget. Actual-size checks replace the strict mode's default 25% reserve. An explicit `AutoQuality.SizeSafetyPercent` still applies.
+- If no measured option meets the permitted quality floor and size limit, the flow completes with the original retained. It sets `AutoQuality_Reason=original_retained_quality_floor` and stops before replacement or processed-marker nodes. Measurement, source-change, and encoder errors still fail the flow.
+- `Variables.AutoQuality_AdaptivePlan`: Original source stamp, measured video settings, output limit, and retry candidates. Do not edit it between Auto Quality and the custom executor.
+- `Variables['FFmpegExecutor.SizeAttempts']`: Quality, measured score, actual bytes, and source for each complete encode. Only a fitting output becomes the working file. Quality tags are added after this check and report the fitting quality value.
+
 - `Variables.AutoQuality_UpstreamVideoFilters`: Video filters detected upstream (e.g., from Cleaning Filters).
 - `Variables.AutoQuality_EncodingParamFilter`: Any `-filter:v:*` found in EncodingParameters.
 - `Variables.AutoQuality_FilterSource`: Source of filters ('variables-filters', 'encoding-params', or 'model').

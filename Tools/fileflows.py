@@ -62,8 +62,8 @@ def script_name(path, code):
 def redact(text, html=True):
     if html:
         text = re.sub(r'<img\b[^>]*>', '', text, flags=re.I)
-        text = re.sub(r'data:image/[^\s\"\']+', '[image removed]', text)
         text = unescape(re.sub(r'<[^>]+>', '', text))
+    text = re.sub(r'data:image/[^\s\"\']+', '[image removed]', text, flags=re.I)
     lines = []
     for line in text.splitlines():
         if re.search(r'api[._ -]?key|access[._ -]?token|password|client[._ -]?secret|encryptionkey|licensekey|authorization|bearer', line, re.I):
@@ -275,7 +275,8 @@ def diagnose_log(log):
     """Extract terminal errors and the last quality table from a plain file log."""
     lines = log.splitlines()
     quality = 'No tested quality value meets' in log
-    cause = 'quality_size_conflict' if quality else (
+    retained = any(re.search(r'\[WARN\].*Original retained: no (?:tested|measured)', line) for line in lines)
+    cause = 'original_retained_quality_floor' if retained else 'quality_size_conflict' if quality else (
         'qsv_software_frame_conversion' if 'Impossible to convert between the formats supported' in log else 'unknown')
     # Exclude logged FFmpeg stderr metadata, including titles containing 'error'.
     errors = [line for line in lines if '[ERRR]' in line and not re.search(r'->\s+(title|comment)\s*:', line)]
@@ -290,7 +291,12 @@ def diagnose_log(log):
     target = re.search(r'Target:\s*([\d.]+)', table)
     limit = re.search(r'Max Size:\s*([\d.]+) G(?:i)?B', table)
     budget = re.search(r'Size Budget:\s*([\d.]+) G(?:i)?B', table)
+    attempts = [{'bytes': int(m[1]), 'limit_bytes': int(m[2])}
+                for line in lines for m in [re.search(r'\[INFO\].*Encoded size: (\d+) bytes; limit: (\d+) bytes', line)] if m]
+    fallbacks = [float(m[1]) for line in lines
+                 for m in [re.search(r'\[INFO\].*Size fallback: testing VMAF target ([\d.]+)', line)] if m]
     return {'cause': cause, 'errors': errors[-8:], 'quality_trials': trials,
+            'size_attempts': attempts, 'fallback_targets': fallbacks,
             'quality_target': float(target[1]) if target else None,
             'max_size_gib': float(limit[1]) if limit else None,
             'size_budget_gib': float(budget[1]) if budget else None,

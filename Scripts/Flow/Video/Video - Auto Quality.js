@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 30
+ * @revision 31
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto, 93-99 manual). Quality=97, Balanced=95, Compression=93. Default: 95. Override variable key(s): `TargetVMAF`, `AutoQualityPreset`.
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Suggested: 16-20. Default: 18. Override variable key(s): `MinCRF`, `AutoQualityPreset`.
@@ -20,6 +20,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @param {int} MaxParallel Maximum parallel FFmpeg processes (1 = sequential). Default: auto (half CPU cores). Override variable key: `MaxParallel`.
  * @param {bool} EnforceMaxSize Enforce max file size calculated by MiB per hour script. Default: false. Auto-enabled when variable key `MaxFileSize` is set (> 0).
  * @param {('min'|'max'|'average')} ScoreAggregation Method to aggregate sample scores. 'average' recommended for most content. Default: average. Override variable key: `ScoreAggregation`.
+ * @param {int} MinimumVMAF Lowest permitted automatic VMAF target (90-99; 0 keeps the requested target). Default: 0. Override variable: `AutoQuality.MinimumVMAF`.
  * @output CRF found and applied to encoder
  * @output Video already optimal (copy mode)
  */
@@ -36,9 +37,11 @@ function Script(
     MinSizeReduction,
     MaxParallel,
     EnforceMaxSize,
-    ScoreAggregation
+    ScoreAggregation,
+    MinimumVMAF
 ) {
     Variables.AutoQuality_Validated = false;
+    Variables.AutoQuality_AdaptivePlan = '';
     const helpers = new ScriptHelpers();
     const ffmpegHelpers = new FfmpegHelpers();
     const toEnumerableArray = (v, m) => helpers.toEnumerableArray(v, m);
@@ -133,11 +136,31 @@ function Script(
         0,
         30
     );
-    const sizeBudget =
+    let sizeBudget =
         EnforceMaxSize && varMaxFileSize > 0
             ? varMaxFileSize * (1 - (isNaN(sizeSafetyPercent) ? 25 : sizeSafetyPercent) / 100)
             : 0;
+
+    const minimumVmafRaw =
+        Variables['AutoQuality.MinimumVMAF'] === undefined
+            ? Number(MinimumVMAF || 0)
+            : Number(Variables['AutoQuality.MinimumVMAF']);
+    if (!isFinite(minimumVmafRaw) || (minimumVmafRaw !== 0 && (minimumVmafRaw < 90 || minimumVmafRaw > 99))) {
+        Logger.ELog('MinimumVMAF must be zero or a value from 90 to 99.');
+        return -1;
+    }
+    const adaptiveSize = minimumVmafRaw > 0 && sizeBudget > 0;
+    if (adaptiveSize && Variables['AutoQuality.SizeSafetyPercent'] === undefined) sizeBudget = varMaxFileSize;
     Variables.AutoQuality_SizeBudget = sizeBudget;
+    if (adaptiveSize && (!isFinite(MinSizeReduction) || MinSizeReduction < 0 || MinSizeReduction > 100)) {
+        Logger.ELog('MinSizeReduction must be from 0 to 100.');
+        return -1;
+    }
+    if (adaptiveSize && MinSizeReduction === 100) {
+        Variables.AutoQuality_Reason = 'original_retained_quality_floor';
+        Logger.WLog('Original retained: a nonempty output cannot meet 100% size reduction.');
+        return 0;
+    }
 
     // ===== VALIDATE FFMPEG BUILDER =====
     const ffmpegModel = Variables.FfmpegBuilderModel;
@@ -155,6 +178,10 @@ function Script(
     }
 
     // ===== FORCE CRF =====
+    if (Variables.ForceCRF && adaptiveSize) {
+        Logger.ELog('ForceCRF cannot bypass adaptive VMAF and size checks.');
+        return -1;
+    }
     if (Variables.ForceCRF) {
         const forceCrf = parseInt(Variables.ForceCRF);
         if (!isNaN(forceCrf)) {
@@ -261,7 +288,26 @@ function Script(
     const fileVar = Variables.file;
 
     const sourceFile = (fileVar && fileVar.FullName) || Flow.WorkingFile;
-    const originalFile = (fileVar && fileVar.Orig && fileVar.Orig.FullName) || sourceFile;
+    const explicitOriginal = helpers.originalSourcePath(Variables['file.Orig.FullName'], fileVar);
+    const originalFile = explicitOriginal || sourceFile;
+
+    let originalStamp = '';
+    if (adaptiveSize) {
+        if (!explicitOriginal) {
+            Logger.ELog('Adaptive size encoding requires the original source path.');
+            return -1;
+        }
+        try {
+            originalStamp = helpers.fileStamp(originalFile);
+            sizeBudget = Math.floor(
+                Math.min(sizeBudget, JSON.parse(originalStamp).bytes * (1 - MinSizeReduction / 100))
+            );
+            Variables.AutoQuality_SizeBudget = sizeBudget;
+        } catch (e) {
+            Logger.ELog('Original source check failed: ' + String(e));
+            return -1;
+        }
+    }
 
     const videoStreams = helpers.toEnumerableArray(videoInfo.VideoStreams, 10);
     const videoStream0 = videoStreams.length > 0 ? videoStreams[0] : null;
@@ -286,14 +332,14 @@ function Script(
         Logger.WLog('Leaving quality settings unchanged.');
         Variables.AutoQuality_CRF = 'unchanged';
         Variables.AutoQuality_Reason = 'unknown_duration';
-        return 1;
+        return adaptiveSize ? 0 : 1;
     }
 
     if (duration < 30) {
         Logger.WLog('Auto quality: Video too short for reliable VMAF sampling. Leaving quality settings unchanged.');
         Variables.AutoQuality_CRF = 'unchanged';
         Variables.AutoQuality_Reason = 'short_video';
-        return 1;
+        return adaptiveSize ? 0 : 1;
     }
 
     // ===== DETECT ENCODER =====
@@ -358,6 +404,16 @@ function Script(
         effectiveTargetVMAF = calculateAutoTargetVMAF();
     }
 
+    if (adaptiveSize && qualityMetric !== 'VMAF') {
+        Logger.ELog('Adaptive VMAF limits require libvmaf.');
+        return -1;
+    }
+
+    if (adaptiveSize && effectiveTargetVMAF < minimumVmafRaw) {
+        Logger.ELog('MinimumVMAF must not exceed the requested target.');
+        return -1;
+    }
+
     // Convert VMAF target to SSIM if using SSIM metric
     // Approximate mapping: VMAF 93→SSIM 0.970, VMAF 95→SSIM 0.980, VMAF 97→SSIM 0.990
     let effectiveTarget = effectiveTargetVMAF;
@@ -380,7 +436,7 @@ function Script(
     if (sourceCodecNormalized === targetCodecBase || sourceCodecNormalized.includes(targetCodecBase)) {
         // Same codec - check if bitrate is acceptable
         const maxAcceptableBitrate = getMaxAcceptableBitrate(width, height);
-        if (videoBitrate <= maxAcceptableBitrate && !ffmpegModel.ForceEncode) {
+        if (videoBitrate <= maxAcceptableBitrate && !ffmpegModel.ForceEncode && !adaptiveSize) {
             Logger.ILog(`Video already in ${videoCodec} at acceptable bitrate. Skipping encode.`);
             Variables.AutoQuality_CRF = 'copy';
             Variables.AutoQuality_Reason = 'already_optimal';
@@ -484,6 +540,8 @@ function Script(
         // not encoder-introduced artifacts like colorspace conversion or chroma subsampling.
         referenceMode = 'encoded';
     }
+    if (adaptiveSize) referenceMode = 'encoded';
+    Variables.AutoQuality_ReferenceModeUsed = referenceMode;
     if (referenceMode !== 'encoded' && referenceMode !== 'source' && referenceMode !== 'filtered-in-metric') {
         referenceMode = 'encoded';
     }
@@ -516,105 +574,101 @@ function Script(
     let bestScore = 0;
     let measurementFailed = false;
 
-    let lowCRF = MinCRF;
-    let highCRF = MaxCRF;
-    let iterations = 0;
-
-    // Sample-based progress tracking
-    // Total operations: reference encode (1 batch) + search iterations × 2 batches (encode + metric)
-    // Estimate total assuming MaxSearchIterations iterations
+    const requestedTarget = effectiveTarget;
+    const targets = adaptiveSize ? ffmpegHelpers.qualityTargets(requestedTarget, minimumVmafRaw) : [requestedTarget];
     const referenceBatches = referenceMode === 'encoded' ? 1 : 0;
-    const estimatedTotalBatches = referenceBatches + MaxSearchIterations * 2;
-    let batchesCompleted = referenceBatches; // Reference samples already completed
+    const estimatedTotalBatches = referenceBatches + (MaxSearchIterations * targets.length + MaxCRF - MinCRF) * 2;
+    let batchesCompleted = referenceBatches;
+    let iterations = 0;
+    let selected = null;
+
+    function measureCandidate(testCRF) {
+        const cached = searchResults.find((r) => r.crf === testCRF);
+        if (cached) return cached;
+        iterations++;
+        Logger.DLog(`Testing CRF ${testCRF} at target ${effectiveTarget}...`);
+        if (typeof Flow.AdditionalInfoRecorder === 'function') {
+            Flow.AdditionalInfoRecorder('Auto Quality', `Q${testCRF}, VMAF ${effectiveTarget}`, 1);
+        }
+        const result = measureQualityAtQualityValue(
+            ffmpegEncodePath,
+            ffmpegPath,
+            samples,
+            testCRF,
+            video,
+            targetCodec,
+            SampleDurationSec,
+            use10BitForTests,
+            qualityMetric,
+            upstreamVideoFilters,
+            referenceMode,
+            referenceSamples,
+            batchesCompleted,
+            estimatedTotalBatches
+        );
+        batchesCompleted += 2;
+        if (!result || result.score < 0) {
+            Logger.ELog(`${qualityMetric} measurement failed for CRF ${testCRF}. Stopping quality search.`);
+            measurementFailed = true;
+            return null;
+        }
+        const row = {
+            crf: testCRF,
+            score: result.score,
+            min: result.min,
+            max: result.max,
+            avg: result.avg,
+            size: result.bitrate * duration + getEstimatedAudioSize(ffmpegModel, duration)
+        };
+        searchResults.push(row);
+        Logger.DLog(
+            `CRF ${testCRF}: ${qualityMetric} ${row.score.toFixed(2)}, Est. Size: ${helpers.bytesToGb(row.size).toFixed(2)} GiB`
+        );
+        return row;
+    }
 
     try {
-        while (lowCRF <= highCRF && iterations < MaxSearchIterations) {
-            iterations++;
-            const testCRF = Math.round((lowCRF + highCRF) / 2);
-
-            Logger.DLog(`[${iterations}/${MaxSearchIterations}] Testing CRF ${testCRF}...`);
-            if (typeof Flow.AdditionalInfoRecorder === 'function') {
-                Flow.AdditionalInfoRecorder('Auto Quality', `CRF ${testCRF}`, 1);
-            }
-
-            // Update progress based on batches completed
-            const currentProgress = (batchesCompleted / estimatedTotalBatches) * 100.0;
-            if (typeof Flow.PartPercentageUpdate === 'function') {
-                Flow.PartPercentageUpdate(currentProgress);
-            }
-
-            const result = measureQualityAtQualityValue(
-                ffmpegEncodePath,
-                ffmpegPath,
-                samples,
-                testCRF,
-                video,
-                targetCodec,
-                SampleDurationSec,
-                use10BitForTests,
-                qualityMetric,
-                upstreamVideoFilters,
-                referenceMode,
-                referenceSamples,
-                batchesCompleted,
-                estimatedTotalBatches
-            );
-
-            // Increment batch counter: encode batch + metric batch
-            batchesCompleted += 2;
-
-            if (!result || result.score < 0) {
-                Logger.ELog(`${qualityMetric} measurement failed for CRF ${testCRF}. Stopping quality search.`);
-                measurementFailed = true;
-                break;
-            }
-
-            const qualityScore = result.score;
-            const estimatedVideoSize = result.bitrate > 0 ? result.bitrate * duration : 0;
-            const estimatedAudioSize = getEstimatedAudioSize(ffmpegModel, duration);
-            const estimatedSize = estimatedVideoSize + estimatedAudioSize;
-
-            searchResults.push({
-                crf: testCRF,
-                score: qualityScore,
-                min: result.min,
-                max: result.max,
-                avg: result.avg,
-                size: estimatedSize
-            });
-            const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
-            const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GiB';
-            Logger.DLog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
-
-            if (qualityScore < effectiveTarget) {
-                highCRF = testCRF - 1;
-            } else if (sizeBudget > 0 && estimatedSize > sizeBudget) {
-                Logger.ILog(`CRF ${testCRF} exceeds the size budget. Increasing CRF.`);
-                lowCRF = testCRF + 1;
-            } else {
-                bestCRF = testCRF;
-                bestScore = qualityScore;
-                if (PreferSmaller) lowCRF = testCRF + 1;
+        for (let t = 0; t < targets.length && !measurementFailed; t++) {
+            effectiveTarget = targets[t];
+            let lowCRF = MinCRF;
+            let highCRF = MaxCRF;
+            if (t > 0) Logger.ILog(`Size fallback: testing VMAF target ${effectiveTarget}.`);
+            for (let i = 0; lowCRF <= highCRF && i < MaxSearchIterations; i++) {
+                const testCRF = Math.round((lowCRF + highCRF) / 2);
+                const row = measureCandidate(testCRF);
+                if (!row) break;
+                if (row.score < effectiveTarget) highCRF = testCRF - 1;
+                else if (sizeBudget > 0 && row.size > sizeBudget) lowCRF = testCRF + 1;
+                else if (PreferSmaller) lowCRF = testCRF + 1;
                 else break;
+            }
+            selected = measurementFailed
+                ? null
+                : ffmpegHelpers.selectQualityResult(searchResults, effectiveTarget, sizeBudget, PreferSmaller);
+            if (selected) break;
+        }
+        // Prepare measured options for full-file size corrections. All encode from the raw samples.
+        if (adaptiveSize && selected && !measurementFailed) {
+            for (let q = selected.crf + 1; q <= MaxCRF; q++) {
+                const row = measureCandidate(q);
+                if (!row || row.score < minimumVmafRaw) break;
             }
         }
     } finally {
         cleanupFiles(referenceSamples.map((r) => r.path));
         cleanupFiles(samples.filter((s) => s.isTempSample).map((s) => s.inputFile));
     }
-
-    const selected = measurementFailed
-        ? null
-        : ffmpegHelpers.selectQualityResult(searchResults, effectiveTarget, sizeBudget, PreferSmaller);
+    if (measurementFailed) selected = null;
     if (!selected) {
         logResultsTable(searchResults, null, effectiveTarget, qualityMetric);
         Variables.AutoQuality_CRF = 'unchanged';
-        Variables.AutoQuality_Reason = measurementFailed
-            ? 'quality_measurement_failed'
-            : searchResults.length
-              ? 'quality_size_conflict'
-              : 'quality_search_failed';
+        Variables.AutoQuality_Reason = measurementFailed ? 'quality_measurement_failed' : 'quality_size_conflict';
         Variables.AutoQuality_Results = JSON.stringify(searchResults);
+        if (adaptiveSize && !measurementFailed) {
+            Variables.AutoQuality_Reason = 'original_retained_quality_floor';
+            Logger.WLog(`Original retained: no tested encode meets VMAF ${minimumVmafRaw} and the size budget.`);
+            return 0;
+        }
         Logger.ELog(`No tested quality value meets ${qualityMetric} ${targetDisplay} and the size budget.`);
         return -1;
     }
@@ -660,7 +714,7 @@ function Script(
                 if (UseTags && typeof Flow.AddTags === 'function') {
                     Flow.AddTags(['Copy']);
                 }
-                return 2;
+                return adaptiveSize ? 0 : 2;
             } else {
                 Logger.ILog(`Estimated size reduction: ${reductionDisplay}% (Target >= ${MinSizeReduction}%)`);
             }
@@ -677,6 +731,27 @@ function Script(
     Variables.AutoQuality_Target = effectiveTarget;
     Variables.AutoQuality_TargetVMAF = effectiveTargetVMAF; // Keep for backwards compatibility
     Variables.AutoQuality_Validated = true;
+    if (adaptiveSize) {
+        const sourceBytes = JSON.parse(originalStamp).bytes;
+        const maxOutputBytes = Math.floor(Math.min(varMaxFileSize, sourceBytes * (1 - MinSizeReduction / 100)));
+        const candidates = searchResults
+            .filter((r) => r.crf >= bestCRF && r.score >= minimumVmafRaw && r.size > 0)
+            .sort((a, b) => a.crf - b.crf);
+        Variables.AutoQuality_AdaptivePlan = JSON.stringify({
+            source: originalFile,
+            sourceStamp: originalStamp,
+            maxBytes: maxOutputBytes,
+            minimum: minimumVmafRaw,
+            requested: requestedTarget,
+            useTags: !!UseTags,
+            selectedTarget: effectiveTarget,
+            qualityArg: crfArg,
+            signature: ffmpegHelpers.videoSettingsSignature(video, toEnumerableArray, safeString),
+            candidates: candidates
+        });
+        Variables.AutoQuality_RequestedTarget = requestedTarget;
+        Variables.AutoQuality_TargetVMAF = effectiveTarget;
+    }
     Variables.AutoQuality_Iterations = iterations;
     Variables.AutoQuality_Results = JSON.stringify(searchResults);
 
@@ -686,7 +761,7 @@ function Script(
         Flow.AdditionalInfoRecorder(qualityMetric, finalScoreDisplay, 1000);
     }
 
-    if (UseTags) {
+    if (UseTags && !adaptiveSize) {
         const tagScore = qualityMetric === 'SSIM' ? bestScore.toFixed(3) : Math.round(bestScore);
         if (typeof Flow.AddTags === 'function') {
             Flow.AddTags([`CRF ${bestCRF}`, `${qualityMetric} ${tagScore}`]);
@@ -694,7 +769,7 @@ function Script(
     }
 
     Logger.ILog(
-        `Auto quality complete: CRF ${bestCRF} (${qualityMetric} ${finalScoreDisplay}, target was ${targetDisplay})`
+        `Auto quality complete: CRF ${bestCRF} (${qualityMetric} ${finalScoreDisplay}, target ${effectiveTarget})`
     );
     return 1;
 

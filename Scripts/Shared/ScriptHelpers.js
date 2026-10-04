@@ -3,7 +3,7 @@
  * @uid F17EAED8-5E6F-43A8-88A5-416A2BEB7482
  * @description Common utility functions for FileFlows scripts
  * @author Vincent Courcelle
- * @revision 2
+ * @revision 3
  * @minimumVersion 1.0.0.0
  */
 
@@ -49,6 +49,18 @@ export class ScriptHelpers {
         } catch (err) {}
 
         return [value];
+    }
+
+    /** Resolve the runner's original file variables without using a working output. */
+    originalSourcePath(flatPath, file) {
+        return String(flatPath || (file && file.Orig && file.Orig.FullName) || '');
+    }
+
+    /** Read a source stamp for original-only encoding and replacement checks. */
+    fileStamp(path) {
+        const file = new System.IO.FileInfo(String(path));
+        if (!file.Exists || !(file.Length > 0)) throw new Error('Source file is missing or empty');
+        return JSON.stringify({ bytes: Number(file.Length), modified: String(file.LastWriteTimeUtc.Ticks) });
     }
 
     /**

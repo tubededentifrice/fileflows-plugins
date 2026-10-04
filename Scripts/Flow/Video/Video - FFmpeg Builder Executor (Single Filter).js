@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 19
+ * @revision 20
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -748,13 +748,56 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
 
     // ===== OUTPUT FILE =====
     const outExt = getOutputExtension(model);
-    const outFile = `${Flow.TempPath}/${Flow.NewGuid()}.${outExt}`;
+    let outFile = `${Flow.TempPath}/${Flow.NewGuid()}.${outExt}`;
 
     // Some files have "attached picture" streams (cover art / logos) which FFmpeg Builder exposes as additional
     // video streams. Unscoped encoder options (eg `-bf 7`) can unintentionally apply to those streams and cause
     // FFmpeg to fail (eg MJPEG does not support B-frames). When multiple output video streams exist, force-scope
     // common encoder options to the current output stream index.
     const modelVideoStreams = toEnumerableArray(model.VideoStreams, 50);
+    let sizePlan = null;
+    let originalInput = -1;
+    if (Variables.AutoQuality_AdaptivePlan) {
+        try {
+            sizePlan = JSON.parse(String(Variables.AutoQuality_AdaptivePlan));
+            const primary = modelVideoStreams[0];
+            const original = helpers.originalSourcePath(Variables['file.Orig.FullName'], Variables.file);
+            if (
+                !truthy(Variables.AutoQuality_Validated) ||
+                !primary ||
+                primary.Deleted ||
+                isImageStream(primary) ||
+                sizePlan.source !== original ||
+                helpers.fileStamp(original) !== sizePlan.sourceStamp ||
+                !(sizePlan.maxBytes > 0) ||
+                !(sizePlan.minimum >= 90) ||
+                !sizePlan.candidates.length ||
+                sizePlan.candidates[0].crf !== Number(Variables.AutoQuality_CRF) ||
+                sizePlan.signature !== ffmpegHelpers.videoSettingsSignature(primary, toEnumerableArray, safeString) ||
+                sizePlan.candidates.some(
+                    (c, i) =>
+                        !(c.score >= sizePlan.minimum) ||
+                        !(c.crf >= 1 && c.crf <= 51) ||
+                        (i > 0 && c.crf <= sizePlan.candidates[i - 1].crf)
+                )
+            ) {
+                throw new Error('The original source or measured video settings changed');
+            }
+            originalInput = inputFiles.indexOf(original);
+            if (originalInput < 0) {
+                originalInput = inputFiles.length;
+                inputFiles.push(original);
+            }
+        } catch (e) {
+            Logger.ELog('Size retry plan rejected: ' + String(e));
+            return -1;
+        }
+    }
+    function videoInputMap(stream, modelIndex) {
+        if (sizePlan && modelIndex === 0) return `${originalInput}:v:0`;
+        return getStreamIndexString(stream);
+    }
+
     let outputVideoStreamCount = 0;
     for (let i = 0; i < modelVideoStreams.length; i++) {
         const v = modelVideoStreams[i];
@@ -793,7 +836,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             for (let j = 0; j < modelVideoStreams.length; j++) {
                 const v = modelVideoStreams[j];
                 if (!v || v.Deleted || isImageStream(v) || !detectNeedsQsv({ VideoStreams: [v] })) continue;
-                const index = /^([0-9]+):((?:v:)?[0-9]+)\??$/.exec(getStreamIndexString(v));
+                const index = /^([0-9]+):((?:v:)?[0-9]+)\??$/.exec(videoInputMap(v, j));
                 if (!index || parseInt(index[1]) !== i || decoded[index[2]]) continue;
                 args = args.concat([`-hwaccel:${index[2]}`, 'qsv', `-hwaccel_output_format:${index[2]}`, 'qsv']);
                 decoded[index[2]] = true;
@@ -1023,7 +1066,7 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const v = videoStreams[i];
         if (!v || v.Deleted) continue;
         const imageStream = isImageStream(v);
-        const idx = getStreamIndexString(v);
+        const idx = videoInputMap(v, i);
         if (!idx) {
             Logger.ELog('Could not determine video stream map index');
             return -1;
@@ -1049,6 +1092,10 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
             };
         }
 
+        if (sizePlan && outV > 0 && built.codec !== 'copy') {
+            Logger.ELog('Adaptive size retries require copied secondary video tracks.');
+            return -1;
+        }
         args = args.concat([`-c:v:${outV}`, built.codec || 'copy']);
         if (built.tokens.length) args = args.concat(built.tokens);
         if (built.filterChain) args = args.concat([`-filter:v:${outV}`, built.filterChain]);
@@ -1109,16 +1156,18 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     // Builder commonly appends this; keep it unless caller already set it.
     if (!hasArg(args, '-strict')) args = args.concat(['-strict', 'experimental']);
 
+    function limitAuditComment(comment) {
+        if (MaxCommentLength > 0 && comment.length > MaxCommentLength) {
+            Logger.WLog(`Comment metadata truncated to ${MaxCommentLength} chars`);
+            return comment.substring(0, Math.max(0, MaxCommentLength - 20)) + '\n[truncated]';
+        }
+        return comment;
+    }
+
     // Write full ffmpeg command line into comment metadata for auditing.
     if (WriteFullArgumentsToComment) {
         const auditLine = buildAuditCommandLine(ffmpegPath, args.concat([outFile]));
-        // let comment = `Created by FileFlows\nhttps://fileflows.com\n\n${auditLine}`;
-        let comment = auditLine;
-        if (MaxCommentLength > 0 && comment.length > MaxCommentLength) {
-            comment = comment.substring(0, Math.max(0, MaxCommentLength - 20)) + '\n[truncated]';
-            Logger.WLog(`Comment metadata truncated to ${MaxCommentLength} chars`);
-        }
-        args = args.concat(['-metadata', `comment=${comment}`]);
+        args = args.concat(['-metadata', `comment=${limitAuditComment(auditLine)}`]);
     }
 
     // Output
@@ -1241,6 +1290,78 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         return -1;
     }
 
+    if (sizePlan) {
+        const attempts = [];
+        const baseArgs = args.slice();
+        for (let i = 0; i < sizePlan.candidates.length; i++) {
+            const candidate = sizePlan.candidates[i];
+            if (helpers.fileStamp(sizePlan.source) !== sizePlan.sourceStamp) {
+                Logger.ELog('Original source changed during size validation.');
+                return -1;
+            }
+            if (i > 0) {
+                outFile = `${Flow.TempPath}/${Flow.NewGuid()}.${outExt}`;
+                args = ffmpegHelpers.setPrimaryVideoQuality(baseArgs, candidate.crf, sizePlan.qualityArg);
+                args[args.length - 1] = outFile;
+                // Replace the audit comment so it records this attempt's quality and output.
+                args = stripExistingCommentMetadata(args);
+                if (WriteFullArgumentsToComment) {
+                    const comment = limitAuditComment(buildAuditCommandLine(ffmpegPath, args));
+                    args.splice(args.length - 1, 0, '-metadata', `comment=${comment}`);
+                }
+                Logger.ILog(`Size retry ${i}: Q${candidate.crf}, measured VMAF ${candidate.score.toFixed(2)}.`);
+                Variables['FFmpegExecutor.LastCommandLine'] = buildAuditCommandLine(ffmpegPath, args);
+                Variables['FFmpegExecutor.LastArgumentsLine'] = args.map((x) => helpers.quoteProcessArg(x)).join(' ');
+                Logger.ILog('FFmpeg.Arguments:\n' + Variables['FFmpegExecutor.LastArgumentsLine']);
+                try {
+                    Flow.PartPercentageUpdate(0);
+                } catch (err) {}
+                if (executeArgs) {
+                    executeArgs.argumentList = args;
+                    result = Flow.Execute(executeArgs);
+                } else result = Flow.Execute({ command: ffmpegPath, argumentList: args, timeout: timeout });
+                if (!result || result.exitCode !== 0) {
+                    Logger.ELog(`Size retry failed: ${getResultText(result).substring(0, 2000)}`);
+                    return -1;
+                }
+            }
+            const output = new System.IO.FileInfo(outFile);
+            if (!output.Exists || !(output.Length > 0) || helpers.fileStamp(sizePlan.source) !== sizePlan.sourceStamp) {
+                Logger.ELog('Output or original source validation failed.');
+                return -1;
+            }
+            const bytes = Number(output.Length);
+            attempts.push({ quality: candidate.crf, score: candidate.score, bytes: bytes, source: sizePlan.source });
+            Variables['FFmpegExecutor.SizeAttempts'] = JSON.stringify(attempts);
+            Logger.ILog(`Encoded size: ${bytes} bytes; limit: ${sizePlan.maxBytes} bytes.`);
+            if (bytes <= sizePlan.maxBytes) {
+                Variables.AutoQuality_CRF = candidate.crf;
+                Variables.AutoQuality_Score = candidate.score;
+                Variables.AutoQuality_Target = Math.max(
+                    sizePlan.minimum,
+                    Math.min(sizePlan.selectedTarget, Math.floor(candidate.score))
+                );
+                Variables.AutoQuality_TargetVMAF = Variables.AutoQuality_Target;
+                Variables.AutoQuality_ActualSize = bytes;
+                if (sizePlan.useTags && typeof Flow.AddTags === 'function') {
+                    Flow.AddTags([`CRF ${candidate.crf}`, `VMAF ${Math.round(candidate.score)}`]);
+                }
+                if (typeof Flow.AdditionalInfoRecorder === 'function') {
+                    Flow.AdditionalInfoRecorder('CRF', candidate.crf, 1000);
+                    Flow.AdditionalInfoRecorder('VMAF', candidate.score.toFixed(1), 1000);
+                }
+                break;
+            }
+            System.IO.File.Delete(outFile);
+            if (i === sizePlan.candidates.length - 1) {
+                Variables.AutoQuality_Reason = 'original_retained_quality_floor';
+                Logger.WLog(`Original retained: no measured VMAF ${sizePlan.minimum} encode fits the size limit.`);
+                Flow.ResetWorkingFile();
+                tryClearModel(KeepModel);
+                return 0;
+            }
+        }
+    }
     progress.complete();
 
     // Update working file and optionally clear model.

@@ -364,8 +364,9 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 ## Quality search checks
 
 - QSV denoise must use the source format. Keep NV12 to P010 conversion in a separate `scale_qsv` pass. Test both 8-bit SDR and 10-bit HDR sources.
+- Adaptive size retries must use the original video and measured candidates. Keep the high-quality filtered reference separate from candidate inputs. Check actual size before setting the working file; retain the original when the permitted quality floor cannot fit.
 - Keep sample and final encoder options equal. Do not change tested encoder settings after a quality search.
-- Run `node --test Tests/quality.test.mjs` after changes to filter merging or quality selection. Use real clips to check compression, frame detail, and speed.
+- Run `node --test Tests/quality.test.mjs` after changes to filter merging or quality selection. Use real clips to check compression, frame detail, and speed. Use `Tools/denoise_detail.py` to compare decoded brightness and color detail.
 - Scope automatic hardware decoding to source tracks and input files. Copy unchanged video tracks. Use `Tools/qsv_multistream_check.py` for 8-bit and 10-bit QSV/CPU checks.
 
 ## Documentation Links

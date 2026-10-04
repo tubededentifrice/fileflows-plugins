@@ -3,7 +3,7 @@
  * @uid 8A3F2E91-4B7C-49D8-B5E6-1C9D3A8F7E2B
  * @description FFmpeg filter manipulation, codec detection, and command-line utilities
  * @author Vincent Courcelle
- * @revision 3
+ * @revision 4
  * @minimumVersion 24.0.0.0
  */
 
@@ -196,6 +196,49 @@ export class FfmpegHelpers {
             if (!best || (preferSmaller ? result.size < best.size : result.score > best.score)) best = result;
         }
         return best;
+    }
+
+    /** List quality targets from the requested value to the permitted floor. */
+    qualityTargets(requested, minimum) {
+        var floor = minimum > 0 ? Math.min(requested, minimum) : requested;
+        var targets = [requested];
+        while (targets[targets.length - 1] > floor) {
+            targets.push(Math.max(floor, targets[targets.length - 1] - 1));
+        }
+        return targets;
+    }
+
+    /** Change only the primary video's quality option in an executor command. */
+    setPrimaryVideoQuality(tokens, quality, qualityArg) {
+        var out = [];
+        for (var i = 0; i < tokens.length; i++) {
+            if (/^-(?:crf|cq|qp|qp_i|global_quality)(?::v(?::0)?)?$/i.test(String(tokens[i]))) {
+                i++;
+                continue;
+            }
+            out.push(tokens[i]);
+        }
+        out.splice(out.length - 1, 0, qualityArg.replace(/(?::v)?$/, ':v:0'), String(quality));
+        return out;
+    }
+
+    /** Record video settings so full-size retries use the measured filter plan. */
+    videoSettingsSignature(video, toArray, safeString) {
+        var settings = {};
+        var fields = [
+            'EncodingParameters',
+            'OptionalEncodingParameters',
+            'AdditionalParameters',
+            'Filter',
+            'Filters',
+            'OptionalFilter'
+        ];
+        for (var i = 0; i < fields.length; i++) {
+            settings[fields[i]] = toArray(video[fields[i]], 5000).map(safeString);
+        }
+        settings.codec = String(video.Codec || '');
+        settings.crop = safeString(video.Crop);
+        return JSON.stringify(settings);
     }
 
     /**

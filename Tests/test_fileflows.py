@@ -47,6 +47,18 @@ Finishing file: ProcessingFailed'''
         self.assertEqual(row['quality_trials'][0]['estimated_gib'], 17.15)
         self.assertTrue(row['log_finished'])
 
+    def test_diagnosis_reports_adaptive_retention_and_actual_size_attempts(self):
+        log = '''[INFO] -> Size fallback: testing VMAF target 94.
+[INFO] -> Encoded size: 1200 bytes; limit: 1000 bytes.
+[INFO] -> Encoded size: 900 bytes; limit: 1000 bytes.
+[WARN] -> Original retained: no measured VMAF 90 encode fits the size limit.
+Finishing file: Processed'''
+        row = ff.diagnose_log(log)
+        self.assertEqual(row['cause'], 'original_retained_quality_floor')
+        self.assertEqual(row['fallback_targets'], [94])
+        self.assertEqual(row['size_attempts'], [{'bytes': 1200, 'limit_bytes': 1000}, {'bytes': 900, 'limit_bytes': 1000}])
+        self.assertTrue(row['log_finished'])
+
     def test_diagnosis_identifies_frame_conversion_and_missing_logs(self):
         self.assertEqual(ff.diagnose_log('Impossible to convert between the formats supported')['cause'],
                          'qsv_software_frame_conversion')
@@ -58,6 +70,12 @@ Finishing file: ProcessingFailed'''
     def test_metadata_only_is_removed(self):
         self.assertEqual(ff.clean_code(CODE), 'function Script() { return 1; }')
         self.assertIn('/* keep */', ff.clean_code(CODE + '\n/* keep */'))
+
+    def test_plain_log_removes_image_data_and_keeps_comparison_operators(self):
+        out = ff.redact('score < 95\ndata:image/jpeg;base64,abcdef:640x480\nsize > limit', html=False)
+        self.assertNotIn('abcdef', out)
+        self.assertIn('score < 95', out)
+        self.assertIn('size > limit', out)
 
     def test_log_text_removes_credentials_and_inline_images(self):
         out = ff.redact('<div>API.Key: secret</div>\n<img src="data:image/png;base64,abcdef">\n<div>score &gt; 95</div>')

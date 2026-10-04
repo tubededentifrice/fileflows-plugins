@@ -110,7 +110,10 @@ for (const bits of [8, 10]) {
 
 const autoCode = readFileSync(new URL('../Scripts/Flow/Video/Video - Auto Quality.js', import.meta.url), 'utf8');
 function runAuto(options = {}) {
-    const files = new Map([['/movie.mkv', 'source']]);
+    const files = new Map([
+        ['/movie.mkv', 'source'],
+        ['/original.mkv', 'source']
+    ]);
     const calls = [];
     const logs = [];
     const video = {
@@ -129,15 +132,31 @@ function runAuto(options = {}) {
     };
     const info = {
         VideoStreams: [
-            { Codec: 'h264', Bits: 8, Width: 1920, Height: 1080, Duration: 90, FramesPerSecond: 24, Bitrate: 20000000 }
+            {
+                Codec: options.alreadyOptimal ? 'hevc' : 'h264',
+                Bits: 8,
+                Width: 1920,
+                Height: 1080,
+                Duration: options.duration === undefined ? 90 : options.duration,
+                FramesPerSecond: 24,
+                Bitrate: options.alreadyOptimal ? 1000 : 20000000
+            }
         ]
     };
     const variables = {
-        FfmpegBuilderModel: { VideoStreams: [video], VideoInfo: info, ForceEncode: true },
+        FfmpegBuilderModel: { VideoStreams: [video], VideoInfo: info, ForceEncode: !options.alreadyOptimal },
         vi: { VideoInfo: info },
-        file: { FullName: '/movie.mkv', Size: 100000000 },
+        file: {
+            FullName: '/movie.mkv',
+            Size: 100000000,
+            Orig: options.missingOriginal ? null : { FullName: '/original.mkv' }
+        },
+        'AutoQuality.MinimumVMAF': options.minimum || 0,
+        AutoQuality_ReferenceMode: options.referenceMode || 'auto',
         AutoQuality_Validated: true,
-        MaxFileSize: options.maxSize || 0
+        MaxFileSize: options.maxSize || 0,
+        ForceCRF: options.forceCrf || 0,
+        MinSizeReduction: options.minReduction || 0
     };
     const context = vm.createContext({
         Variables: variables,
@@ -165,8 +184,9 @@ function runAuto(options = {}) {
                 },
                 FileInfo: function (p) {
                     this.Exists = files.has(p);
+                    this.LastWriteTimeUtc = { Ticks: 123 };
                     const q = /quality_(\d+)/.exec(p);
-                    this.Length = q ? 10000 * (30 - Number(q[1])) : 1000000;
+                    this.Length = p === '/original.mkv' ? 100000000 : q ? 10000 * (30 - Number(q[1])) : 1000000;
                 }
             }
         },
@@ -181,7 +201,7 @@ function runAuto(options = {}) {
                 const graph = args[args.indexOf('-filter_complex') + 1];
                 if (args.includes('-filter_complex')) {
                     const q = Number(/quality_(\d+)/.exec(args[args.indexOf('-i') + 1])[1]);
-                    const score = q <= 18 ? 96 : 92;
+                    const score = options.score ? options.score(q) : q <= 18 ? 96 : 92;
                     const metric = /log_path=([^:]+)/.exec(graph)[1];
                     if (options.failMetric && q > 18) return { exitCode: 2 };
                     files.set(
@@ -305,11 +325,17 @@ const executorCode = readFileSync(
 const defaultsCode = readFileSync(new URL('../Scripts/Shared/FfmpegBuilderDefaults.js', import.meta.url), 'utf8');
 function runExecutor(copy, fail = false, options = {}) {
     const calls = [];
+    const deleted = [];
+    const working = [];
+    const tags = [];
+    const outputSizes = new Map();
+    let sourceTicks = 123;
+    let guid = 0;
     const variables = {
         AutoQuality_CRF: copy ? 'copy' : 18,
         AutoQuality_Validated: true,
         video: { Duration: 90 },
-        file: { FullName: '/source.mkv' },
+        file: { FullName: '/source.mkv', Orig: { FullName: '/original.mkv' } },
         FfmpegBuilderModel: {
             Extension: 'mkv',
             ForceEncode: true,
@@ -331,16 +357,30 @@ function runExecutor(copy, fail = false, options = {}) {
     if (options.inputs) variables.FfmpegBuilderModel.InputFiles = options.inputs;
     const context = vm.createContext({
         Variables: variables,
-        System: {},
+        System: {
+            IO: {
+                FileInfo: function (path) {
+                    this.Exists = true;
+                    this.Length = path === '/original.mkv' ? 100000000 : outputSizes.get(path) || 1;
+                    this.LastWriteTimeUtc = { Ticks: sourceTicks };
+                },
+                File: { Delete: (path) => deleted.push(path) }
+            }
+        },
         Logger: { ILog() {}, DLog() {}, WLog() {}, ELog() {} },
         Flow: {
             TempPath: '/temp',
             GetToolPath: () => 'ffmpeg',
-            NewGuid: () => 'id',
+            NewGuid: () => 'id' + guid++,
             PartPercentageUpdate() {},
-            SetWorkingFile() {},
+            SetWorkingFile: (path) => working.push(path),
+            ResetWorkingFile: () => working.push('/original.mkv'),
+            AddTags: (values) => values.forEach((value) => tags.push(value)),
             Execute({ argumentList }) {
                 calls.push(argumentList);
+                if (options.sizes)
+                    outputSizes.set(argumentList[argumentList.length - 1], options.sizes[calls.length - 1]);
+                if (options.changedSource) sourceTicks++;
                 return { exitCode: fail ? 1 : 0, standardError: fail ? 'hevc_qsv error while opening encoder' : '' };
             }
         }
@@ -349,9 +389,37 @@ function runExecutor(copy, fail = false, options = {}) {
         [shared, helpersCode, defaultsCode].map((s) => s.replace('export class', 'class')).join('\n'),
         context
     );
+    if (options.adaptive) {
+        const signature = vm.runInContext(
+            'new FfmpegHelpers().videoSettingsSignature(Variables.FfmpegBuilderModel.VideoStreams[0], (x) => x || [], (x) => x == null ? "" : typeof x === "string" ? x : JSON.stringify(x))',
+            context
+        );
+        variables.AutoQuality_AdaptivePlan = JSON.stringify({
+            source: '/original.mkv',
+            sourceStamp: JSON.stringify({ bytes: 100000000, modified: '123' }),
+            maxBytes: 1000,
+            minimum: 90,
+            requested: 95,
+            selectedTarget: 95,
+            useTags: options.tagsEnabled,
+            qualityArg: '-global_quality:v',
+            signature,
+            candidates: [
+                { crf: 18, score: 96, size: 900 },
+                { crf: 19, score: 94, size: 800 },
+                { crf: 20, score: 91, size: 700 }
+            ]
+        });
+        if (options.changedSettings) variables.FfmpegBuilderModel.VideoStreams[0].Filter.push('scale_qsv=w=640:h=360');
+        if (options.belowFloor) {
+            const plan = JSON.parse(variables.AutoQuality_AdaptivePlan);
+            plan.candidates[1].score = 89;
+            variables.AutoQuality_AdaptivePlan = JSON.stringify(plan);
+        }
+    }
     vm.runInContext(executorCode.replace(/^import .*;\n/gm, ''), context);
     const result = vm.runInContext(`Script(${JSON.stringify(options.hardware || 'Off')}, true, false, 0)`, context);
-    return { result, calls };
+    return { result, calls, variables, deleted, working, tags };
 }
 
 test('Executor copy mode keeps the video unchanged and still converts audio', () => {
@@ -411,4 +479,143 @@ test('Executor places hardware decode options before the mapped input and uses s
     assert.ok(hw > args.indexOf('/first.mkv'));
     assert.ok(hw < args.indexOf('/second.mkv'));
     assert.ok(!args.includes('-hwaccel:0'));
+});
+
+test('Adaptive search lowers the target in one-point steps and reuses measurements', () => {
+    const { result, variables, calls, logs } = runAuto({ minimum: 90, maxSize: 1000000 });
+    assert.equal(result, 1, logs.slice(-20).join('\n'));
+    assert.equal(variables.AutoQuality_Target, 92);
+    assert.equal(variables.AutoQuality_RequestedTarget, 95);
+    assert.equal(variables.AutoQuality_SizeBudget, 1000000);
+    const plan = JSON.parse(variables.AutoQuality_AdaptivePlan);
+    assert.ok(plan.candidates.every((c) => c.score >= 90));
+    const encodes = calls.filter((a) => a.includes('-global_quality:v') && a[a.length - 1].includes('_quality_'));
+    assert.equal(new Set(encodes.map((a) => a[a.length - 1])).size, encodes.length);
+    assert.ok(logs.some((s) => s.includes('target 94')));
+    assert.ok(logs.some((s) => s.includes('target 93')));
+});
+
+test('Adaptive search uses filtered high-quality references and raw samples for every encode', () => {
+    const { result, variables, calls } = runAuto({ minimum: 90, maxSize: 100000000, referenceMode: 'source' });
+    assert.equal(result, 1);
+    assert.equal(variables.AutoQuality_ReferenceModeUsed, 'encoded');
+    const encodes = calls.filter((a) => a.includes('-global_quality:v'));
+    const refs = encodes.filter((a) => a[a.length - 1].includes('_reference'));
+    assert.ok(refs.every((a) => a[a.indexOf('-global_quality:v') + 1] === '2'));
+    assert.ok(
+        encodes.every(
+            (a) => !a[a.indexOf('-i') + 1].includes('_reference') && !a[a.indexOf('-i') + 1].includes('_quality_')
+        )
+    );
+    assert.equal(new Set(encodes.map((a) => a[a.indexOf('-vf') + 1])).size, 1);
+    const metrics = calls.filter((a) => a.includes('-filter_complex'));
+    assert.ok(metrics.every((a) => a[a.lastIndexOf('-i') + 1].includes('_reference')));
+    const extracts = calls.filter((a) => a.includes('copy'));
+    assert.ok(extracts.every((a) => a[a.indexOf('-i') + 1] === '/original.mkv'));
+});
+
+test('Adaptive search keeps the original when the quality floor cannot fit', () => {
+    const { result, variables } = runAuto({ minimum: 90, maxSize: 1 });
+    assert.equal(result, 0);
+    assert.equal(variables.AutoQuality_Reason, 'original_retained_quality_floor');
+    assert.equal(variables.AutoQuality_Validated, false);
+});
+
+test('Adaptive search rejects a missing original and failed measurements', () => {
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, missingOriginal: true }).result, -1);
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, failMetric: true }).result, -1);
+});
+
+test('Size retries keep original video inputs and publish only the fitting output', () => {
+    const { result, calls, working, deleted, variables } = runExecutor(false, false, {
+        adaptive: true,
+        hardware: 'Automatic',
+        sizes: [1200, 900]
+    });
+    assert.equal(result, 1);
+    assert.equal(calls.length, 2);
+    const firstOutput = calls[0][calls[0].length - 1];
+    for (const args of calls) {
+        assert.equal(args[args.indexOf('-map') + 1], '1:v:0');
+        assert.ok(args.includes('/original.mkv'));
+        assert.ok(!args.slice(0, -1).includes(firstOutput));
+        assert.equal(args[args.indexOf('-filter:v:0') + 1], calls[0][calls[0].indexOf('-filter:v:0') + 1]);
+    }
+    assert.ok(deleted.includes(firstOutput));
+    assert.equal(working.length, 1);
+    assert.equal(working[0], calls[1][calls[1].length - 1]);
+    assert.equal(variables.AutoQuality_CRF, 19);
+    assert.equal(variables.AutoQuality_TargetVMAF, 94);
+    assert.equal(calls[1][calls[1].indexOf('-global_quality:v:0') + 1], '19');
+});
+
+test('Size retries stop at the measured floor and retain the original', () => {
+    const { result, calls, working, deleted } = runExecutor(false, false, {
+        adaptive: true,
+        sizes: [1200, 1150, 1100]
+    });
+    assert.equal(result, 0);
+    assert.equal(calls.length, 3);
+    assert.equal(deleted.length, 3);
+    assert.deepEqual(working, ['/original.mkv']);
+});
+
+test('Size retries reject changed source, changed filters, or below-floor candidates', () => {
+    assert.equal(runExecutor(false, false, { adaptive: true, changedSource: true, sizes: [900] }).result, -1);
+    const settings = runExecutor(false, false, { adaptive: true, changedSettings: true });
+    assert.equal(settings.result, -1);
+    assert.equal(settings.calls.length, 0);
+    const floor = runExecutor(false, false, { adaptive: true, belowFloor: true });
+    assert.equal(floor.result, -1);
+    assert.equal(floor.calls.length, 0);
+});
+
+test('Primary quality replacement retains secondary quality and all input paths', () => {
+    const h = loadHelpers();
+    const args = ['-i', '/original.mkv', '-global_quality:v:0', '18', '-global_quality:v:1', '10', '/out.mkv'];
+    const result = h.setPrimaryVideoQuality(args, 19, '-global_quality:v');
+    assert.equal(result[result.indexOf('-global_quality:v:1') + 1], '10');
+    assert.equal(result[result.indexOf('-global_quality:v:0') + 1], '19');
+    assert.equal(args[args.indexOf('-global_quality:v:0') + 1], '18');
+});
+
+test('Original source lookup supports flat runner variables and refuses the working output', () => {
+    const context = vm.createContext({
+        Variables: { 'file.Orig.FullName': '/original.mkv' },
+        Flow: { WorkingFile: '/already-encoded.mkv' }
+    });
+    vm.runInContext(helpersCode.replace('export class', 'class'), context);
+    const read = "new ScriptHelpers().originalSourcePath(Variables['file.Orig.FullName'], Variables.file)";
+    assert.equal(vm.runInContext(read, context), '/original.mkv');
+    delete context.Variables['file.Orig.FullName'];
+    assert.equal(vm.runInContext(read, context), '');
+});
+
+test('Adaptive size checks cannot use unmeasured skip paths', () => {
+    for (const duration of [0, 20]) {
+        const result = runAuto({ minimum: 90, maxSize: 100000000, duration });
+        assert.equal(result.result, 0);
+        assert.equal(result.variables.AutoQuality_Validated, false);
+        assert.ok(!result.calls.some((a) => a.includes('-global_quality:v')));
+    }
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, forceCrf: 20 }).result, -1);
+    assert.equal(runAuto({ minimum: 96, maxSize: 100000000 }).result, -1);
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, minReduction: 100 }).result, 0);
+    assert.equal(runAuto({ minimum: 90, maxSize: 100000000, minReduction: -1 }).result, -1);
+    const copy = runAuto({ minimum: 90, maxSize: 100000000, alreadyOptimal: true });
+    assert.equal(copy.result, 1);
+    assert.ok(copy.variables.AutoQuality_AdaptivePlan);
+});
+
+test('Adaptive sample selection includes the required size reduction', () => {
+    const result = runAuto({ minimum: 90, maxSize: 100000000, minReduction: 99 });
+    assert.equal(result.variables.AutoQuality_SizeBudget, 1000000);
+    if (result.result === 1) assert.equal(JSON.parse(result.variables.AutoQuality_AdaptivePlan).maxBytes, 1000000);
+});
+
+test('Adaptive tags record only the output that passes actual-size checks', () => {
+    const pass = runExecutor(false, false, { adaptive: true, tagsEnabled: true, sizes: [1200, 900] });
+    assert.deepEqual(pass.tags, ['CRF 19', 'VMAF 94']);
+    const retain = runExecutor(false, false, { adaptive: true, tagsEnabled: true, sizes: [1200, 1150, 1100] });
+    assert.deepEqual(retain.tags, []);
 });
