@@ -7,6 +7,7 @@ BASE_DIR="/opt/fileflows-langid"
 VENV_DIR="${BASE_DIR}/venv"
 PYTHON=""
 PIP=""
+CONSTRAINTS="${BASE_DIR}/constraints.txt"
 
 resolve_self_path() {
     local p="$0"
@@ -81,8 +82,8 @@ ensure_apt_prereqs() {
         exit 1
     fi
 
-    apt-get -qq update
-    apt-get install --no-install-recommends --no-install-suggests -yqq \
+    DEBIAN_FRONTEND=noninteractive apt-get -qq update
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends --no-install-suggests -yqq \
         ca-certificates curl git jq \
         python3 python3-venv python3-pip python3-setuptools python3-wheel \
         build-essential cmake pkg-config \
@@ -103,22 +104,14 @@ ensure_python_venv() {
     PIP="${VENV_DIR}/bin/pip"
 
     # Avoid Debian/Ubuntu PEP 668 "externally-managed-environment" by never using system pip.
-    "${PIP}" install --no-cache-dir -q -U pip setuptools wheel
+    printf '%s\n' 'setuptools<82' 'huggingface_hub==0.19.4' >"${CONSTRAINTS}"
+    "${PIP}" install --no-cache-dir -q -c "${CONSTRAINTS}" -U pip setuptools wheel
 }
 
 install_torch_stack() {
-    # Use PyTorch CPU wheels inside the venv to avoid distro torchaudio/torch mismatches.
-    "${PIP}" install --no-cache-dir -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-    # SpeechBrain currently expects older huggingface_hub APIs (use_auth_token). Newer huggingface_hub
-    # removed that keyword which breaks runtime model fetching/caching.
-    # Pin to a known-compatible version to keep fflangid-sb working offline once prewarmed.
-    "${PIP}" install --no-cache-dir -q "huggingface_hub==0.19.4"
-
-    "${PIP}" install --no-cache-dir -q speechbrain soundfile numpy scipy requests
-
-    # Re-assert the pin in case dependency resolution upgraded it.
-    "${PIP}" install --no-cache-dir -q "huggingface_hub==0.19.4"
+    "${PIP}" install --no-cache-dir -q -c "${CONSTRAINTS}" torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+    "${PIP}" install --no-cache-dir -q -c "${CONSTRAINTS}" speechbrain soundfile numpy scipy requests "huggingface_hub==0.19.4"
+    "${PIP}" check
 }
 
 install_whisper_cpp() {
@@ -137,75 +130,33 @@ install_whisper_cpp() {
     local jobs
     jobs="$(nproc 2>/dev/null || echo 1)"
 
-    set +e
-    make -C "${src_dir}" -j"${jobs}" whisper-cli
-    local make_rc=$?
-    if [ "${make_rc}" -ne 0 ]; then
-        make -C "${src_dir}" -j"${jobs}" main
-        make_rc=$?
-    fi
-    if [ "${make_rc}" -ne 0 ]; then
-        make -C "${src_dir}" -j"${jobs}"
-        make_rc=$?
-    fi
-    set -e
-
-    if [ "${make_rc}" -ne 0 ]; then
-        echo "WARN: Failed to build whisper.cpp. Whisper fallback will be unavailable." >&2
-        return 0
+    local build_dir="${src_dir}/build-fileflows"
+    # A persistent cache can refer to a compiler removed by a container update.
+    if ! cmake --fresh -S "${src_dir}" -B "${build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+        -DGGML_CCACHE=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+        || ! cmake --build "${build_dir}" --config Release --parallel "${jobs}" --target whisper-cli; then
+        echo "ERROR: Failed to build whisper.cpp." >&2
+        return 1
     fi
 
-    local built=""
-    for candidate in \
-        "${src_dir}/whisper-cli" \
-        "${src_dir}/main" \
-        "${src_dir}/bin/main" \
-        "${src_dir}/bin/whisper-cli" \
-        "${src_dir}/build/bin/main" \
-        "${src_dir}/build/bin/whisper-cli"; do
-        if [ -x "${candidate}" ]; then
-            built="${candidate}"
-            break
-        fi
-    done
-
-    if [ -z "${built}" ] && command -v find >/dev/null 2>&1; then
-        # Use quoted parens to avoid shell parsing issues in environments that don't preserve backslashes.
-        built="$(find "${src_dir}" -maxdepth 6 -type f -perm -111 '(' -name whisper-cli -o -name main ')' 2>/dev/null | head -n 1 || true)"
+    local built="${build_dir}/bin/whisper-cli"
+    if [ ! -x "${built}" ] || ! "${built}" --help >/dev/null 2>&1; then
+        echo "ERROR: whisper-cli is missing or cannot run." >&2
+        return 1
     fi
-
-    if [ -z "${built}" ]; then
-        echo "WARN: whisper.cpp build succeeded but no CLI binary was found (expected whisper-cli/main). Whisper fallback will be unavailable." >&2
-        return 0
-    fi
-
-    # If multiple candidates exist, prefer a "real" binary (largest file tends to be the actual CLI).
-    if command -v stat >/dev/null 2>&1 && command -v sort >/dev/null 2>&1 && command -v head >/dev/null 2>&1; then
-        local best_line best
-        best_line="$(find "${src_dir}" -maxdepth 8 -type f -perm -111 '(' -name whisper-cli -o -name main ')' -exec stat -c '%s %n' {} + 2>/dev/null | sort -nr | head -n 1 || true)"
-        best="${best_line#* }"
-        if [ -n "${best}" ] && [ -x "${best}" ]; then
-            built="${best}"
-        fi
-    fi
-
-    install -m 0755 "${built}" "${bin_dst}"
-
-    if command -v stat >/dev/null 2>&1; then
-        local sz
-        sz="$(stat -c%s "${bin_dst}" 2>/dev/null || echo 0)"
-        if [ "${sz}" -gt 0 ] && [ "${sz}" -lt 500000 ]; then
-            echo "WARN: Installed whisper binary is unexpectedly small (${sz} bytes): ${bin_dst}" >&2
-        fi
-    fi
+    install -m 0755 "${built}" "${bin_dst}.tmp"
+    mv -f "${bin_dst}.tmp" "${bin_dst}"
 
     # Model: ggml-tiny.bin (fast, CPU friendly). Stored outside the repo so it persists across updates.
-    if [ ! -f "${model_dir}/ggml-tiny.bin" ]; then
-        if ! curl -L --retry 3 --fail -o "${model_dir}/ggml-tiny.bin" \
+    if [ ! -s "${model_dir}/ggml-tiny.bin" ]; then
+        if ! curl -L --retry 3 --fail -o "${model_dir}/ggml-tiny.bin.tmp" \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"; then
-            echo "WARN: Failed to download whisper.cpp model (ggml-tiny.bin). Whisper fallback will not work until the model is present." >&2
-            echo "      Place the model at: ${model_dir}/ggml-tiny.bin" >&2
+            rm -f "${model_dir}/ggml-tiny.bin.tmp"
+            echo "ERROR: Failed to download the Whisper model." >&2
+            return 1
         fi
+        mv -f "${model_dir}/ggml-tiny.bin.tmp" "${model_dir}/ggml-tiny.bin"
     fi
 }
 
@@ -266,14 +217,13 @@ def main():
         print(json.dumps({"error": "missing wav path"}))
         return 2
 
+    prewarm = sys.argv[1] == "--prewarm"
     wav_path = sys.argv[1]
     cache_dir = os.environ.get("FFLANGID_SPEECHBRAIN_CACHE", "/opt/fileflows-langid/speechbrain-cache")
     os.makedirs(cache_dir, exist_ok=True)
 
-    # Force all HF/torch caches to a writable location. Some deps still expanduser("~")
-    # and try to create /home/<user> (which may not be writable in containers).
+    # Keep model caches in the persistent writable directory.
     try:
-        os.environ.setdefault("HOME", cache_dir)
         os.environ.setdefault("XDG_CACHE_HOME", cache_dir)
         os.environ.setdefault("HF_HOME", cache_dir)
         os.environ.setdefault("HUGGINGFACE_HUB_CACHE", os.path.join(cache_dir, "hub"))
@@ -306,6 +256,10 @@ def main():
             savedir=cache_dir,
             run_opts={"device": "cpu"},
         )
+
+        if prewarm:
+            print("SpeechBrain model cached in", cache_dir)
+            return 0
 
         # Avoid torchaudio backend issues by loading with soundfile directly.
         sig, sr = sf.read(wav_path, dtype="float32", always_2d=False)
@@ -609,22 +563,7 @@ SH
 }
 
 prewarm_speechbrain() {
-    # Best-effort: download model now so runtime doesn't need network.
-    "${PYTHON}" - <<'PY' || true
-import os
-try:
-    from speechbrain.inference.classifiers import EncoderClassifier
-except Exception:
-    raise SystemExit(0)
-
-cache_dir = os.environ.get("FFLANGID_SPEECHBRAIN_CACHE", "/opt/fileflows-langid/speechbrain-cache")
-os.makedirs(cache_dir, exist_ok=True)
-EncoderClassifier.from_hparams(
-    source="speechbrain/lang-id-voxlingua107-ecapa",
-    savedir=cache_dir,
-)
-print("SpeechBrain model cached in", cache_dir)
-PY
+    /usr/local/bin/fflangid-sb --prewarm
 }
 
 main() {
@@ -635,13 +574,18 @@ main() {
     fi
 
     require_root
+    mkdir -p "${BASE_DIR}"
+    exec 9>"${BASE_DIR}/install.lock"
+    flock 9
     ensure_uninstall_shim
     ensure_apt_prereqs
     ensure_python_venv
     install_torch_stack
+    install_whisper_cpp
     install_wrappers
     prewarm_speechbrain
-    install_whisper_cpp
+    /usr/local/bin/fflangid-sb --version
+    /usr/local/bin/fflangid-whisper --version
 
     echo "OK: Installed mkvpropedit, SpeechBrain LID (fflangid-sb), and whisper.cpp fallback (fflangid-whisper)."
     echo "Models in /opt/fileflows-langid (consider mounting this as a persistent volume)."

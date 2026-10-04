@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Executes the FFmpeg Builder model but guarantees only one video filter option per output stream by merging all upstream filters into a single `-filter:v:N` argument.
  * @author Vincent Courcelle
- * @revision 18
+ * @revision 19
  * @minimumVersion 25.0.0.0
  * @param {('Automatic'|'On'|'Off')} HardwareDecoding Hardware decoding mode. Automatic enables it when QSV filters/encoders are detected. Default: Automatic.
  * @param {bool} KeepModel Keep the builder model variable after executing. Default: false.
@@ -779,16 +779,28 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
     const needQsv = detectNeedsQsv(model);
     const hwMode = (HardwareDecoding || 'Automatic').toLowerCase();
     const hwAllowed = hwMode !== 'off' && (hwMode === 'on' || (hwMode === 'automatic' && needQsv));
-    const hasHwaccelAlready = args.some((t) => String(t || '').toLowerCase() === '-hwaccel');
+    const hasHwaccelAlready = args.some((t) => /^-hwaccel(?::|$)/i.test(String(t || '')));
     const hasInitHw = args.some((t) => String(t || '').toLowerCase() === '-init_hw_device');
 
     if (hwAllowed && needQsv) {
         if (!hasInitHw) args = args.concat(['-init_hw_device', 'qsv=gpu', '-filter_hw_device', 'gpu']);
-        if (!hasHwaccelAlready) args = args.concat(['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv']);
     }
 
     // Inputs
-    for (let i = 0; i < inputFiles.length; i++) args = args.concat(['-i', inputFiles[i]]);
+    for (let i = 0; i < inputFiles.length; i++) {
+        if (hwAllowed && needQsv && !hasHwaccelAlready) {
+            const decoded = {};
+            for (let j = 0; j < modelVideoStreams.length; j++) {
+                const v = modelVideoStreams[j];
+                if (!v || v.Deleted || isImageStream(v) || !detectNeedsQsv({ VideoStreams: [v] })) continue;
+                const index = /^([0-9]+):((?:v:)?[0-9]+)\??$/.exec(getStreamIndexString(v));
+                if (!index || parseInt(index[1]) !== i || decoded[index[2]]) continue;
+                args = args.concat([`-hwaccel:${index[2]}`, 'qsv', `-hwaccel_output_format:${index[2]}`, 'qsv']);
+                decoded[index[2]] = true;
+            }
+        }
+        args = args.concat(['-i', inputFiles[i]]);
+    }
 
     // ===== STREAMS =====
     function scopeTokenToStream(token, typeChar, outIndex) {
@@ -951,6 +963,11 @@ function Script(HardwareDecoding, KeepModel, WriteFullArgumentsToComment, MaxCom
         const isDecoderOnly = /^(hdmv_pgs_subtitle|dvd_subtitle|dvb_subtitle)$/i.test(streamCodec);
         const acceptStreamCodec = streamCodec && streamCodec.indexOf('-') === -1 && !isDecoderOnly;
         let codec = String(codecFromArgs || bare.codec || (acceptStreamCodec ? streamCodec : '') || 'copy').trim();
+
+        const sourceCodec = stream.Stream ? String(stream.Stream.Codec || '').toLowerCase() : '';
+        if (typeChar === 'v' && !ep.length && !ap.length && !filterChain && codec.toLowerCase() === sourceCodec) {
+            codec = 'copy';
+        }
 
         if (filterChain && codec.toLowerCase() === 'copy') {
             const tc = String(typeChar || '')

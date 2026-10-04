@@ -31,11 +31,16 @@ Use `python3 Tools/fileflows.py` from this repository. It needs Python 3.8 or la
 python3 Tools/fileflows.py status
 python3 Tools/fileflows.py wait FILE_UID --timeout 1800
 python3 Tools/fileflows.py failed
+python3 Tools/fileflows.py docker-logs --since 48h --match 'error|failed|warning' --context 3
+python3 Tools/fileflows.py docker-logs --since 48h --output /tmp/fileflows-docker.log
+python3 Tools/fileflows.py mods
+python3 Tools/fileflows.py upload-mod DockerMods/AudioLangIDDockerMod.sh --uid DOCKER_MOD_UID
 python3 Tools/fileflows.py scripts
 python3 Tools/fileflows.py flows
 python3 Tools/fileflows.py upload Scripts/Shared/FfmpegHelpers.js
 python3 Tools/fileflows.py upload "Scripts/Flow/Video/Video - Auto Quality.js"
 python3 Tools/fileflows.py log FILE_UID --match 'CRF|complete|ERRR' --lines 30
+python3 Tools/fileflows.py log FILE_UID --source nas --match 'error|failed' --lines 30
 python3 Tools/fileflows.py get flow FLOW_UID --output /tmp/flow.json
 python3 Tools/fileflows.py save-flow /tmp/flow.json
 python3 Tools/fileflows.py backup script SCRIPT_UID
@@ -47,6 +52,12 @@ python3 Tools/fileflows.py add --flow-uid TEST_FLOW_UID /temp/extract.mkv
 Upload finds an existing script by name. Use `--uid SCRIPT_UID` for an exact match. It validates the source, makes a backup, saves, and compares the saved code. FileFlows removes the metadata comment on save. Script header UIDs can differ from the installed object UID; use the `scripts` command to find the installed UID.
 
 Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir` to change this path. Each script backup includes `object.json` and the complete exported `source.js`. Flow backups contain the full object. Restore makes a new backup before it writes. Keep backups outside Git: flow objects can contain credentials. Log output removes credential lines and image data. `get --output` keeps exact data in a new file with mode 0600.
+
+`docker-logs` reads both Docker output streams through SSH. It defaults to the last 48 hours and all retained lines. Use `--tail COUNT` to limit the input, `--match REGEX` to filter it, and `--context COUNT` to keep adjacent lines. Plain Docker text keeps comparison operators such as `setuptools<82`. Output files are private and must be new.
+
+`log --source nas` reads retained `.log` and `.log.gz` files directly from the container. Use it when the API's HTML log ends before the failure. It requires the file log to be stored on the selected NAS. The default source is `api`.
+
+`upload-mod` checks Bash syntax, backs up the selected custom DockerMod, saves it, and checks the stored code and settings. It keeps the name, order, and enabled state. It accepts the server's removal of the final newline and skips saves when the code is equal. Repository DockerMods cannot be selected. `backup dockermod UID`, `get dockermod UID`, and `restore BACKUP/object.json` also support DockerMods; their backup includes `source.sh`. Saving an enabled DockerMod starts its installation on the server and can update agent configuration. Check active jobs first.
 
 `wait` shows progress changes until the file finishes, fails, is held, or reaches the timeout. Exit 0 means processed; exit 2 means failure, hold, or timeout.
 
@@ -61,6 +72,12 @@ ssh naze 'docker exec -i fileflows python3 - /temp/source.mkv --output /temp/qsv
 Set `--ffmpeg`, `--ffprobe`, `--metric-ffmpeg`, `--device`, `--crop`, and `--preset` for another installation. The QSV device must be named `gpu`. VMAF compares each candidate with a high-quality reference at the same denoise level. Compare the source and denoised frames visually to check detail loss from denoise. Use moderate levels first. Native HDR VMAF is an encoding check; inspect tone-mapped frames for visual review. This tool keeps source files.
 
 Checks: `npm test` and `python3 -m unittest discover -s Tests -p 'test_*.py'`.
+
+`Tools/qsv_multistream_check.py` tests two generated video tracks with 8-bit and 10-bit sources. It checks that global QSV decoding reproduces the CPU encoder failure, scoped decoding succeeds, all output tracks decode, and a copied second track keeps the same packet hashes. It requires a new output directory and keeps test files and logs there.
+
+```sh
+ssh naze 'docker exec -i fileflows python3 - --output /temp/qsv-multistream-test' < Tools/qsv_multistream_check.py
+```
 
 ## Integration Pattern
 
@@ -390,6 +407,8 @@ Applies video filters based on the movie's age, genre, and technical properties 
 
 ### Video - FFmpeg Builder Executor (Single Filter)
 
+Automatic QSV decoding is set per source video track and input file. CPU encoders receive software frames. Unchanged video tracks use stream copy when their codec matches the source and no encoding arguments or filters are set. This keeps additional HEVC tracks from being sent to a CPU encoder by default.
+
 A replacement for the standard "FFmpeg Builder: Executor" that fixes a critical issue where multiple video filters might be ignored or applied incorrectly. It merges all filters into a single complex filter chain.
 
 **Pros:**
@@ -537,3 +556,6 @@ These scripts are used to install dependencies inside the FileFlows Docker conta
     - `qsv` / `vaapi` (Hardware acceleration)
     - `libsvtav1` (AV1 encoding)
 - **AudioLangIDDockerMod.sh**: Installs Python, SpeechBrain, and Whisper.cpp for the Language ID script.
+    - Uses a Python venv and one constraints file for all dependency installs: `setuptools<82` for PyTorch and `huggingface_hub==0.19.4` for SpeechBrain. Runs `pip check` after installation.
+    - Builds the exact `whisper-cli` target with CMake 3.24 or later. Uses a fresh cache in `build-fileflows` and static Whisper/GGML libraries, so container compiler changes cannot reuse old library paths. Checks the CLI before replacing the installed binary.
+    - Uses the SpeechBrain wrapper for model preloading and runtime checks. Keeps models under `/opt/fileflows-langid`. A build, model, or dependency error stops installation. Parallel installer runs use a file lock.

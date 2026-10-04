@@ -240,7 +240,7 @@ const executorCode = readFileSync(
     'utf8'
 );
 const defaultsCode = readFileSync(new URL('../Scripts/Shared/FfmpegBuilderDefaults.js', import.meta.url), 'utf8');
-function runExecutor(copy, fail = false) {
+function runExecutor(copy, fail = false, options = {}) {
     const calls = [];
     const variables = {
         AutoQuality_CRF: copy ? 'copy' : 18,
@@ -263,6 +263,9 @@ function runExecutor(copy, fail = false) {
             ]
         }
     };
+    if (options.secondary) variables.FfmpegBuilderModel.VideoStreams.push(options.secondary);
+    if (options.sourceMap) variables.FfmpegBuilderModel.VideoStreams[0].Stream.IndexString = options.sourceMap;
+    if (options.inputs) variables.FfmpegBuilderModel.InputFiles = options.inputs;
     const context = vm.createContext({
         Variables: variables,
         System: {},
@@ -284,7 +287,7 @@ function runExecutor(copy, fail = false) {
         context
     );
     vm.runInContext(executorCode.replace(/^import .*;\n/gm, ''), context);
-    const result = vm.runInContext('Script("Off", true, false, 0)', context);
+    const result = vm.runInContext(`Script(${JSON.stringify(options.hardware || 'Off')}, true, false, 0)`, context);
     return { result, calls };
 }
 
@@ -303,4 +306,46 @@ test('Executor does not change settings after a validated QSV encode fails', () 
     assert.equal(result, -1);
     assert.equal(calls.length, 1);
     assert.ok(!calls[0].includes('-low_power:v:0'));
+});
+
+test('Executor copies an unchanged second HEVC track and scopes QSV to the first source track', () => {
+    const { result, calls } = runExecutor(false, false, {
+        hardware: 'Automatic',
+        secondary: { Codec: 'hevc', Stream: { IndexString: '0:1', Codec: 'hevc' }, EncodingParameters: [] }
+    });
+    assert.equal(result, 1);
+    const args = calls[0];
+    assert.equal(args[args.indexOf('-c:v:1') + 1], 'copy');
+    assert.ok(args.includes('-hwaccel:0'));
+    assert.ok(!args.includes('-hwaccel'));
+    assert.ok(!args.includes('-hwaccel:1'));
+    assert.ok(!args.includes('-filter:v:1'));
+});
+
+test('Executor leaves an explicit CPU encode on software frames', () => {
+    const { result, calls } = runExecutor(false, false, {
+        hardware: 'Automatic',
+        secondary: {
+            Codec: 'libx265',
+            Stream: { IndexString: '0:v:1', Codec: 'hevc' },
+            EncodingParameters: ['libx265', '-preset:v', 'fast']
+        }
+    });
+    assert.equal(result, 1);
+    assert.equal(calls[0][calls[0].indexOf('-c:v:1') + 1], 'libx265');
+    assert.ok(!calls[0].includes('-hwaccel:v:1'));
+});
+
+test('Executor places hardware decode options before the mapped input and uses source indices', () => {
+    const { result, calls } = runExecutor(false, false, {
+        hardware: 'Automatic',
+        sourceMap: '1:v:2',
+        inputs: ['/first.mkv', '/second.mkv']
+    });
+    assert.equal(result, 1);
+    const args = calls[0];
+    const hw = args.indexOf('-hwaccel:v:2');
+    assert.ok(hw > args.indexOf('/first.mkv'));
+    assert.ok(hw < args.indexOf('/second.mkv'));
+    assert.ok(!args.includes('-hwaccel:0'));
 });

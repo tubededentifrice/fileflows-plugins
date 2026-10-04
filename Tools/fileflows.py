@@ -32,6 +32,21 @@ except urllib.error.HTTPError as error:
     print(json.dumps({'status': error.code, 'body': error.read().decode('utf-8', errors='replace')}))
 '''
 
+FILE_LOG_BRIDGE = r'''
+import gzip, sys
+from pathlib import Path
+files = sorted(p for p in Path('/app/Logs/LibraryFiles').glob(sys.argv[1]+'*.log*')
+               if p.name.endswith(('.log', '.log.gz')))
+if not files:
+    raise SystemExit(2)
+for path in files:
+    if path.suffix == '.gz':
+        with gzip.open(path, 'rt', errors='replace') as stream:
+            print(stream.read())
+    else:
+        print(path.read_text(errors='replace'))
+'''
+
 
 def clean_code(code):
     """Save removes the script metadata comment. Keep all other comments."""
@@ -43,10 +58,11 @@ def script_name(path, code):
     return match.group(1).strip() if match else Path(path).stem
 
 
-def redact(text):
-    text = re.sub(r'<img\b[^>]*>', '', text, flags=re.I)
-    text = re.sub(r'data:image/[^\s\"\']+', '[image removed]', text)
-    text = unescape(re.sub(r'<[^>]+>', '', text))
+def redact(text, html=True):
+    if html:
+        text = re.sub(r'<img\b[^>]*>', '', text, flags=re.I)
+        text = re.sub(r'data:image/[^\s\"\']+', '[image removed]', text)
+        text = unescape(re.sub(r'<[^>]+>', '', text))
     lines = []
     for line in text.splitlines():
         if re.search(r'api[._ -]?key|access[._ -]?token|password|client[._ -]?secret|encryptionkey|licensekey|authorization|bearer', line, re.I):
@@ -77,6 +93,33 @@ class FileFlows:
             raise RuntimeError(f"HTTP {response['status']}: {redact(str(response['body']))[:1500]}")
         return response['body']
 
+    def docker_logs(self, since='48h', tail='all', match=None, context=0):
+        if context < 0 or (tail != 'all' and (not str(tail).isdigit() or int(tail) <= 0)):
+            raise ValueError('Use a positive tail count or all, and non-negative context')
+        command = shlex.join(['docker', 'logs', '--since', since, '--tail', str(tail), self.container]) + ' 2>&1'
+        result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', self.host, command],
+                                text=True, capture_output=True, timeout=90)
+        if result.returncode:
+            raise RuntimeError(redact(result.stdout + result.stderr, html=False))
+        lines = redact(result.stdout, html=False).splitlines()
+        if match:
+            pattern = re.compile(match, re.I)
+            selected = set()
+            for i, line in enumerate(lines):
+                if pattern.search(line):
+                    selected.update(range(max(0, i-context), min(len(lines), i+context+1)))
+            lines = [lines[i] for i in sorted(selected)]
+        return '\n'.join(lines)
+
+    def file_log(self, uid):
+        uid = str(uuid.UUID(uid))
+        command = shlex.join(['docker', 'exec', self.container, 'python3', '-c', FILE_LOG_BRIDGE, uid])
+        result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', self.host, command],
+                                text=True, capture_output=True, timeout=90)
+        if result.returncode:
+            raise RuntimeError(redact(result.stderr, html=False).strip() or 'No retained file log on this NAS')
+        return result.stdout
+
     def backup(self, kind, uid):
         uid = str(uuid.UUID(uid))
         obj = self.api('GET', f'/api/{kind}/{uid}')
@@ -90,7 +133,28 @@ class FileFlows:
             code = self.api('GET', f'/api/script/export/{uid}')
             source = directory / 'source.js'
             write_private(source, code)
+        elif kind == 'dockermod':
+            write_private(directory / 'source.sh', obj['Code'])
         return path
+
+    def upload_mod(self, path, uid):
+        uid = str(uuid.UUID(uid))
+        code = Path(path).read_text().replace('\r\n', '\n')
+        syntax = subprocess.run(['bash', '-n', str(Path(path).resolve())], text=True, capture_output=True)
+        if syntax.returncode:
+            raise ValueError(syntax.stderr.strip())
+        obj = self.api('GET', '/api/dockermod/' + uid)
+        if obj.get('Repository'):
+            raise ValueError('Select a custom DockerMod')
+        if obj.get('Code', '').rstrip('\n') == code.rstrip('\n'):
+            return {'name': obj['Name'], 'uid': uid, 'verified': True, 'unchanged': True}
+        backup = self.backup('dockermod', uid)
+        obj['Code'] = code
+        self.api('POST', '/api/dockermod', obj)
+        saved = self.api('GET', '/api/dockermod/' + uid)
+        if saved.get('Code', '').rstrip('\n') != code.rstrip('\n') or any(saved.get(k) != obj.get(k) for k in ['Name', 'Enabled', 'Order', 'Repository']):
+            raise RuntimeError(f'Saved DockerMod differs. Recovery copy: {backup}')
+        return {'name': saved['Name'], 'uid': uid, 'verified': True, 'backup': str(backup)}
 
     def upload(self, path, name=None, uid=None):
         code = Path(path).read_text()
@@ -124,6 +188,8 @@ class FileFlows:
     def restore(self, path):
         path = Path(path)
         obj = json.loads(path.read_text())
+        if path.with_name('source.sh').exists():
+            return self.upload_mod(path.with_name('source.sh'), obj['Uid'])
         if 'Code' in obj:
             return self.upload(path.with_name('source.js'), uid=obj['Uid'])
         return self.save_flow(path)
@@ -192,19 +258,22 @@ def main(argv=None):
     parser.add_argument('--base', default='http://localhost:5000')
     parser.add_argument('--backup-dir')
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ['status', 'failed', 'scripts', 'flows']:
+    for name in ['status', 'failed', 'scripts', 'flows', 'mods']:
         sub.add_parser(name)
     upload = sub.add_parser('upload', help='Update an existing script; back up and verify it')
     upload.add_argument('files', nargs='+')
     upload.add_argument('--name')
     upload.add_argument('--uid')
+    mod = sub.add_parser('upload-mod', help='Back up, save, and verify a custom DockerMod')
+    mod.add_argument('file')
+    mod.add_argument('--uid', required=True)
     backup = sub.add_parser('backup')
-    backup.add_argument('kind', choices=['script', 'flow'])
+    backup.add_argument('kind', choices=['script', 'flow', 'dockermod'])
     backup.add_argument('uid')
     save = sub.add_parser('save-flow', help='Save a prepared JSON flow; back up and verify it')
     save.add_argument('file')
     get = sub.add_parser('get')
-    get.add_argument('kind', choices=['script', 'flow', 'library-file'])
+    get.add_argument('kind', choices=['script', 'flow', 'library-file', 'dockermod'])
     get.add_argument('uid')
     get.add_argument('--output', help='Write the exact object to a new private file')
     restore = sub.add_parser('restore', help='Restore a saved object; back up current state first')
@@ -217,6 +286,13 @@ def main(argv=None):
     log.add_argument('uid')
     log.add_argument('--lines', type=int, default=200)
     log.add_argument('--match')
+    log.add_argument('--source', choices=['api', 'nas'], default='api')
+    docker_log = sub.add_parser('docker-logs', help='Read container logs through SSH; remove credential lines')
+    docker_log.add_argument('--since', default='48h')
+    docker_log.add_argument('--tail', default='all')
+    docker_log.add_argument('--match')
+    docker_log.add_argument('--context', type=int, default=0)
+    docker_log.add_argument('--output', help='Save the filtered logs in a new private file')
     reprocess = sub.add_parser('reprocess', help='Reprocess only the supplied file UIDs')
     reprocess.add_argument('uids', nargs='+')
     reprocess.add_argument('--var', action='append', default=[])
@@ -234,6 +310,19 @@ def main(argv=None):
         files = client.failed()
         result = [{k: f.get(k) for k in ['Uid', 'Name', 'Status', 'FailureReason', 'OriginalSize', 'FinalSize']}
                   for f in files if f.get('Status') == 4]
+    elif args.command == 'mods':
+        result = [{k: o.get(k) for k in ['Uid', 'Name', 'Enabled', 'Repository', 'Order']}
+                  for o in client.api('GET', '/api/dockermod')]
+    elif args.command == 'docker-logs':
+        text = client.docker_logs(args.since, args.tail, args.match, args.context)
+        if args.output:
+            write_private(Path(args.output), text + '\n')
+            result = {'output': str(Path(args.output).resolve())}
+        else:
+            print(text)
+            return
+    elif args.command == 'upload-mod':
+        result = client.upload_mod(args.file, args.uid)
     elif args.command in ['scripts', 'flows']:
         result = [{k: o.get(k) for k in ['Uid', 'Name', 'Type']} for o in client.api('GET', '/api/' + args.command[:-1])]
     elif args.command == 'upload':
@@ -259,11 +348,11 @@ def main(argv=None):
             sys.exit(2)
         return
     elif args.command == 'log':
-        body = client.api('GET', f'/api/library-file/{uuid.UUID(args.uid)}/log')
+        body = client.file_log(args.uid) if args.source == 'nas' else client.api('GET', f'/api/library-file/{uuid.UUID(args.uid)}/log')
         text = body if isinstance(body, str) else json.dumps(body)
         if args.lines <= 0:
             raise ValueError('--lines must be positive')
-        lines = redact(text).splitlines()
+        lines = redact(text, html=args.source == 'api').splitlines()
         if args.match:
             lines = [line for line in lines if re.search(args.match, line)]
         print('\n'.join(lines[-args.lines:]))

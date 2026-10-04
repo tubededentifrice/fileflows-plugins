@@ -1,9 +1,11 @@
 import importlib.util
+import gzip
 import json
 from pathlib import Path
 import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -25,6 +27,103 @@ class ToolTests(unittest.TestCase):
         self.assertNotIn('secret', out)
         self.assertNotIn('abcdef', out)
         self.assertIn('score > 95', out)
+
+    @patch('subprocess.run')
+    def test_docker_logs_preserve_operators_redact_and_merge_context(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0,
+            'start\nrequires setuptools<82\nAPI.Key=secret\nfailed build\nend\n', '')
+        out = ff.FileFlows().docker_logs(since='48h', match='requires|failed', context=1)
+        self.assertIn('setuptools<82', out)
+        self.assertNotIn('secret', out)
+        self.assertEqual(out.count('[credential line removed]'), 1)
+        command = run.call_args.args[0][-1]
+        self.assertEqual(shlex.split(command)[:-1],
+                         ['docker', 'logs', '--since', '48h', '--tail', 'all', 'fileflows'])
+        self.assertTrue(command.endswith('2>&1'))
+
+    def test_docker_logs_reject_invalid_limits(self):
+        for tail, context in [('0', 0), ('-1', 0), ('all', -1)]:
+            with self.assertRaises(ValueError):
+                ff.FileFlows().docker_logs(tail=tail, context=context)
+
+    def test_file_log_reads_compressed_and_plain_logs_without_html(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / (UID + '-server.log')).write_text('active log\n')
+            with gzip.open(root / (UID + '.log.gz'), 'wt') as stream:
+                stream.write('complete log\nfinal error\n')
+            (root / (UID + '.html.gz')).write_text('skip html')
+            code = ff.FILE_LOG_BRIDGE.replace('/app/Logs/LibraryFiles', directory)
+            result = subprocess.run([sys.executable, '-c', code, UID], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('active log', result.stdout)
+            self.assertIn('final error', result.stdout)
+            self.assertNotIn('skip html', result.stdout)
+
+    def test_file_log_rejects_invalid_uid_before_ssh(self):
+        with patch('subprocess.run') as run:
+            with self.assertRaises(ValueError):
+                ff.FileFlows().file_log('../secret')
+            run.assert_not_called()
+
+    def test_mod_upload_preserves_settings_and_private_restore_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'mod.sh'
+            source.write_text('#!/bin/bash\necho OK\n')
+            client = ff.FileFlows(backup_dir=directory)
+            obj = {'Uid': UID, 'Name': 'Audio', 'Code': 'old', 'Enabled': True,
+                   'Order': 7, 'Repository': False}
+            calls = []
+            def api(method, path, body=None):
+                calls.append((method, path))
+                if method == 'POST':
+                    obj.update(body)
+                    obj['Code'] = obj['Code'].rstrip('\n')
+                return obj.copy()
+            client.api = api
+            result = client.upload_mod(source, UID)
+            backup = Path(result['backup'])
+            self.assertEqual(json.loads(backup.read_text())['Code'], 'old')
+            self.assertEqual(backup.with_name('source.sh').read_text(), 'old')
+            self.assertEqual(stat.S_IMODE(backup.with_name('source.sh').stat().st_mode), 0o600)
+            self.assertTrue(obj['Enabled'])
+            self.assertEqual(obj['Order'], 7)
+            calls.clear()
+            self.assertTrue(client.upload_mod(source, UID)['unchanged'])
+            self.assertEqual(calls, [('GET', '/api/dockermod/' + UID)])
+            with patch.object(client, 'upload_mod', return_value={'verified': True}) as upload:
+                client.restore(backup)
+                upload.assert_called_once_with(backup.with_name('source.sh'), UID)
+
+    def test_mod_upload_rejects_invalid_shell_before_remote_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'mod.sh'
+            source.write_text('if then\n')
+            client = ff.FileFlows()
+            with patch.object(client, 'api') as api:
+                with self.assertRaises(ValueError):
+                    client.upload_mod(source, UID)
+                api.assert_not_called()
+
+    def test_mod_upload_rejects_repository_mods(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'mod.sh'
+            source.write_text('#!/bin/bash\ntrue\n')
+            client = ff.FileFlows()
+            with patch.object(client, 'api', return_value={'Repository': True}) as api:
+                with self.assertRaises(ValueError):
+                    client.upload_mod(source, UID)
+                self.assertEqual(api.call_count, 1)
+
+    def test_mod_upload_detects_saved_code_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'mod.sh'
+            source.write_text('#!/bin/bash\necho OK\n')
+            client = ff.FileFlows(backup_dir=directory)
+            obj = {'Uid': UID, 'Name': 'Audio', 'Code': 'old', 'Repository': False}
+            client.api = lambda *args: obj.copy()
+            with self.assertRaisesRegex(RuntimeError, 'Saved DockerMod differs'):
+                client.upload_mod(source, UID)
 
     def test_variable_types(self):
         self.assertEqual(ff.variables(['rate=12', 'enabled=false', 'name=text']),
