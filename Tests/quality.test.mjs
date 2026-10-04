@@ -235,6 +235,69 @@ for (const options of [{ failReference: true }, { failMetric: true }, { shortMet
     });
 }
 
+test('Auto Quality reports the effective budget and rejects a quality-only pass', () => {
+    const { result, logs } = runAuto({ maxSize: 1200000 });
+    assert.equal(result, -1);
+    assert.ok(logs.some((x) => x.includes('Size Budget:')));
+    assert.ok(logs.some((x) => x.includes('Size Fail')));
+    assert.ok(!logs.some((x) => /\| Pass/.test(x)));
+});
+
+for (const mode of ['progressive', 'interlaced', 'empty', 'failed']) {
+    test(`Cleaning Filters reads the populated idet result: ${mode}`, () => {
+        const video = {
+            Codec: 'hevc_qsv',
+            EncodingParameters: list(['hevc_qsv', '-profile:v:0', 'main10']),
+            Filter: list(),
+            OptionalFilter: list()
+        };
+        const info = { VideoStreams: [{ Bits: 8, Width: 1920, Height: 1080, Duration: 3600, FramesPerSecond: 25 }] };
+        const variables = {
+            FfmpegBuilderModel: { VideoStreams: [video], VideoInfo: info },
+            vi: { VideoInfo: info },
+            video: { Duration: '00:01:30.9200000' },
+            file: { FullName: '/movie.mkv' },
+            'CleaningFilters.SkipQsvTuning': true
+        };
+        const empty = 'Multi frame detection: TFF: 0 BFF: 0 Progressive: 0 Undetermined: 0';
+        const data =
+            mode === 'interlaced'
+                ? 'Multi frame detection: TFF: 220 BFF: 0 Progressive: 30 Undetermined: 0'
+                : 'Multi frame detection: TFF: 0 BFF: 0 Progressive: 249 Undetermined: 1';
+        const context = vm.createContext({
+            Variables: variables,
+            System: {},
+            Logger: { ILog() {}, DLog() {}, WLog() {}, ELog() {} },
+            Flow: {
+                GetToolPath: () => 'ffmpeg',
+                WorkingFile: '/movie.mkv',
+                Execute({ argumentList: args }) {
+                    if (args.indexOf('idet') >= 0) {
+                        assert.ok(Number(args[args.indexOf('-ss') + 1]) < 90);
+                    }
+                    return {
+                        exitCode: mode === 'failed' ? 1 : 0,
+                        standardError: empty + (mode === 'empty' ? '' : '\n' + data)
+                    };
+                }
+            }
+        });
+        vm.runInContext(
+            shared.replace('export class', 'class') + '\n' + helpersCode.replace('export class', 'class'),
+            context
+        );
+        vm.runInContext(
+            cleaningCode.replace(/^import .*;\n/gm, '') +
+                '\nScript(3, true, false, false, false, true, false, false, "off")',
+            context
+        );
+        const chain = video.Filter.join(',');
+        assert.equal(chain.includes('setfield=prog'), mode === 'progressive');
+        assert.equal(chain.includes('deinterlace_qsv'), mode === 'interlaced');
+        assert.equal(variables.interlace_progressive, mode === 'progressive' ? 747 : mode === 'interlaced' ? 90 : 0);
+    });
+}
+
 const executorCode = readFileSync(
     new URL('../Scripts/Flow/Video/Video - FFmpeg Builder Executor (Single Filter).js', import.meta.url),
     'utf8'

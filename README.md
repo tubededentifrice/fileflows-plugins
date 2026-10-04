@@ -31,6 +31,9 @@ Use `python3 Tools/fileflows.py` from this repository. It needs Python 3.8 or la
 python3 Tools/fileflows.py status
 python3 Tools/fileflows.py wait FILE_UID --timeout 1800
 python3 Tools/fileflows.py failed
+python3 Tools/fileflows.py diagnose --output /tmp/fileflows-diagnosis.json
+python3 Tools/fileflows.py media-check FILE_UID --output /tmp/media-check.json
+python3 Tools/fileflows.py media-check FILE_UID --starts 500 --duration 15 --no-qsv
 python3 Tools/fileflows.py docker-logs --since 48h --match 'error|failed|warning' --context 3
 python3 Tools/fileflows.py docker-logs --since 48h --output /tmp/fileflows-docker.log
 python3 Tools/fileflows.py mods
@@ -57,6 +60,10 @@ Backups are private files under `~/.cache/fileflows/backups`. Use `--backup-dir`
 
 `log --source nas` reads retained `.log` and `.log.gz` files directly from the container. Use it when the API's HTML log ends before the failure. It requires the file log to be stored on the selected NAS. The default source is `api`.
 
+`diagnose [FILE_UID ...]` reads retained plain logs for selected files, or all failed files. It reports the failure class, terminal errors, quality trials, recorded size limits, and TrueHD checksum error count. A missing log has its own result. The failure class is based on log text. Use source decode checks to assess file damage. Old logs can omit the working size budget.
+
+`media-check FILE_UID` runs `Tools/media_check.py` inside the container. It probes all tracks, then decodes eight seconds near the start, middle, and end. Software checks include all audio and non-cover video tracks. QSV checks decode the primary video. It enables CRC checks and records error-level text even when FFmpeg returns zero. VA-API information lines are counted separately. Default decoder threads: 1; `--threads 2` can help compare decoder behavior. `--starts`, `--duration`, `--timeout`, `--ffmpeg`, `--ffprobe`, and `--no-qsv` control the tests. `--full-audio-index N` checks a complete audio track by absolute stream index. Exit 0 means the selected checks were clean; exit 2 means a check failed, timed out, or logged diagnostics. Reports save to new private files with `--output`. The tool writes no media files. Sample checks cover only the selected intervals.
+
 `upload-mod` checks Bash syntax, backs up the selected custom DockerMod, saves it, and checks the stored code and settings. It keeps the name, order, and enabled state. It accepts the server's removal of the final newline and skips saves when the code is equal. Repository DockerMods cannot be selected. `backup dockermod UID`, `get dockermod UID`, and `restore BACKUP/object.json` also support DockerMods; their backup includes `source.sh`. Saving an enabled DockerMod starts its installation on the server and can update agent configuration. Check active jobs first.
 
 `wait` shows progress changes until the file finishes, fails, is held, or reaches the timeout. Exit 0 means processed; exit 2 means failure, hold, or timeout.
@@ -66,10 +73,14 @@ Reprocess accepts selected file UIDs. `--flow-uid` selects another flow; `--bott
 Use `Tools/qsv_benchmark.py` inside the container to compare QSV denoise levels and encoder quality values. It makes short video-only extracts, removes inherited duration tags, and records bytes, speed, MiB/hour, mean VMAF, and the 10th percentile frame score. It also measures VMAF against an identical reference. Results and video extracts stay in a new output directory.
 
 ```sh
-ssh naze 'docker exec -i fileflows python3 - /temp/source.mkv --output /temp/qsv-test --starts 30 120 --duration 12 --denoise 0 30 50 --quality 14 18' < Tools/qsv_benchmark.py
+ssh naze 'docker exec -u 99:100 -i fileflows python3 - /temp/source.mkv --output /temp/qsv-test --starts 30 120 --duration 12 --denoise 0 30 50 --quality 14 18' < Tools/qsv_benchmark.py
 ```
 
 Set `--ffmpeg`, `--ffprobe`, `--metric-ffmpeg`, `--device`, `--crop`, and `--preset` for another installation. The QSV device must be named `gpu`. VMAF compares each candidate with a high-quality reference at the same denoise level. Compare the source and denoised frames visually to check detail loss from denoise. Use moderate levels first. Native HDR VMAF is an encoding check; inspect tone-mapped frames for visual review. This tool keeps source files.
+
+`--software-decode` uses software decode and hardware upload, as in Auto Quality. `--field-mode progressive` adds `setfield=prog` before hardware processing; use it for content confirmed as progressive. `--field-mode deinterlace` adds QSV deinterlacing. Default field mode: `source`. Compare these modes when an interlaced source has unusually low quality scores at near-lossless settings.
+
+Use the runner's user for test extracts: NAZE uses `99:100`. Benchmark directories have mode 0700. A directory created as root needs its owner changed before a runner can read it. `media-check --user 99:100` checks source access as that user.
 
 Checks: `npm test` and `python3 -m unittest discover -s Tests -p 'test_*.py'`.
 
@@ -202,6 +213,7 @@ Automatically determines the optimal CRF (Constant Rate Factor) by running fast 
 - `Variables.ForceCRF`: If set, bypasses quality search and forces this CRF value (e.g. "23"). Useful for manual overrides.
 - `Variables.MaxFileSize`: Sets the size limit in bytes. A positive value enables size enforcement. The search stops with an error if no tested value meets both quality and size limits.
 - `AutoQuality.SizeSafetyPercent`: Reserves part of the size limit for sample variation and container overhead. The full-movie test was about 31% larger than its sample estimate; the default reserve covers a 33% increase. Default: 25; range: 0–30. Use `ScoreAggregation=min` to require every sample to pass.
+- The results log shows the working `Size Budget` in GiB. Each trial reports `Quality Fail`, `Size Fail`, or `Pass`. A quality pass above the working budget is rejected. Older Auto Quality logs label these binary sizes as GB.
 - `EnforceMaxSize`: Node parameter. A positive `MaxFileSize` also enables it.
 - QSV sample uploads use the source bit depth. The executor uses the tested encoder options. An encoder error after a successful quality search stops the job; it does not change the settings and retry the full encode.
 - `Variables['AutoQuality_VmafFps']`: Override VMAF subsampling FPS (default is source FPS). Lower values = faster VMAF calculation.
@@ -276,6 +288,8 @@ Detects language for "Unknown" (und) audio/subtitle tracks using heuristics (fil
 </details>
 
 ### Video - Cleaning Filters
+
+The interlace probe reads the populated `idet` result when FFmpeg first prints an empty result during filter reconfiguration. It converts numeric and time-string durations to seconds and keeps sample positions within short extracts. When at least 500 sampled frames and 90% of all sampled frames are progressive, the script adds `setfield=prog` before QSV processing. This corrects interlaced flags on progressive segmented content. Confirmed interlaced content uses `deinterlace_qsv`. Failed or empty probes do not force progressive flags.
 
 QSV denoise runs in the source format. Crop uses a separate GPU pass, followed by output format conversion if needed. On the tested Intel driver, a combined crop/denoise or conversion/denoise pass skipped denoise. The same filter plan is used for sample and final encodes.
 

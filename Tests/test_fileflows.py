@@ -18,6 +18,37 @@ CODE = '/**\n * @description Test\n */\nfunction Script() { return 1; }\n'
 
 
 class ToolTests(unittest.TestCase):
+    def test_missing_library_file_is_reported_before_media_check(self):
+        client = ff.FileFlows()
+        with patch.object(client, 'api', return_value=None):
+            self.assertEqual(client.diagnose([UID])[0]['cause'], 'file_not_found')
+            with self.assertRaisesRegex(ValueError, 'Library file was not found'):
+                client.media_check(UID, [])
+
+    def test_diagnosis_separates_quality_failure_and_audio_errors(self):
+        log = '''[ERRR] -> [truehd] Lossless check failed
+Auto Quality Results (VMAF)
+[INFO] -> Target: 95.00 (min)
+[INFO] -> Max Size: 17.79 GB
+[INFO] -> Size Budget: 13.34 GiB
+[INFO] -> 14 | 95.05 | 95.05 | 98.05 | 96.26 | +0.05 | 17.15 GB | Size Fail
+[ERRR] -> No tested quality value meets VMAF 95 and the size budget.
+Finishing file: ProcessingFailed'''
+        row = ff.diagnose_log(log)
+        self.assertEqual(row['cause'], 'quality_size_conflict')
+        self.assertEqual(row['truehd_checksum_errors'], 1)
+        self.assertEqual(row['size_budget_gib'], 13.34)
+        self.assertEqual(row['quality_trials'][0]['estimated_gib'], 17.15)
+        self.assertTrue(row['log_finished'])
+
+    def test_diagnosis_identifies_frame_conversion_and_missing_logs(self):
+        self.assertEqual(ff.diagnose_log('Impossible to convert between the formats supported')['cause'],
+                         'qsv_software_frame_conversion')
+        client = ff.FileFlows()
+        client.failed = lambda: [{'Uid': UID, 'Name': 'movie'}]
+        with patch.object(client, 'file_log', side_effect=RuntimeError('No retained log')):
+            self.assertEqual(client.diagnose()[0]['cause'], 'log_unavailable')
+
     def test_metadata_only_is_removed(self):
         self.assertEqual(ff.clean_code(CODE), 'function Script() { return 1; }')
         self.assertIn('/* keep */', ff.clean_code(CODE + '\n/* keep */'))

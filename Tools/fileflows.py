@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from html import unescape
@@ -185,6 +186,63 @@ class FileFlows:
                 return files
             skip += batch
 
+    def diagnose(self, uids=None):
+        files = []
+        if uids:
+            for value in uids:
+                uid = str(uuid.UUID(value))
+                obj = self.api('GET', '/api/library-file/' + uid)
+                files.append(obj if isinstance(obj, dict) else {'Uid': uid, 'missing': True})
+        else:
+            files = self.failed()
+        rows = []
+        for obj in files:
+            row = {k: obj.get(k) for k in ['Uid', 'Name', 'Status', 'FailureReason']}
+            if obj.get('missing'):
+                row['cause'] = 'file_not_found'
+                rows.append(row)
+                continue
+            try:
+                log = redact(self.file_log(obj['Uid']), html=False)
+                row.update(diagnose_log(log))
+            except RuntimeError as error:
+                row.update(cause='log_unavailable', log_error=str(error))
+            rows.append(row)
+        return rows
+
+    def media_check(self, uid, options, user=None):
+        uid = str(uuid.UUID(uid))
+        if user and not re.fullmatch(r'[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?', user):
+            raise ValueError('Invalid container user')
+        obj = self.api('GET', '/api/library-file/' + uid)
+        if not isinstance(obj, dict) or not obj.get('Name'):
+            raise ValueError('Library file was not found')
+        code = Path(__file__).with_name('media_check.py').read_text()
+        command = shlex.join(['docker', 'exec', *(['--user', user] if user else []),
+                             self.container, 'python3', '-c', code, obj['Name'], *options])
+        # Stream completed checks so a long audio scan shows its earlier results.
+        with tempfile.TemporaryFile(mode='w+t') as error_log:
+            process = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                                        self.host, command], text=True, stdout=subprocess.PIPE, stderr=error_log)
+            result = None
+            try:
+                for line in process.stdout:
+                    event = json.loads(line)
+                    if event.get('event') == 'result':
+                        result = event
+                    else:
+                        print(json.dumps(event), flush=True)
+                if process.wait() or result is None:
+                    error_log.seek(0)
+                    raise RuntimeError(redact(error_log.read(), html=False)[-2000:] or 'Media check did not finish')
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                process.wait()
+                process.stdout.close()
+        result['Uid'] = uid
+        return result
+
     def restore(self, path):
         path = Path(path)
         obj = json.loads(path.read_text())
@@ -211,6 +269,33 @@ class FileFlows:
 def write_private(path, text):
     with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
         stream.write(text)
+
+
+def diagnose_log(log):
+    """Extract terminal errors and the last quality table from a plain file log."""
+    lines = log.splitlines()
+    quality = 'No tested quality value meets' in log
+    cause = 'quality_size_conflict' if quality else (
+        'qsv_software_frame_conversion' if 'Impossible to convert between the formats supported' in log else 'unknown')
+    # Exclude logged FFmpeg stderr metadata, including titles containing 'error'.
+    errors = [line for line in lines if '[ERRR]' in line and not re.search(r'->\s+(title|comment)\s*:', line)]
+    marker = log.rfind('Auto Quality Results (')
+    table = log[marker:] if marker >= 0 else ''
+    trials = []
+    for line in table.splitlines():
+        match = re.search(r'->\s+(\d+)\s*\|\s*([\d.]+)\s*\|.*?\|\s*([\d.]+) G(?:i)?B\s*\|\s*(.*)', line)
+        if match:
+            trials.append({'quality': int(match[1]), 'score': float(match[2]),
+                           'estimated_gib': float(match[3]), 'logged_status': match[4].strip()})
+    target = re.search(r'Target:\s*([\d.]+)', table)
+    limit = re.search(r'Max Size:\s*([\d.]+) G(?:i)?B', table)
+    budget = re.search(r'Size Budget:\s*([\d.]+) G(?:i)?B', table)
+    return {'cause': cause, 'errors': errors[-8:], 'quality_trials': trials,
+            'quality_target': float(target[1]) if target else None,
+            'max_size_gib': float(limit[1]) if limit else None,
+            'size_budget_gib': float(budget[1]) if budget else None,
+            'truehd_checksum_errors': len(re.findall(r'Lossless check failed', log)),
+            'log_finished': 'Finishing file: ProcessingFailed' in log or 'Finishing file: Processed' in log}
 
 
 def wait_file(client, uid, interval=20, timeout=1800, emit=None):
@@ -260,6 +345,21 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     for name in ['status', 'failed', 'scripts', 'flows', 'mods']:
         sub.add_parser(name)
+    diagnose = sub.add_parser('diagnose', help='Read complete failure logs and extract causes and quality trials')
+    diagnose.add_argument('uids', nargs='*', help='Default: all failed files')
+    diagnose.add_argument('--output', help='Save the report in a new private file')
+    media = sub.add_parser('media-check', help='Probe and decode source samples on the NAS')
+    media.add_argument('uid')
+    media.add_argument('--starts', type=float, nargs='+')
+    media.add_argument('--duration', type=float, default=8)
+    media.add_argument('--timeout', type=float, default=600)
+    media.add_argument('--threads', type=int, default=1)
+    media.add_argument('--user', help='Container user, such as 99:100, to check runner access')
+    media.add_argument('--ffmpeg', default='/usr/local/bin/ffmpeg')
+    media.add_argument('--ffprobe', default='ffprobe')
+    media.add_argument('--no-qsv', action='store_true')
+    media.add_argument('--full-audio-index', type=int)
+    media.add_argument('--output', help='Save the report in a new private file')
     upload = sub.add_parser('upload', help='Update an existing script; back up and verify it')
     upload.add_argument('files', nargs='+')
     upload.add_argument('--name')
@@ -306,6 +406,27 @@ def main(argv=None):
     client = FileFlows(args.host, args.container, args.base, args.backup_dir)
     if args.command == 'status':
         result = client.api('GET', '/api/status')
+    elif args.command == 'diagnose':
+        result = client.diagnose(args.uids)
+        if args.output:
+            write_private(Path(args.output), json.dumps(result, indent=2) + '\n')
+    elif args.command == 'media-check':
+        options = ['--duration', str(args.duration), '--timeout', str(args.timeout), '--threads', str(args.threads),
+                   '--ffmpeg', args.ffmpeg, '--ffprobe', args.ffprobe]
+        if args.starts:
+            options += ['--starts', *[str(x) for x in args.starts]]
+        if args.no_qsv:
+            options.append('--no-qsv')
+        if args.full_audio_index is not None:
+            options += ['--full-audio-index', str(args.full_audio_index)]
+        result = client.media_check(args.uid, options, args.user)
+        if args.output:
+            write_private(Path(args.output), json.dumps(result, indent=2) + '\n')
+        print(json.dumps({'Uid': result['Uid'], 'clean': result['clean'], 'output': args.output}, indent=2)
+              if args.output else json.dumps(result, indent=2))
+        if not result['clean']:
+            sys.exit(2)
+        return
     elif args.command == 'failed':
         files = client.failed()
         result = [{k: f.get(k) for k in ['Uid', 'Name', 'Status', 'FailureReason', 'OriginalSize', 'FinalSize']}

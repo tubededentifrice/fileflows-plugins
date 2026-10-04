@@ -47,6 +47,8 @@ def main():
     parser.add_argument('--device', default='qsv=gpu', help='FFmpeg QSV device specification, named gpu')
     parser.add_argument('--preset', default='veryslow')
     parser.add_argument('--crop', help='QSV crop options, for example cw=1920:ch=1024:cx=0:cy=28')
+    parser.add_argument('--field-mode', choices=['source', 'progressive', 'deinterlace'], default='source')
+    parser.add_argument('--software-decode', action='store_true', help='Use software decode and upload, as in Auto Quality')
     args = parser.parse_args()
     if args.duration <= 0 or any(x < 0 for x in args.starts):
         parser.error('Use a positive duration and non-negative start times')
@@ -66,7 +68,12 @@ def main():
         report['samples'].append({'index': index, 'start': start, 'probe': info})
         references = {}
         for denoise in args.denoise:
-            vf = f'vpp_qsv=denoise={denoise}:format={native}'
+            prefix = 'setfield=prog,' if args.field_mode == 'progressive' else ''
+            if args.software_decode:
+                prefix += f'format={native},hwupload=extra_hw_frames=64,'
+            if args.field_mode == 'deinterlace':
+                prefix += 'deinterlace_qsv=mode=advanced,'
+            vf = prefix + f'vpp_qsv=denoise={denoise}:format={native}'
             if args.crop:
                 vf += ',vpp_qsv=' + args.crop + ':format=' + native
             if native == 'nv12':
@@ -74,8 +81,10 @@ def main():
             for quality in sorted(set([1] + args.quality)):
                 dst = root / f'sample{index}-d{denoise}-q{quality}.mkv'
                 command = [args.ffmpeg, '-v', 'error', '-n', '-init_hw_device', args.device,
-                           '-filter_hw_device', 'gpu', '-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv',
-                           '-i', clip, '-t', args.duration, '-vf', vf, '-c:v', 'hevc_qsv',
+                           '-filter_hw_device', 'gpu']
+                if not args.software_decode:
+                    command += ['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv']
+                command += ['-i', clip, '-t', args.duration, '-vf', vf, '-c:v', 'hevc_qsv',
                            '-preset', args.preset, '-profile:v', 'main10', '-global_quality', quality,
                            '-extbrc', '1', '-look_ahead', '1', '-bf', '7', '-refs', '4', '-g', '120',
                            '-an', '-sn', '-map_metadata', '-1', dst]

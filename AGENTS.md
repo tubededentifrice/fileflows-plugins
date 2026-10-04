@@ -388,6 +388,8 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 ## FileFlows operations
 
 - Use `python3 Tools/fileflows.py` for script uploads, flow backups, selected reprocessing, status, and logs. Read the FileFlows Tools section in README first.
+- Use `diagnose` for retained failure logs and `media-check` for source decode tests. Compare FFmpeg builds and decoder thread counts before attributing diagnostics to file damage.
+- Read all `idet` summaries: FFmpeg can print an empty summary before the populated result. Keep field flags equal in samples and final encodes.
 - Use an extract test flow that keeps original media before reprocessing library files. `Tools/qsv_benchmark.py` supplies reusable QSV extract tests and quality measurements.
 - Run the Python tool tests with `python3 -m unittest discover -s Tests -p 'test_*.py'`.
 - Use `docker-logs` for container startup logs and `upload-mod --uid UID` for custom DockerMod changes. Check active jobs first; saves can update agent configuration.

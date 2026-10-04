@@ -4,7 +4,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
 /**
  * @description Apply intelligent video filters based on content type, year, and genre to improve compression while maintaining quality. Retains static HDR color tags.
  * @author Vincent Courcelle
- * @revision 47
+ * @revision 48
  * @param {int} NoiseRetention How much noise/grain to keep (1=aggressive denoise, 10=keep all noise). Lower values = more denoise = better compression. Animation can tolerate lower values. Default: 3. Override variable key(s): `NoiseRetention`, `CleaningFilters.NoiseRetention`.
  * @param {bool} SkipDenoise Skip all denoising filters entirely (overrides NoiseRetention). Override variable key: `SkipDenoise`.
  * @param {bool} AggressiveCompression Enable aggressive compression for old/restored content (stronger denoise, auto-enabled for pre-1990 content). Override variable key: `AggressiveCompression`.
@@ -27,7 +27,7 @@ function Script(
     QsvLookAhead,
     DenoiseMode
 ) {
-    Logger.ILog('Cleaning filters.js revision 47 loaded');
+    Logger.ILog('Cleaning filters.js revision 48 loaded');
 
     const helpers = new ScriptHelpers();
     const ffmpegHelpers = new FfmpegHelpers();
@@ -688,9 +688,10 @@ function Script(
 
         // Prefer a few different points to avoid false negatives.
         if (durationSeconds && durationSeconds > 0) {
-            timeSamples.push(60);
-            timeSamples.push(Math.max(60, Math.floor(durationSeconds * 0.5)));
-            timeSamples.push(Math.max(60, Math.floor(durationSeconds * 0.9)));
+            const maxStart = Math.max(0, durationSeconds - 12);
+            timeSamples.push(Math.min(60, maxStart));
+            timeSamples.push(Math.min(maxStart, Math.floor(durationSeconds * 0.5)));
+            timeSamples.push(Math.min(maxStart, Math.floor(durationSeconds * 0.9)));
         } else {
             timeSamples.push(60);
             timeSamples.push(300);
@@ -728,14 +729,25 @@ function Script(
             );
 
             const output = (result.standardError || '') + '\n' + (result.standardOutput || '');
-            const match = output.match(
-                /Multi frame detection:\s*TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)\s*Undetermined:\s*(\d+)/i
-            );
-            if (match) {
-                tff += parseInt(match[1]) || 0;
-                bff += parseInt(match[2]) || 0;
-                progressive += parseInt(match[3]) || 0;
-                undetermined += parseInt(match[4]) || 0;
+            // FFmpeg can print an empty result before filter reconfiguration.
+            const pattern =
+                /Multi frame detection:\s*TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)\s*Undetermined:\s*(\d+)/gi;
+            let match;
+            let best = null;
+            let bestTotal = 0;
+            while ((match = pattern.exec(output)) !== null) {
+                const counts = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3]), parseInt(match[4])];
+                const count = counts[0] + counts[1] + counts[2] + counts[3];
+                if (count > bestTotal) {
+                    best = counts;
+                    bestTotal = count;
+                }
+            }
+            if (result.exitCode === 0 && best) {
+                tff += best[0];
+                bff += best[1];
+                progressive += best[2];
+                undetermined += best[3];
             }
         }
 
@@ -745,7 +757,8 @@ function Script(
         const interlacedFrames = tff + bff;
         // Conservative: require at least 50 interlaced frames and at least 15% of samples.
         const interlaced = interlacedFrames >= 50 && interlacedFrames / total >= 0.15;
-        return { interlaced, reason: 'idet', tff, bff, progressive, undetermined };
+        const confirmedProgressive = !interlaced && progressive >= 500 && progressive / total >= 0.9;
+        return { interlaced, confirmedProgressive, reason: 'idet', tff, bff, progressive, undetermined };
     }
 
     const fileVar = Variables.file;
@@ -797,7 +810,9 @@ function Script(
     const videoInfo = (viVar && viVar.VideoInfo) || ffmpeg.VideoInfo;
     const vs0 = videoInfo && videoInfo.VideoStreams && videoInfo.VideoStreams[0];
     const sourceBitrateKbps = normalizeBitrateToKbps((videoInfo && videoInfo.Bitrate) || 0);
-    const duration = (videoVar && videoVar.Duration) || (vs0 && vs0.Duration) || 0;
+    const duration =
+        helpers.parseDurationSeconds(videoVar && videoVar.Duration) ||
+        helpers.parseDurationSeconds(vs0 && vs0.Duration);
     const sourceFps = (vs0 && vs0.FramesPerSecond) || 0;
     const fileSizeMB = fileVar && fileVar.Orig && fileVar.Orig.Size ? fileVar.Orig.Size / (1024 * 1024) : 0;
 
@@ -1234,6 +1249,7 @@ function Script(
                 Variables.interlace_progressive = idet.progressive;
                 Variables.interlace_undetermined = idet.undetermined;
                 Variables.detected_interlaced = idet.interlaced;
+                Variables.detected_progressive = idet.confirmedProgressive === true;
 
                 Logger.ILog(
                     `Interlace detect: interlaced=${idet.interlaced} (TFF=${idet.tff}, BFF=${idet.bff}, P=${idet.progressive}, U=${idet.undetermined})`
@@ -1248,6 +1264,13 @@ function Script(
                     appliedFiltersSummary.push('deinterlace_qsv');
                     appliedFiltersForExecutor.push('deinterlace_qsv');
                     addedHardwareOnlyFilters = true;
+                } else if (idet.confirmedProgressive) {
+                    // Progressive segmented frames can carry interlaced flags.
+                    // Correct flags before QSV VPP and encoding, in both passes.
+                    const addedVia = addVideoFilter(video, 'setfield=prog');
+                    if (!addedVia) return -1;
+                    appliedFiltersSummary.push('setfield=prog');
+                    appliedFiltersForExecutor.push('setfield=prog');
                 }
             } else {
                 Logger.WLog(

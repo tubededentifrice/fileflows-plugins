@@ -5,7 +5,7 @@ import { FfmpegHelpers } from 'Shared/FfmpegHelpers';
  * @description Automatically determines optimal CRF/quality based on VMAF or SSIM scoring to minimize file size while maintaining visual quality. Uses Netflix's VMAF metric when available, falls back to SSIM.
  * @help Place this node between 'FFmpeg Builder: Start' and 'FFmpeg Builder: Executor'.
  * @author Vincent Courcelle
- * @revision 29
+ * @revision 30
  * @minimumVersion 24.0.0.0
  * @param {int} TargetVMAF Target VMAF score (0 = auto, 93-99 manual). Quality=97, Balanced=95, Compression=93. Default: 95. Override variable key(s): `TargetVMAF`, `AutoQualityPreset`.
  * @param {int} MinCRF Minimum CRF to search (lower = higher quality, larger file). Suggested: 16-20. Default: 18. Override variable key(s): `MinCRF`, `AutoQualityPreset`.
@@ -103,7 +103,7 @@ function Script(
     if (varMaxFileSize > 0) {
         if (!EnforceMaxSize) {
             Logger.ILog(
-                `Auto-enabling MaxFileSize enforcement due to Variables.MaxFileSize = ${helpers.bytesToGb(varMaxFileSize).toFixed(2)} GB`
+                `Auto-enabling MaxFileSize enforcement due to Variables.MaxFileSize = ${helpers.bytesToGb(varMaxFileSize).toFixed(2)} GiB`
             );
             EnforceMaxSize = true;
         }
@@ -583,7 +583,7 @@ function Script(
                 size: estimatedSize
             });
             const scoreDisplay = qualityMetric === 'SSIM' ? qualityScore.toFixed(4) : qualityScore.toFixed(2);
-            const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GB';
+            const sizeDisplay = helpers.bytesToGb(estimatedSize).toFixed(2) + ' GiB';
             Logger.DLog(`CRF ${testCRF}: ${qualityMetric} ${scoreDisplay}, Est. Size: ${sizeDisplay}`);
 
             if (qualityScore < effectiveTarget) {
@@ -645,9 +645,9 @@ function Script(
                     `Auto quality: Estimated size reduction ${reductionDisplay}% is less than required ${MinSizeReduction}%. Skipping encode.`
                 );
                 Logger.ILog(
-                    `Estimated: ${helpers.bytesToGb(estimatedSize).toFixed(2)} GB, Current: ${helpers
+                    `Estimated: ${helpers.bytesToGb(estimatedSize).toFixed(2)} GiB, Current: ${helpers
                         .bytesToGb(currentSize)
-                        .toFixed(2)} GB`
+                        .toFixed(2)} GiB`
                 );
 
                 Variables.AutoQuality_CRF = 'copy';
@@ -2210,7 +2210,10 @@ function Script(
         Logger.ILog(` Auto Quality Results (${metric})`);
         Logger.ILog(` Target: ${targetStr} (${ScoreAggregation})`);
         if (maxSize > 0) {
-            Logger.ILog(` Max Size: ${helpers.bytesToGb(maxSize).toFixed(2)} GB`);
+            Logger.ILog(` Max Size: ${helpers.bytesToGb(maxSize).toFixed(2)} GiB`);
+        }
+        if (sizeBudget > 0) {
+            Logger.ILog(` Size Budget: ${helpers.bytesToGb(sizeBudget).toFixed(2)} GiB`);
         }
         Logger.ILog('----------------------------------------------------------------------------------------');
         Logger.ILog(' CRF  | Score      | Min        | Max        | Avg        | Diff       | Est. Size  | Status');
@@ -2235,7 +2238,8 @@ function Script(
             let diffSign = diff > 0 ? '+' : '';
             let diffStr = diffSign + (metric === 'SSIM' ? diff.toFixed(4) : diff.toFixed(2));
 
-            let status = meets ? 'Pass' : 'Fail';
+            const fits = sizeBudget <= 0 || (r.size > 0 && r.size <= sizeBudget);
+            let status = !meets ? 'Quality Fail' : !fits ? 'Size Fail' : 'Pass';
             if (isBest) status += ' (Selected)';
 
             const pCrf = padRight(r.crf, 4);
@@ -2244,7 +2248,7 @@ function Script(
             const pMax = padRight(maxStr, 10);
             const pAvg = padRight(avgStr, 10);
             const pDiff = padRight(diffStr, 10);
-            const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size).toFixed(2) + ' GB' : '-', 10);
+            const pSize = padRight(r.size > 0 ? helpers.bytesToGb(r.size).toFixed(2) + ' GiB' : '-', 10);
 
             Logger.ILog(` ${pCrf} | ${pScore} | ${pMin} | ${pMax} | ${pAvg} | ${pDiff} | ${pSize} | ${status}`);
         }
