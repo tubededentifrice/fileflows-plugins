@@ -18,8 +18,14 @@ CODE = '/**\n * @description Test\n */\nfunction Script() { return 1; }\n'
 
 
 class ToolTests(unittest.TestCase):
+    def test_cli_requires_host_before_remote_access(self):
+        with patch('subprocess.run') as run, patch('sys.stderr'), self.assertRaises(SystemExit) as error:
+            ff.main(['status'])
+        self.assertEqual(error.exception.code, 2)
+        run.assert_not_called()
+
     def test_missing_library_file_is_reported_before_media_check(self):
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         with patch.object(client, 'api', return_value=None):
             self.assertEqual(client.diagnose([UID])[0]['cause'], 'file_not_found')
             with self.assertRaisesRegex(ValueError, 'Library file was not found'):
@@ -44,7 +50,7 @@ Finishing file: ProcessingFailed'''
     def test_diagnosis_identifies_frame_conversion_and_missing_logs(self):
         self.assertEqual(ff.diagnose_log('Impossible to convert between the formats supported')['cause'],
                          'qsv_software_frame_conversion')
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         client.failed = lambda: [{'Uid': UID, 'Name': 'movie'}]
         with patch.object(client, 'file_log', side_effect=RuntimeError('No retained log')):
             self.assertEqual(client.diagnose()[0]['cause'], 'log_unavailable')
@@ -63,7 +69,7 @@ Finishing file: ProcessingFailed'''
     def test_docker_logs_preserve_operators_redact_and_merge_context(self, run):
         run.return_value = subprocess.CompletedProcess([], 0,
             'start\nrequires setuptools<82\nAPI.Key=secret\nfailed build\nend\n', '')
-        out = ff.FileFlows().docker_logs(since='48h', match='requires|failed', context=1)
+        out = ff.FileFlows(host='server.example').docker_logs(since='48h', match='requires|failed', context=1)
         self.assertIn('setuptools<82', out)
         self.assertNotIn('secret', out)
         self.assertEqual(out.count('[credential line removed]'), 1)
@@ -75,7 +81,7 @@ Finishing file: ProcessingFailed'''
     def test_docker_logs_reject_invalid_limits(self):
         for tail, context in [('0', 0), ('-1', 0), ('all', -1)]:
             with self.assertRaises(ValueError):
-                ff.FileFlows().docker_logs(tail=tail, context=context)
+                ff.FileFlows(host='server.example').docker_logs(tail=tail, context=context)
 
     def test_file_log_reads_compressed_and_plain_logs_without_html(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -94,14 +100,14 @@ Finishing file: ProcessingFailed'''
     def test_file_log_rejects_invalid_uid_before_ssh(self):
         with patch('subprocess.run') as run:
             with self.assertRaises(ValueError):
-                ff.FileFlows().file_log('../secret')
+                ff.FileFlows(host='server.example').file_log('../secret')
             run.assert_not_called()
 
     def test_mod_upload_preserves_settings_and_private_restore_source(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'mod.sh'
             source.write_text('#!/bin/bash\necho OK\n')
-            client = ff.FileFlows(backup_dir=directory)
+            client = ff.FileFlows(host='server.example', backup_dir=directory)
             obj = {'Uid': UID, 'Name': 'Audio', 'Code': 'old', 'Enabled': True,
                    'Order': 7, 'Repository': False}
             calls = []
@@ -130,7 +136,7 @@ Finishing file: ProcessingFailed'''
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'mod.sh'
             source.write_text('if then\n')
-            client = ff.FileFlows()
+            client = ff.FileFlows(host='server.example')
             with patch.object(client, 'api') as api:
                 with self.assertRaises(ValueError):
                     client.upload_mod(source, UID)
@@ -140,7 +146,7 @@ Finishing file: ProcessingFailed'''
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'mod.sh'
             source.write_text('#!/bin/bash\ntrue\n')
-            client = ff.FileFlows()
+            client = ff.FileFlows(host='server.example')
             with patch.object(client, 'api', return_value={'Repository': True}) as api:
                 with self.assertRaises(ValueError):
                     client.upload_mod(source, UID)
@@ -150,7 +156,7 @@ Finishing file: ProcessingFailed'''
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'mod.sh'
             source.write_text('#!/bin/bash\necho OK\n')
-            client = ff.FileFlows(backup_dir=directory)
+            client = ff.FileFlows(host='server.example', backup_dir=directory)
             obj = {'Uid': UID, 'Name': 'Audio', 'Code': 'old', 'Repository': False}
             client.api = lambda *args: obj.copy()
             with self.assertRaisesRegex(RuntimeError, 'Saved DockerMod differs'):
@@ -163,17 +169,18 @@ Finishing file: ProcessingFailed'''
             ff.variables(['invalid'])
 
     def test_host_and_container_validation(self):
-        for host in ['-oProxyCommand=bad', 'naze;bad']:
+        for host in ['-oProxyCommand=bad', 'server.example;bad']:
             with self.assertRaises(ValueError):
                 ff.FileFlows(host=host)
         with self.assertRaises(ValueError):
-            ff.FileFlows(container='fileflows;bad')
+            ff.FileFlows(host='server.example', container='fileflows;bad')
 
     @patch('subprocess.run')
     def test_ssh_quoting_and_json_stdin(self, run):
         run.return_value = subprocess.CompletedProcess([], 0, '{"status":200,"body":[]}', '')
-        self.assertEqual(ff.FileFlows().api('POST', '/api/test', {'name': 'a`$"b'}), [])
+        self.assertEqual(ff.FileFlows(host='server.example').api('POST', '/api/test', {'name': 'a`$"b'}), [])
         args, kwargs = run.call_args
+        self.assertEqual(args[0][:-1], ['ssh', '-o', 'BatchMode=yes', 'server.example'])
         remote = shlex.split(args[0][-1])
         self.assertEqual(remote, ['docker', 'exec', '-i', 'fileflows', 'python3', '-c', ff.BRIDGE])
         self.assertEqual(json.loads(kwargs['input'])['body']['name'], 'a`$"b')
@@ -181,7 +188,7 @@ Finishing file: ProcessingFailed'''
 
     def test_private_backup_and_upload_verification(self):
         with tempfile.TemporaryDirectory() as directory:
-            client = ff.FileFlows(backup_dir=directory)
+            client = ff.FileFlows(host='server.example', backup_dir=directory)
             source = Path(directory) / 'Test.js'
             source.write_text(CODE)
             obj = {'Uid': UID, 'Name': 'Test', 'Code': 'old'}
@@ -211,7 +218,7 @@ Finishing file: ProcessingFailed'''
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'Test.js'
             source.write_text(CODE)
-            client = ff.FileFlows()
+            client = ff.FileFlows(host='server.example')
             calls = []
             def api(method, path, body=None):
                 calls.append(method)
@@ -222,7 +229,7 @@ Finishing file: ProcessingFailed'''
             self.assertEqual(calls, ['GET'])
 
     def test_failed_files_pagination(self):
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         calls = []
         def api(method, path, body=None):
             calls.append(path)
@@ -232,7 +239,7 @@ Finishing file: ProcessingFailed'''
         self.assertIn('skip=500&top=500', calls[1])
 
     def test_wait_returns_terminal_state(self):
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         for status in [1, 4, -3]:
             client.api = lambda *args: {'Uid': UID, 'Status': status}
             result = ff.wait_file(client, UID)
@@ -240,7 +247,7 @@ Finishing file: ProcessingFailed'''
             self.assertEqual(result['finished'], status in [1, 4])
 
     def test_wait_timeout(self):
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         client.api = lambda method, path: ({'Status': 2, 'Name': 'movie'} if 'library-file' in path else {})
         with patch('time.monotonic', side_effect=[0, 5]):
             result = ff.wait_file(client, UID, timeout=1)
@@ -249,21 +256,21 @@ Finishing file: ProcessingFailed'''
     def test_wait_rejects_invalid_limits(self):
         for interval, timeout in [(0, 1), (61, 1), (1, float('nan'))]:
             with self.assertRaises(ValueError):
-                ff.wait_file(ff.FileFlows(), UID, interval, timeout)
+                ff.wait_file(ff.FileFlows(host='server.example'), UID, interval, timeout)
 
     def test_restore_uses_full_export_and_exact_uid(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'object.json'
             path.write_text(json.dumps({'Uid': UID, 'Code': 'parsed source'}))
-            client = ff.FileFlows()
+            client = ff.FileFlows(host='server.example')
             with patch.object(client, 'upload', return_value={'verified': True}) as upload:
                 self.assertTrue(client.restore(path)['verified'])
                 upload.assert_called_once_with(path.with_name('source.js'), uid=UID)
 
     def test_reprocess_merges_requested_variables(self):
-        client = ff.FileFlows()
+        client = ff.FileFlows(host='server.example')
         with patch.object(client, 'api', return_value=None) as api, patch.object(ff, 'FileFlows', return_value=client), patch('builtins.print'):
-            ff.main(['reprocess', UID, '--var', 'vpp_qsv=30'])
+            ff.main(['--host', 'server.example', 'reprocess', UID, '--var', 'vpp_qsv=30'])
         body = api.call_args.args[2]
         self.assertEqual(body['Mode'], 1)
         self.assertEqual(body['CustomVariables'], {'vpp_qsv': 30})

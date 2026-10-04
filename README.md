@@ -25,31 +25,31 @@ This repository contains custom scripts and plugins for [FileFlows](https://file
 
 ## FileFlows Tools
 
-Use `python3 Tools/fileflows.py` from this repository. It needs Python 3.8 or later locally and in the container, Docker, and SSH access. It uses the API inside the container through SSH. Defaults: host `naze`, container `fileflows`, API `http://localhost:5000`. Set `--host`, `--container`, and `--base` before the command for another server.
+Use `python3 Tools/fileflows.py` from this repository. It needs Python 3.8 or later locally and in the container, Docker, and SSH access. It uses the API inside the container through SSH. Set the required `--host SSH_HOST` before the command. Replace `SSH_HOST` with your SSH host name or `user@host`. Defaults: container `fileflows`, API `http://localhost:5000`. Set `--container` and `--base` before the command for another installation.
 
 ```sh
-python3 Tools/fileflows.py status
-python3 Tools/fileflows.py wait FILE_UID --timeout 1800
-python3 Tools/fileflows.py failed
-python3 Tools/fileflows.py diagnose --output /tmp/fileflows-diagnosis.json
-python3 Tools/fileflows.py media-check FILE_UID --output /tmp/media-check.json
-python3 Tools/fileflows.py media-check FILE_UID --starts 500 --duration 15 --no-qsv
-python3 Tools/fileflows.py docker-logs --since 48h --match 'error|failed|warning' --context 3
-python3 Tools/fileflows.py docker-logs --since 48h --output /tmp/fileflows-docker.log
-python3 Tools/fileflows.py mods
-python3 Tools/fileflows.py upload-mod DockerMods/AudioLangIDDockerMod.sh --uid DOCKER_MOD_UID
-python3 Tools/fileflows.py scripts
-python3 Tools/fileflows.py flows
-python3 Tools/fileflows.py upload Scripts/Shared/FfmpegHelpers.js
-python3 Tools/fileflows.py upload "Scripts/Flow/Video/Video - Auto Quality.js"
-python3 Tools/fileflows.py log FILE_UID --match 'CRF|complete|ERRR' --lines 30
-python3 Tools/fileflows.py log FILE_UID --source nas --match 'error|failed' --lines 30
-python3 Tools/fileflows.py get flow FLOW_UID --output /tmp/flow.json
-python3 Tools/fileflows.py save-flow /tmp/flow.json
-python3 Tools/fileflows.py backup script SCRIPT_UID
-python3 Tools/fileflows.py restore /path/to/backup/object.json
-python3 Tools/fileflows.py reprocess FILE_UID --var MinCRF=10
-python3 Tools/fileflows.py add --flow-uid TEST_FLOW_UID /temp/extract.mkv
+python3 Tools/fileflows.py --host SSH_HOST status
+python3 Tools/fileflows.py --host SSH_HOST wait FILE_UID --timeout 1800
+python3 Tools/fileflows.py --host SSH_HOST failed
+python3 Tools/fileflows.py --host SSH_HOST diagnose --output /tmp/fileflows-diagnosis.json
+python3 Tools/fileflows.py --host SSH_HOST media-check FILE_UID --output /tmp/media-check.json
+python3 Tools/fileflows.py --host SSH_HOST media-check FILE_UID --starts 500 --duration 15 --no-qsv
+python3 Tools/fileflows.py --host SSH_HOST docker-logs --since 48h --match 'error|failed|warning' --context 3
+python3 Tools/fileflows.py --host SSH_HOST docker-logs --since 48h --output /tmp/fileflows-docker.log
+python3 Tools/fileflows.py --host SSH_HOST mods
+python3 Tools/fileflows.py --host SSH_HOST upload-mod DockerMods/AudioLangIDDockerMod.sh --uid DOCKER_MOD_UID
+python3 Tools/fileflows.py --host SSH_HOST scripts
+python3 Tools/fileflows.py --host SSH_HOST flows
+python3 Tools/fileflows.py --host SSH_HOST upload Scripts/Shared/FfmpegHelpers.js
+python3 Tools/fileflows.py --host SSH_HOST upload "Scripts/Flow/Video/Video - Auto Quality.js"
+python3 Tools/fileflows.py --host SSH_HOST log FILE_UID --match 'CRF|complete|ERRR' --lines 30
+python3 Tools/fileflows.py --host SSH_HOST log FILE_UID --source nas --match 'error|failed' --lines 30
+python3 Tools/fileflows.py --host SSH_HOST get flow FLOW_UID --output /tmp/flow.json
+python3 Tools/fileflows.py --host SSH_HOST save-flow /tmp/flow.json
+python3 Tools/fileflows.py --host SSH_HOST backup script SCRIPT_UID
+python3 Tools/fileflows.py --host SSH_HOST restore /path/to/backup/object.json
+python3 Tools/fileflows.py --host SSH_HOST reprocess FILE_UID --var MinCRF=10
+python3 Tools/fileflows.py --host SSH_HOST add --flow-uid TEST_FLOW_UID /temp/extract.mkv
 ```
 
 Upload finds an existing script by name. Use `--uid SCRIPT_UID` for an exact match. It validates the source, makes a backup, saves, and compares the saved code. FileFlows removes the metadata comment on save. Script header UIDs can differ from the installed object UID; use the `scripts` command to find the installed UID.
@@ -73,21 +73,21 @@ Reprocess accepts selected file UIDs. `--flow-uid` selects another flow; `--bott
 Use `Tools/qsv_benchmark.py` inside the container to compare QSV denoise levels and encoder quality values. It makes short video-only extracts, removes inherited duration tags, and records bytes, speed, MiB/hour, mean VMAF, and the 10th percentile frame score. It also measures VMAF against an identical reference. Results and video extracts stay in a new output directory.
 
 ```sh
-ssh naze 'docker exec -u 99:100 -i fileflows python3 - /temp/source.mkv --output /temp/qsv-test --starts 30 120 --duration 12 --denoise 0 30 50 --quality 14 18' < Tools/qsv_benchmark.py
+ssh SSH_HOST 'docker exec -u RUNNER_UID:RUNNER_GID -i fileflows python3 - /temp/source.mkv --output /temp/qsv-test --starts 30 120 --duration 12 --denoise 0 30 50 --quality 14 18' < Tools/qsv_benchmark.py
 ```
 
 Set `--ffmpeg`, `--ffprobe`, `--metric-ffmpeg`, `--device`, `--crop`, and `--preset` for another installation. The QSV device must be named `gpu`. VMAF compares each candidate with a high-quality reference at the same denoise level. Compare the source and denoised frames visually to check detail loss from denoise. Use moderate levels first. Native HDR VMAF is an encoding check; inspect tone-mapped frames for visual review. This tool keeps source files.
 
 `--software-decode` uses software decode and hardware upload, as in Auto Quality. `--field-mode progressive` adds `setfield=prog` before hardware processing; use it for content confirmed as progressive. `--field-mode deinterlace` adds QSV deinterlacing. Default field mode: `source`. Compare these modes when an interlaced source has unusually low quality scores at near-lossless settings.
 
-Use the runner's user for test extracts: NAZE uses `99:100`. Benchmark directories have mode 0700. A directory created as root needs its owner changed before a runner can read it. `media-check --user 99:100` checks source access as that user.
+Use the runner's user for test extracts. Replace `RUNNER_UID:RUNNER_GID` with the runner's user and group IDs. Benchmark directories have mode 0700. A directory created as root needs its owner changed before a runner can read it. `media-check --user RUNNER_UID:RUNNER_GID` checks source access as that user.
 
 Checks: `npm test` and `python3 -m unittest discover -s Tests -p 'test_*.py'`.
 
 `Tools/qsv_multistream_check.py` tests two generated video tracks with 8-bit and 10-bit sources. It checks that global QSV decoding reproduces the CPU encoder failure, scoped decoding succeeds, all output tracks decode, and a copied second track keeps the same packet hashes. It requires a new output directory and keeps test files and logs there.
 
 ```sh
-ssh naze 'docker exec -i fileflows python3 - --output /temp/qsv-multistream-test' < Tools/qsv_multistream_check.py
+ssh SSH_HOST 'docker exec -i fileflows python3 - --output /temp/qsv-multistream-test' < Tools/qsv_multistream_check.py
 ```
 
 ## Integration Pattern

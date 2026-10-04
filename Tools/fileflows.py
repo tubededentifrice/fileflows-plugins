@@ -74,7 +74,7 @@ def redact(text, html=True):
 
 
 class FileFlows:
-    def __init__(self, host='naze', container='fileflows', base='http://localhost:5000', backup_dir=None):
+    def __init__(self, host, container='fileflows', base='http://localhost:5000', backup_dir=None):
         if host.startswith('-') or not re.fullmatch(r'[\w.@:-]+', host):
             raise ValueError('Invalid SSH host')
         if not re.fullmatch(r'[\w.-]+', container):
@@ -338,7 +338,7 @@ def variables(values):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='naze')
+    parser.add_argument('--host', required=True, help='SSH host name or user@host')
     parser.add_argument('--container', default='fileflows')
     parser.add_argument('--base', default='http://localhost:5000')
     parser.add_argument('--backup-dir')
@@ -354,7 +354,7 @@ def main(argv=None):
     media.add_argument('--duration', type=float, default=8)
     media.add_argument('--timeout', type=float, default=600)
     media.add_argument('--threads', type=int, default=1)
-    media.add_argument('--user', help='Container user, such as 99:100, to check runner access')
+    media.add_argument('--user', help='Container user or UID:GID to check runner access')
     media.add_argument('--ffmpeg', default='/usr/local/bin/ffmpeg')
     media.add_argument('--ffprobe', default='ffprobe')
     media.add_argument('--no-qsv', action='store_true')

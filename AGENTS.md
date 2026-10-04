@@ -4,6 +4,16 @@ This file provides guidance to Agents when working with code in this repository.
 After any change, ensure this file is kept up to date.
 DRY principles should be respected: helper functions, etc. should be moved to a script in `Scripts/Shared` and properly imported (eg. `import { RadarrVc } from "Shared/RadarrVc";`).
 
+## Public Repository
+
+This is a public, open-source project. All committed files and public reports must be safe to share.
+
+- Do not add credentials, tokens, private keys, personal data, or private setup details to files, commits, pull requests, or comments.
+- Use generic examples for host names, addresses, paths, user IDs, and settings. Require private connection values as inputs.
+- Keep local settings, backups, logs, and server exports outside the repository. Remove private values before you share reports or test data.
+- Check each change for private data before you commit or publish it.
+- Use ASD-STE100 Simplified Technical English for user reports, pull requests, and comments.
+
 ## Quality & Consistency
 
 ### Linting and Formatting
@@ -33,7 +43,7 @@ FileFlows has three script types ([docs](https://fileflows.com/docs/webconsole/c
 
 Scripts available as nodes in FileFlows flows. Must follow strict format with comment block and `Script()` entry point. See [Flow Scripts Documentation](https://fileflows.com/docs/scripting/javascript/flow-scripts/).
 
-Community scripts: [community-repository/Scripts/Flow](https://github.com/fileflows/community-repository) cloned in `/Volumes/External/git/community-repository` for easier reference.
+Community scripts: [community-repository/Scripts/Flow](https://github.com/fileflows/community-repository/tree/main/Scripts/Flow).
 
 ### Shared Scripts (`Scripts/Shared/` directory)
 
@@ -388,6 +398,7 @@ Required variables: `Variables['Radarr.Url']`, `Variables['Radarr.ApiKey']`, `Va
 ## FileFlows operations
 
 - Use `python3 Tools/fileflows.py` for script uploads, flow backups, selected reprocessing, status, and logs. Read the FileFlows Tools section in README first.
+- Supply `--host SSH_HOST` before the command. There is no default SSH host.
 - Use `diagnose` for retained failure logs and `media-check` for source decode tests. Compare FFmpeg builds and decoder thread counts before attributing diagnostics to file damage.
 - Read all `idet` summaries: FFmpeg can print an empty summary before the populated result. Keep field flags equal in samples and final encodes.
 - Use an extract test flow that keeps original media before reprocessing library files. `Tools/qsv_benchmark.py` supplies reusable QSV extract tests and quality measurements.
